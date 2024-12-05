@@ -3,7 +3,6 @@ export interface CashEntry {
   denomination: number;
   quantity: number;
   total: number;
-  isClosing?: boolean;
 }
 
 export interface ShiftRecord {

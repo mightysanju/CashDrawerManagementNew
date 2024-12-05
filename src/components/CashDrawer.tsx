@@ -9,11 +9,10 @@ import { CashSection } from './cash-sections/CashSection';
 import { ReceiptsSection } from './cash-sections/ReceiptsSection';
 import { ActiveDrawers } from './ActiveDrawers';
 import { DrawerControls } from './DrawerControls';
-import { generatePDF } from '../utils/pdfGenerator';
 
 const DENOMINATIONS = {
   bill: [100, 50, 20, 10, 5, 1],
-  coin: [1, 0.25, 0.10, 0.05, 0.01],
+  coin: [1, 0.25, 0.1, 0.05, 0.01],
   roll: [10, 5, 2, 1, 0.5],
 };
 
@@ -35,12 +34,12 @@ export function CashDrawer() {
     try {
       setIsLoading(true);
       const allShifts = await db.getAllShifts();
-      const active = allShifts.filter(shift => shift.status === 'open');
-      const closed = allShifts.filter(shift => shift.status === 'closed');
-      
+      const active = allShifts.filter((shift) => shift.status === 'open');
+      const closed = allShifts.filter((shift) => shift.status === 'closed');
+
       setActiveShifts(active);
       setShiftHistory(closed);
-      
+
       if (active.length > 0 && !selectedShift) {
         handleSelectShift(active[0]);
       }
@@ -61,9 +60,6 @@ export function CashDrawer() {
     setOrganizationName(shift.organizationName || '');
     setDrawerNumber(shift.drawerNumber);
     setCashierName(shift.cashierName);
-    if (shift.shiftDrop !== undefined) {
-      setShiftDrop(shift.shiftDrop);
-    }
   };
 
   const startShift = async (openingEntries: CashEntry[]) => {
@@ -73,15 +69,20 @@ export function CashDrawer() {
     }
 
     // Check if drawer number is already in use
-    if (activeShifts.some(shift => shift.drawerNumber === drawerNumber)) {
-      alert('This drawer number is already in use. Please choose a different one.');
+    if (activeShifts.some((shift) => shift.drawerNumber === drawerNumber)) {
+      alert(
+        'This drawer number is already in use. Please choose a different one.'
+      );
       return;
     }
 
     try {
       setIsLoading(true);
-      const openingBalance = openingEntries.reduce((sum, entry) => sum + entry.total, 0);
-      
+      const openingBalance = openingEntries.reduce(
+        (sum, entry) => sum + entry.total,
+        0
+      );
+
       const newShift: ShiftRecord = {
         id: Date.now().toString(),
         organizationName,
@@ -90,13 +91,13 @@ export function CashDrawer() {
         openTime: new Date().toISOString(),
         openingBalance,
         entries: openingEntries,
-        status: 'open'
+        status: 'open',
       };
 
       await db.saveShift(newShift);
       await loadData();
       handleSelectShift(newShift);
-      
+
       // Clear form
       setDrawerNumber('');
       setCashierName('');
@@ -114,13 +115,15 @@ export function CashDrawer() {
     const currentBalance = calculateTotal();
     const difference = currentBalance - selectedShift.openingBalance;
 
-    if (!window.confirm(`
+    if (
+      !window.confirm(`
       Opening Balance: $${selectedShift.openingBalance.toFixed(2)}
       Current Balance: $${currentBalance.toFixed(2)}
       Difference: ${difference >= 0 ? '+' : ''}$${difference.toFixed(2)}
       
       Are you sure you want to end this shift?
-    `)) {
+    `)
+    ) {
       return;
     }
 
@@ -132,11 +135,11 @@ export function CashDrawer() {
         closingBalance: currentBalance,
         shiftDrop,
         entries: [...entries],
-        status: 'closed'
+        status: 'closed',
       };
 
       await db.saveShift(closedShift);
-      
+
       // Generate PDF after saving the shift
       setTimeout(() => {
         generatePDF(closedShift);
@@ -154,13 +157,17 @@ export function CashDrawer() {
     }
   };
 
-  const calculateTotal = () => 
+  const calculateTotal = () =>
     entries.reduce((sum, entry) => sum + entry.total, 0);
 
-  const updateEntry = (type: CashEntry['type'], denomination: number, quantity: number) => {
+  const updateEntry = (
+    type: CashEntry['type'],
+    denomination: number,
+    quantity: number
+  ) => {
     const total = denomination * quantity;
     const existingIndex = entries.findIndex(
-      e => e.type === type && e.denomination === denomination
+      (e) => e.type === type && e.denomination === denomination
     );
 
     const newEntries = [...entries];
@@ -188,7 +195,9 @@ export function CashDrawer() {
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="bg-white p-8 rounded-lg shadow-md">
           <div className="text-xl font-semibold text-gray-700">Loading...</div>
-          <p className="mt-2 text-gray-500">Please wait while we initialize the system.</p>
+          <p className="mt-2 text-gray-500">
+            Please wait while we initialize the system.
+          </p>
         </div>
       </div>
     );
@@ -202,7 +211,9 @@ export function CashDrawer() {
         </div>
 
         <div className="flex justify-between items-center mb-6">
-          <h1 className="text-3xl font-bold text-gray-800">Cash Drawer Manager</h1>
+          <h1 className="text-3xl font-bold text-gray-800">
+            Cash Drawer Manager
+          </h1>
           <button
             onClick={() => setShowHistory(!showHistory)}
             className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
@@ -239,8 +250,13 @@ export function CashDrawer() {
               <div className="flex items-center gap-2">
                 <Clock size={20} className="text-green-600" />
                 <div className="text-green-700">
-                  <div>Drawer #{selectedShift.drawerNumber} - {selectedShift.cashierName}</div>
-                  <div>Started: {format(new Date(selectedShift.openTime), 'PPpp')}</div>
+                  <div>
+                    Drawer #{selectedShift.drawerNumber} -{' '}
+                    {selectedShift.cashierName}
+                  </div>
+                  <div>
+                    Started: {format(new Date(selectedShift.openTime), 'PPpp')}
+                  </div>
                   <div className="font-medium">
                     Opening Balance: ${selectedShift.openingBalance.toFixed(2)}
                   </div>
@@ -251,7 +267,9 @@ export function CashDrawer() {
                   type="number"
                   placeholder="Shift Drop Amount"
                   value={shiftDrop || ''}
-                  onChange={(e) => setShiftDrop(parseFloat(e.target.value) || 0)}
+                  onChange={(e) =>
+                    setShiftDrop(parseFloat(e.target.value) || 0)
+                  }
                   className="p-2 border rounded-lg w-40"
                 />
                 <button
@@ -292,13 +310,25 @@ export function CashDrawer() {
               <div className="flex justify-between items-center">
                 <span className="text-xl font-semibold">Current Balance:</span>
                 <div className="text-right">
-                  <span className="text-2xl font-bold">${calculateTotal().toFixed(2)}</span>
+                  <span className="text-2xl font-bold">
+                    ${calculateTotal().toFixed(2)}
+                  </span>
                   {calculateTotal() !== selectedShift.openingBalance && (
-                    <div className={`text-sm font-medium ${
-                      calculateTotal() > selectedShift.openingBalance ? 'text-green-600' : 'text-red-600'
-                    }`}>
-                      {calculateTotal() > selectedShift.openingBalance ? '+' : ''}
-                      ${(calculateTotal() - selectedShift.openingBalance).toFixed(2)} from opening
+                    <div
+                      className={`text-sm font-medium ${
+                        calculateTotal() > selectedShift.openingBalance
+                          ? 'text-green-600'
+                          : 'text-red-600'
+                      }`}
+                    >
+                      {calculateTotal() > selectedShift.openingBalance
+                        ? '+'
+                        : ''}
+                      $
+                      {(
+                        calculateTotal() - selectedShift.openingBalance
+                      ).toFixed(2)}{' '}
+                      from opening
                     </div>
                   )}
                 </div>
@@ -308,10 +338,7 @@ export function CashDrawer() {
         )}
 
         {showHistory && (
-          <ShiftHistory 
-            history={shiftHistory} 
-            onHistoryCleared={loadData}
-          />
+          <ShiftHistory history={shiftHistory} onHistoryCleared={loadData} />
         )}
 
         <div className="mt-8">
