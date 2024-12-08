@@ -11,8 +11,9 @@ export function Navbar() {
         <div className="flex justify-between h-16">
           <div className="flex">
             <Link to="/" className="flex items-center">
-              <DollarSign className="h-8 w-8 text-blue-600" />
-              <span className="ml-2 text-xl font-bold text-gray-900">Cash Manager</span>
+              <img src="/favicon.png" alt="Logo" className="h-9 w-9" />
+              {/*<DollarSign className="h-8 w-8 text-blue-600" />*/}
+              <span className="ml-2 text-2xl font-bold text-gray-900">Cash Manager</span>
             </Link>
           </div>
 
