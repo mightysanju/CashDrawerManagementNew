@@ -119,7 +119,7 @@ export const generatePDF = (shift: ShiftRecord) => {
   // Generate PDF data URL and open in new tab
   const pdfDataUri = doc.output('datauristring');
 
-  window.open(pdfDataUri, '_blank').location.reload(true);
+  window.open(pdfDataUri, '_blank');
 };
 
 export const generateHistoryPDF = (shifts: ShiftRecord[]) => {
