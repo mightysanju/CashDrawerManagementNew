@@ -14,20 +14,16 @@ interface ShiftHistoryProps {
 }
 
 export function ShiftHistory({ history, onHistoryCleared, onShiftSelect,selectedShiftId}: ShiftHistoryProps) {
-  const [isClearing, setIsClearing] = useState(false);
-
+  
   const handleClearHistory = async () => {
     if (window.confirm('Are you sure you want to clear all closed shift history? This action cannot be undone.')) {
       try {
-        setIsClearing(true);
         const db = new DatabaseManager();
         await db.clearHistory();
         onHistoryCleared();
       } catch (error) {
         console.error('Error clearing history:', error);
         alert('Failed to clear history. Please try again.');
-      }finally {
-        setIsClearing(false);
       }
     }
   };
