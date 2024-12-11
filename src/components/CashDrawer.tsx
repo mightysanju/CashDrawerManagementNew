@@ -4,7 +4,7 @@ import { Clock, History } from 'lucide-react';
 import { CashEntry, ShiftRecord } from '../types';
 import { ShiftHistory } from './ShiftHistory';
 import { DatabaseManager } from '../utils/database';
-import { AdUnit } from './AdUnit';
+//import { AdUnit } from './AdUnit';
 import { CashSection } from './cash-sections/CashSection';
 import { ReceiptsSection } from './cash-sections/ReceiptsSection';
 import { ActiveDrawers } from './ActiveDrawers';
@@ -206,9 +206,9 @@ export function CashDrawer() {
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 py-8">
-        <div className="mb-8">
+        {/*<div className="mb-8">
           <AdUnit slot="top-banner" className="mx-auto max-w-[728px]" />
-        </div>
+        </div>*/}
 
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-3xl font-bold text-gray-800">
@@ -341,9 +341,9 @@ export function CashDrawer() {
           <ShiftHistory history={shiftHistory} onHistoryCleared={loadData} />
         )}
 
-        <div className="mt-8">
+        {/*<div className="mt-8">
           <AdUnit slot="bottom-banner" className="mx-auto max-w-[728px]" />
-        </div>
+        </div>*/}
       </div>
     </div>
   );

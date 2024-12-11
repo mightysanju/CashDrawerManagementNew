@@ -1,3 +1,5 @@
+{/*
+
 import React, { useEffect, useRef } from 'react';
 
 interface AdUnitProps {
@@ -35,3 +37,5 @@ export function AdUnit({ slot, format = 'auto', className = '' }: AdUnitProps) {
     </div>
   );
 }
+
+*/}

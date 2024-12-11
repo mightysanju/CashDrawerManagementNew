@@ -8,7 +8,7 @@ import {
   Building2
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { AdUnit } from './AdUnit';
+//import { AdUnit } from './AdUnit';
 import { Navbar } from './Navbar';
 
 export function LandingPage() {
@@ -68,9 +68,9 @@ export function LandingPage() {
       <div className="py-16 bg-gray-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div className="lg:col-span-1">
+            {/*<div className="lg:col-span-1">
               <AdUnit slot="side-1" format="rectangle" className="mx-auto max-w-[300px]" />
-            </div>
+            </div>*/}
             <div className="lg:col-span-1">
               <div className="bg-white p-8 rounded-lg shadow-sm">
                 <h2 className="text-2xl font-bold text-gray-900 mb-4">Why Choose Our Solution?</h2>
@@ -90,17 +90,19 @@ export function LandingPage() {
                 </ul>
               </div>
             </div>
-            <div className="lg:col-span-1">
+            {/*<div className="lg:col-span-1">
               <AdUnit slot="side-2" format="rectangle" className="mx-auto max-w-[300px]" />
-            </div>
+            </div>*/}
           </div>
         </div>
       </div>
 
-      {/* In-content Ad */}
+      {/* In-content Ad 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <AdUnit slot="in-article" className="mx-auto max-w-[728px]" />
       </div>
+      */}
+      
 
       {/* Footer with Policies */}
       <footer id="privacy" className="bg-gray-50 border-t">
@@ -151,10 +153,13 @@ export function LandingPage() {
             </div>
           </div>
 
-          {/* Bottom Ad Banner */}
+          {/* Bottom Ad Banner 
           <div className="mt-8 pt-8 border-t">
             <AdUnit slot="bottom-banner" className="mx-auto max-w-[728px]" />
           </div>
+          
+          */}
+          
 
           <div className="mt-8 text-center text-sm text-gray-500">
             <p>© {new Date().getFullYear()} Cash Drawer Management System. All rights reserved.</p>
