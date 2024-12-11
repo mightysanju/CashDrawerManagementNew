@@ -4,6 +4,7 @@ import { FileText, Download, Trash2, Clock } from 'lucide-react';
 import { ShiftRecord } from '../types';
 import { generatePDF, generateHistoryPDF } from '../utils/pdfGenerator';
 import { ShiftHistoryItem } from './ShiftHistoryItem';
+import { DatabaseManager } from '../utils/database';
 
 interface ShiftHistoryProps {
   history: ShiftRecord[];
@@ -12,22 +13,26 @@ interface ShiftHistoryProps {
   selectedShiftId?: string;
 }
 
-export function ShiftHistory({ 
-  history, 
-  onHistoryCleared, 
-  onShiftSelect,
-  selectedShiftId 
-}: ShiftHistoryProps) {
+export function ShiftHistory({ history, onHistoryCleared, onShiftSelect,selectedShiftId}: ShiftHistoryProps) {
+  const [isClearing, setIsClearing] = useState(false);
+
   const handleClearHistory = async () => {
     if (window.confirm('Are you sure you want to clear all closed shift history? This action cannot be undone.')) {
       try {
+        setIsClearing(true);
+        const db = new DatabaseManager();
+        await db.clearHistory();
         onHistoryCleared();
       } catch (error) {
         console.error('Error clearing history:', error);
         alert('Failed to clear history. Please try again.');
+      }finally {
+        setIsClearing(false);
       }
     }
   };
+
+  
 
   const openShifts = history.filter(shift => shift.status === 'open');
   const closedShifts = history.filter(shift => shift.status === 'closed');
