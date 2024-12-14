@@ -9,6 +9,7 @@ import { CashSection } from './cash-sections/CashSection';
 import { ReceiptsSection } from './cash-sections/ReceiptsSection';
 import { ActiveDrawers } from './ActiveDrawers';
 import { DrawerControls } from './DrawerControls';
+import { Navbar } from './Navbar';
 
 const DENOMINATIONS = {
   bill: [100, 50, 20, 10, 5, 1],
@@ -204,7 +205,8 @@ export function CashDrawer() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div> <Navbar />
+    <div className="min-h-screen pt-32 bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 py-8">
         {/*<div className="mb-8">
           <AdUnit slot="top-banner" className="mx-auto max-w-[728px]" />
@@ -345,6 +347,6 @@ export function CashDrawer() {
           <AdUnit slot="bottom-banner" className="mx-auto max-w-[728px]" />
         </div>*/}
       </div>
-    </div>
+    </div></div>
   );
 }

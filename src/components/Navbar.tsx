@@ -31,12 +31,25 @@ export function Navbar() {
             >
               Features
             </a>
-            <a
+            {/*<a
               href="#privacy"
               className="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition-colors"
             >
               Privacy
-            </a>
+            </a>*/}
+            <Link
+              to="/contacts"
+              className="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition-colors"
+            >
+              Contact Us
+            </Link>
+           <Link
+              to="/privacy"
+              className="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition-colors"
+            >
+              Privacy Policy
+            </Link>
+            
             <Link
               to="/app"
               className="bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-700 transition-colors"
@@ -74,13 +87,18 @@ export function Navbar() {
             >
               Features
             </a>
-            <a
-              href="#privacy"
+            <Link
+              to="/contacts"
               className="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-100 transition-colors"
-              onClick={() => setIsMenuOpen(false)}
             >
-              Privacy
-            </a>
+              Contact Us
+            </Link>
+            <Link
+              to="/privacy"
+              className="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-100 transition-colors"
+            >
+              Privacy Policy
+            </Link>
             <Link
               to="/app"
               className="block px-3 py-2 rounded-md text-base font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors"
