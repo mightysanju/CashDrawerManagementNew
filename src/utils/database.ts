@@ -38,6 +38,16 @@ export class DatabaseManager {
     await db.put(STORES.SHIFTS, shift);
   }
 
+  async bulkSaveShifts(shifts: ShiftRecord[]): Promise<void> {
+    if (!shifts || shifts.length === 0) return;
+    const db = await this.dbPromise;
+    const tx = db.transaction(STORES.SHIFTS, 'readwrite');
+    for (const shift of shifts) {
+      await tx.store.put(shift);
+    }
+    await tx.done;
+  }
+
   async getAllShifts(): Promise<ShiftRecord[]> {
     const db = await this.dbPromise;
     const shifts = await db.getAll(STORES.SHIFTS);

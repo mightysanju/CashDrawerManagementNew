@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { format } from 'date-fns';
-import { Clock, History, Printer, FileText } from 'lucide-react';
+import { Clock, History, Printer, FileText, Wifi } from 'lucide-react';
 import { CashEntry, ShiftRecord } from '../types';
 import { ShiftHistory } from './ShiftHistory';
 import { DatabaseManager } from '../utils/database';
@@ -11,11 +11,13 @@ import { ActiveDrawers } from './ActiveDrawers';
 import { DrawerControls } from './DrawerControls';
 import { Navbar } from './Navbar';
 import { Footer } from './Footer';
+import { NetworkSyncModal } from './NetworkSyncModal';
 import { generatePDF, printReceipt } from '../utils/pdfGenerator';
+import { p2pSyncManager, SyncState } from '../utils/p2pSyncManager';
 
 const DENOMINATIONS = {
   bill: [100, 50, 20, 10, 5, 1],
-  coin: [1, 0.25, 0.1, 0.05, 0.01],
+  coin: [1, 0.25, 0.10, 0.05, 0.01],
   roll: [10, 5, 2, 1, 0.5],
 };
 
@@ -32,6 +34,8 @@ export function CashDrawer() {
   const [entries, setEntries] = useState<CashEntry[]>([]);
   const [shiftDrop, setShiftDrop] = useState<number>(0);
   const [isLoading, setIsLoading] = useState(false);
+  const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
+  const [syncState, setSyncState] = useState<SyncState>(p2pSyncManager.getState());
 
   const loadData = async () => {
     try {
@@ -55,6 +59,17 @@ export function CashDrawer() {
 
   useEffect(() => {
     loadData();
+
+    // Listen for P2P network changes and remote sync payloads
+    const unsubState = p2pSyncManager.subscribeState(setSyncState);
+    const unsubData = p2pSyncManager.subscribeData(() => {
+      loadData();
+    });
+
+    return () => {
+      unsubState();
+      unsubData();
+    };
   }, []);
 
   const handleSelectShift = (shift: ShiftRecord) => {
@@ -71,7 +86,6 @@ export function CashDrawer() {
       return;
     }
 
-    // Check if drawer number is already in use
     if (activeShifts.some((shift) => shift.drawerNumber === drawerNumber)) {
       alert(
         'This drawer number is already in use. Please select a different number or close the active shift.'
@@ -98,6 +112,8 @@ export function CashDrawer() {
       };
 
       await db.saveShift(newShift);
+      p2pSyncManager.broadcastShift(newShift);
+
       await loadData();
       handleSelectShift(newShift);
 
@@ -146,6 +162,7 @@ Would you like to close this shift and generate your report?
       };
 
       await db.saveShift(closedShift);
+      p2pSyncManager.broadcastShift(closedShift);
 
       // Safely download PDF report without popup blocker issues
       setTimeout(() => {
@@ -177,28 +194,25 @@ Would you like to close this shift and generate your report?
       (entry) => entry.type === type && entry.denomination === denomination
     );
 
+    let updatedEntries: CashEntry[] = [];
     if (existingIndex >= 0) {
-      const newEntries = [...entries];
-      newEntries[existingIndex] = { type, denomination, quantity, total };
-      setEntries(newEntries);
-      if (selectedShift) {
-        db.saveShift({
-          ...selectedShift,
-          entries: newEntries,
-        });
-      }
+      updatedEntries = [...entries];
+      updatedEntries[existingIndex] = { type, denomination, quantity, total };
     } else {
-      const newEntries = [
+      updatedEntries = [
         ...entries,
         { type, denomination, quantity, total },
       ];
-      setEntries(newEntries);
-      if (selectedShift) {
-        db.saveShift({
-          ...selectedShift,
-          entries: newEntries,
-        });
-      }
+    }
+
+    setEntries(updatedEntries);
+    if (selectedShift) {
+      const updatedShift: ShiftRecord = {
+        ...selectedShift,
+        entries: updatedEntries,
+      };
+      db.saveShift(updatedShift);
+      p2pSyncManager.broadcastShift(updatedShift);
     }
   };
 
@@ -234,13 +248,33 @@ Would you like to close this shift and generate your report?
             </p>
           </div>
 
-          <button
-            onClick={() => setShowHistory(!showHistory)}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 text-gray-700 font-semibold text-sm rounded-lg hover:bg-gray-50 hover:text-blue-600 transition shadow-xs"
-          >
-            <History size={18} />
-            {showHistory ? 'Hide Shift History' : 'View Shift History'}
-          </button>
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* P2P Network Sync Button */}
+            <button
+              onClick={() => setIsSyncModalOpen(true)}
+              className={`inline-flex items-center gap-1.5 px-3.5 py-2 border rounded-lg text-xs font-semibold transition shadow-xs ${
+                syncState.status === 'connected'
+                  ? 'bg-green-50 text-green-700 border-green-300 hover:bg-green-100'
+                  : syncState.status === 'connecting'
+                    ? 'bg-amber-50 text-amber-700 border-amber-300'
+                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              <Wifi size={15} className={syncState.status === 'connected' ? 'text-green-600 animate-pulse' : ''} />
+              {syncState.status === 'connected' 
+                ? `Network: ${syncState.myCode} (${syncState.connectedCount + 1} Tills)` 
+                : 'Sync Nearby Registers'}
+            </button>
+
+            {/* Shift History Toggle Button */}
+            <button
+              onClick={() => setShowHistory(!showHistory)}
+              className="inline-flex items-center gap-2 px-3.5 py-2 bg-white border border-gray-300 text-gray-700 font-semibold text-xs rounded-lg hover:bg-gray-50 hover:text-blue-600 transition shadow-xs"
+            >
+              <History size={16} />
+              {showHistory ? 'Hide Shift History' : 'View Shift History'}
+            </button>
+          </div>
         </div>
 
         {/* New Drawer Setup Section */}
@@ -420,13 +454,26 @@ Would you like to close this shift and generate your report?
         {/* History Modal / Drawer */}
         {showHistory && (
           <div className="mb-8">
-            <ShiftHistory history={shiftHistory} onHistoryCleared={loadData} />
+            <ShiftHistory 
+              history={shiftHistory} 
+              onHistoryCleared={() => {
+                p2pSyncManager.broadcastHistoryCleared();
+                loadData();
+              }} 
+            />
           </div>
         )}
 
         {/* AdSense Bottom Banner */}
         <AdUnit slot="9876543210" format="auto" className="mt-8" />
       </main>
+
+      {/* Peer-to-Peer Network Sync Modal */}
+      <NetworkSyncModal
+        isOpen={isSyncModalOpen}
+        onClose={() => setIsSyncModalOpen(false)}
+        onSyncTriggered={loadData}
+      />
 
       <Footer />
     </div>
