@@ -3,30 +3,39 @@ import { ShiftRecord } from '../types';
 import { DatabaseManager } from './database';
 
 export type SyncMessage =
-  | { type: 'FULL_SYNC'; shifts: ShiftRecord[] }
-  | { type: 'SHIFT_UPSERT'; shift: ShiftRecord }
-  | { type: 'HISTORY_CLEARED' }
+  | { type: 'FULL_SYNC'; shifts: ShiftRecord[]; senderId?: string }
+  | { type: 'SHIFT_UPSERT'; shift: ShiftRecord; senderId?: string }
+  | { type: 'HISTORY_CLEARED'; senderId?: string }
   | { type: 'PING' };
 
-export type SyncStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
+export type SyncRole = 'hub' | 'client' | 'standalone';
+export type SyncStatus = 'disconnected' | 'scanning' | 'connected' | 'error';
 
 export interface SyncState {
   status: SyncStatus;
-  myCode: string | null;
+  role: SyncRole;
+  storeName: string;
   connectedCount: number;
+  myPeerId: string | null;
   errorMessage: string | null;
 }
 
-const PEER_PREFIX = 'cdm-store-';
+const PEER_PREFIX = 'cdm-v2-';
 const db = new DatabaseManager();
 
 class P2PSyncManager {
   private peer: Peer | null = null;
   private connections: Map<string, DataConnection> = new Map();
+  private storeSlug: string = 'main-store';
+  private reconnectTimer: NodeJS.Timeout | null = null;
+  private isAutoConnecting: boolean = false;
+
   private state: SyncState = {
     status: 'disconnected',
-    myCode: null,
+    role: 'standalone',
+    storeName: 'Main Store',
     connectedCount: 0,
+    myPeerId: null,
     errorMessage: null,
   };
 
@@ -53,121 +62,166 @@ class P2PSyncManager {
     this.stateListeners.forEach((listener) => listener(this.getState()));
   }
 
+  private getHubPeerId(slug: string): string {
+    return `${PEER_PREFIX}hub-${slug}`;
+  }
+
+  private getClientPeerId(slug: string): string {
+    const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+    return `${PEER_PREFIX}node-${slug}-${randomSuffix}`;
+  }
+
+  private sanitizeSlug(name: string): string {
+    const clean = name.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+    return clean || 'main-store';
+  }
+
   /**
-   * Initializes this register as a Host with a specific or generated Store Code
+   * Automatically scans local network:
+   * 1. Tries to claim Hub role.
+   * 2. If Hub is already running on another computer, automatically connects to it as a Client!
    */
-  public async hostNetwork(customCode?: string): Promise<string> {
-    this.disconnect();
-    this.updateState({ status: 'connecting', errorMessage: null });
+  public async autoConnect(storeName?: string) {
+    if (this.isAutoConnecting) return;
+    this.isAutoConnecting = true;
 
-    const rawCode = (customCode || this.generateRoomCode()).toUpperCase().trim();
-    const peerId = `${PEER_PREFIX}${rawCode}`;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
 
-    return new Promise((resolve, reject) => {
+    const currentStore = storeName || this.state.storeName || 'Main Store';
+    this.storeSlug = this.sanitizeSlug(currentStore);
+
+    this.updateState({
+      status: 'scanning',
+      storeName: currentStore,
+      errorMessage: null,
+    });
+
+    const hubId = this.getHubPeerId(this.storeSlug);
+
+    // Step 1: Try to bind as the Hub for this store
+    try {
+      await this.tryHostHub(hubId);
+      this.isAutoConnecting = false;
+    } catch {
+      // Step 2: Hub already exists! Connect to it as a client peer
       try {
-        this.peer = new Peer(peerId, {
-          debug: 1,
+        await this.connectAsClient(hubId);
+      } catch (clientErr) {
+        console.warn('Auto-connect client attempt failed, will retry:', clientErr);
+        this.scheduleReconnect();
+      } finally {
+        this.isAutoConnecting = false;
+      }
+    }
+  }
+
+  /**
+   * Tries to become the Primary Hub
+   */
+  private tryHostHub(hubId: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.cleanupPeer();
+
+      const peer = new Peer(hubId, { debug: 1 });
+      let hasResolved = false;
+
+      peer.on('open', (id) => {
+        hasResolved = true;
+        this.peer = peer;
+        this.updateState({
+          status: 'connected',
+          role: 'hub',
+          myPeerId: id,
+          connectedCount: 0,
+          errorMessage: null,
         });
 
-        this.peer.on('open', (id) => {
-          const code = id.replace(PEER_PREFIX, '');
-          this.updateState({
-            status: 'connected',
-            myCode: code,
-            connectedCount: 0,
-            errorMessage: null,
-          });
-          resolve(code);
-        });
-
-        this.peer.on('connection', (conn) => {
+        peer.on('connection', (conn) => {
           this.handleIncomingConnection(conn);
         });
 
-        this.peer.on('error', (err) => {
-          console.error('PeerJS error:', err);
-          let errorMsg = 'Failed to establish peer network.';
-          if (err.type === 'unavailable-id') {
-            errorMsg = `Code "${rawCode}" is already in use by another active register. Please try connecting to it or use a different code.`;
-          }
-          this.updateState({ status: 'error', errorMessage: errorMsg });
-          reject(new Error(errorMsg));
-        });
+        resolve();
+      });
 
-        this.peer.on('disconnected', () => {
-          this.updateState({ status: 'disconnected' });
-        });
-      } catch (err: unknown) {
-        const errorMsg = err instanceof Error ? err.message : 'Unknown peer initialization error';
-        this.updateState({ status: 'error', errorMessage: errorMsg });
-        reject(err);
-      }
+      peer.on('error', (err) => {
+        if (!hasResolved) {
+          peer.destroy();
+          reject(err);
+        } else {
+          console.error('Hub error after open:', err);
+          this.updateState({ errorMessage: err.message });
+        }
+      });
     });
   }
 
   /**
-   * Connects this register to an existing Store Code running on another machine
+   * Connects to the existing Primary Hub
    */
-  public async joinNetwork(targetCode: string): Promise<void> {
-    this.disconnect();
-    this.updateState({ status: 'connecting', errorMessage: null });
-
-    const cleanCode = targetCode.toUpperCase().trim();
-    const targetPeerId = `${PEER_PREFIX}${cleanCode}`;
-    const myTempId = `${PEER_PREFIX}${cleanCode}-client-${Math.floor(1000 + Math.random() * 9000)}`;
-
+  private connectAsClient(hubId: string): Promise<void> {
     return new Promise((resolve, reject) => {
-      try {
-        this.peer = new Peer(myTempId, {
-          debug: 1,
-        });
+      this.cleanupPeer();
 
-        this.peer.on('open', () => {
-          if (!this.peer) return;
+      const clientId = this.getClientPeerId(this.storeSlug);
+      const peer = new Peer(clientId, { debug: 1 });
+      let hasResolved = false;
 
-          const conn = this.peer.connect(targetPeerId, {
-            reliable: true,
+      peer.on('open', (myId) => {
+        this.peer = peer;
+
+        const conn = peer.connect(hubId, { reliable: true });
+
+        conn.on('open', async () => {
+          hasResolved = true;
+          this.connections.set(conn.peer, conn);
+          this.setupConnectionHandlers(conn);
+
+          this.updateState({
+            status: 'connected',
+            role: 'client',
+            myPeerId: myId,
+            connectedCount: 1,
+            errorMessage: null,
           });
 
-          conn.on('open', async () => {
-            this.connections.set(conn.peer, conn);
-            this.setupConnectionHandlers(conn);
-            this.updateState({
-              status: 'connected',
-              myCode: cleanCode,
-              connectedCount: this.connections.size,
-              errorMessage: null,
-            });
-
-            // Send initial local data to remote so both registers merge
-            const allLocal = await db.getAllShifts();
-            conn.send({
-              type: 'FULL_SYNC',
-              shifts: allLocal,
-            });
-
-            resolve();
+          // Send our local shifts to the hub to ensure two-way sync
+          const localShifts = await db.getAllShifts();
+          conn.send({
+            type: 'FULL_SYNC',
+            shifts: localShifts,
+            senderId: myId,
           });
 
-          conn.on('error', (err) => {
-            console.error('Connection error:', err);
-            const msg = `Could not reach register "${cleanCode}". Make sure the other computer is on and has Cash Drawer Manager open.`;
-            this.updateState({ status: 'error', errorMessage: msg });
-            reject(new Error(msg));
-          });
+          resolve();
         });
 
-        this.peer.on('error', (err) => {
-          console.error('Peer error:', err);
-          const msg = `Could not connect to network "${cleanCode}".`;
-          this.updateState({ status: 'error', errorMessage: msg });
-          reject(new Error(msg));
+        conn.on('error', (err) => {
+          if (!hasResolved) {
+            peer.destroy();
+            reject(err);
+          }
         });
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : 'Failed to join peer network';
-        this.updateState({ status: 'error', errorMessage: msg });
-        reject(err);
-      }
+
+        conn.on('close', () => {
+          console.log('Connection to Hub closed. Initiating failover/re-scan...');
+          this.connections.delete(conn.peer);
+          this.updateState({
+            status: 'disconnected',
+            connectedCount: 0,
+          });
+          this.scheduleReconnect();
+        });
+      });
+
+      peer.on('error', (err) => {
+        if (!hasResolved) {
+          peer.destroy();
+          reject(err);
+        }
+      });
     });
   }
 
@@ -177,11 +231,12 @@ class P2PSyncManager {
       this.setupConnectionHandlers(conn);
       this.updateState({ connectedCount: this.connections.size });
 
-      // Immediately send current local shifts to the newly joined peer
-      const allLocal = await db.getAllShifts();
+      // Automatically send the Hub's shift database to the newly connected register
+      const allShifts = await db.getAllShifts();
       conn.send({
         type: 'FULL_SYNC',
-        shifts: allLocal,
+        shifts: allShifts,
+        senderId: this.peer?.id,
       });
     });
   }
@@ -200,10 +255,27 @@ class P2PSyncManager {
         if (msg.shift) {
           await db.saveShift(msg.shift);
           this.notifyData('SHIFT_UPDATED', msg.shift);
+
+          // If this machine is the Hub, forward the update to all OTHER connected registers!
+          if (this.state.role === 'hub') {
+            this.connections.forEach((otherConn) => {
+              if (otherConn.peer !== conn.peer && otherConn.open) {
+                otherConn.send(msg);
+              }
+            });
+          }
         }
       } else if (msg.type === 'HISTORY_CLEARED') {
         await db.clearHistory();
         this.notifyData('HISTORY_CLEARED');
+
+        if (this.state.role === 'hub') {
+          this.connections.forEach((otherConn) => {
+            if (otherConn.peer !== conn.peer && otherConn.open) {
+              otherConn.send(msg);
+            }
+          });
+        }
       }
     });
 
@@ -218,16 +290,28 @@ class P2PSyncManager {
     });
   }
 
+  private scheduleReconnect() {
+    if (this.reconnectTimer) return;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.autoConnect(this.state.storeName);
+    }, 3000);
+  }
+
   private notifyData(action: string, data?: unknown) {
     this.dataListeners.forEach((listener) => listener(action, data));
   }
 
   /**
-   * Broadcasts a shift upsert to all connected peer computers
+   * Broadcasts a shift upsert to all active peer connections
    */
   public broadcastShift(shift: ShiftRecord) {
     if (this.connections.size === 0) return;
-    const msg: SyncMessage = { type: 'SHIFT_UPSERT', shift };
+    const msg: SyncMessage = { 
+      type: 'SHIFT_UPSERT', 
+      shift, 
+      senderId: this.peer?.id 
+    };
     this.connections.forEach((conn) => {
       if (conn.open) {
         conn.send(msg);
@@ -236,11 +320,14 @@ class P2PSyncManager {
   }
 
   /**
-   * Broadcasts a history cleared event to all connected peer computers
+   * Broadcasts history cleared
    */
   public broadcastHistoryCleared() {
     if (this.connections.size === 0) return;
-    const msg: SyncMessage = { type: 'HISTORY_CLEARED' };
+    const msg: SyncMessage = { 
+      type: 'HISTORY_CLEARED', 
+      senderId: this.peer?.id 
+    };
     this.connections.forEach((conn) => {
       if (conn.open) {
         conn.send(msg);
@@ -248,10 +335,7 @@ class P2PSyncManager {
     });
   }
 
-  /**
-   * Disconnects from peer network
-   */
-  public disconnect() {
+  private cleanupPeer() {
     this.connections.forEach((conn) => {
       try {
         conn.close();
@@ -269,22 +353,21 @@ class P2PSyncManager {
       }
       this.peer = null;
     }
-
-    this.updateState({
-      status: 'disconnected',
-      myCode: null,
-      connectedCount: 0,
-      errorMessage: null,
-    });
   }
 
-  private generateRoomCode(): string {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    let code = '';
-    for (let i = 0; i < 4; i++) {
-      code += chars.charAt(Math.floor(Math.random() * chars.length));
+  public disconnect() {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
     }
-    return code;
+    this.cleanupPeer();
+    this.updateState({
+      status: 'disconnected',
+      role: 'standalone',
+      connectedCount: 0,
+      myPeerId: null,
+      errorMessage: null,
+    });
   }
 }
 

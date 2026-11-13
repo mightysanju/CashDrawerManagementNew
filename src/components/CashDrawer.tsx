@@ -60,6 +60,9 @@ export function CashDrawer() {
   useEffect(() => {
     loadData();
 
+    // Auto-discover and connect immediately on startup!
+    p2pSyncManager.autoConnect();
+
     // Listen for P2P network changes and remote sync payloads
     const unsubState = p2pSyncManager.subscribeState(setSyncState);
     const unsubData = p2pSyncManager.subscribeData(() => {
@@ -255,15 +258,25 @@ Would you like to close this shift and generate your report?
               className={`inline-flex items-center gap-1.5 px-3.5 py-2 border rounded-lg text-xs font-semibold transition shadow-xs ${
                 syncState.status === 'connected'
                   ? 'bg-green-50 text-green-700 border-green-300 hover:bg-green-100'
-                  : syncState.status === 'connecting'
-                    ? 'bg-amber-50 text-amber-700 border-amber-300'
+                  : syncState.status === 'scanning'
+                    ? 'bg-amber-50 text-amber-700 border-amber-300 animate-pulse'
                     : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
               }`}
             >
               <Wifi size={15} className={syncState.status === 'connected' ? 'text-green-600 animate-pulse' : ''} />
-              {syncState.status === 'connected' 
-                ? `Network: ${syncState.myCode} (${syncState.connectedCount + 1} Tills)` 
-                : 'Sync Nearby Registers'}
+              {syncState.status === 'connected' ? (
+                syncState.role === 'hub' ? (
+                  syncState.connectedCount === 0
+                    ? 'Auto-Sync: Main Register'
+                    : `Auto-Sync: Hub (${syncState.connectedCount} peer${syncState.connectedCount > 1 ? 's' : ''})`
+                ) : (
+                  'Auto-Sync: Connected to Main Till'
+                )
+              ) : syncState.status === 'scanning' ? (
+                'Auto-Sync: Scanning...'
+              ) : (
+                'Sync Nearby Registers'
+              )}
             </button>
 
             {/* Shift History Toggle Button */}
