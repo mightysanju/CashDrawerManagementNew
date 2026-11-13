@@ -1,8 +1,7 @@
 import React from 'react';
-import { format } from 'date-fns';
-import { FileText, Download, Trash2, Clock } from 'lucide-react';
+import { Download, Trash2, Clock } from 'lucide-react';
 import { ShiftRecord } from '../types';
-import { generatePDF, generateHistoryPDF } from '../utils/pdfGenerator';
+import { generateHistoryPDF } from '../utils/pdfGenerator';
 import { ShiftHistoryItem } from './ShiftHistoryItem';
 import { DatabaseManager } from '../utils/database';
 

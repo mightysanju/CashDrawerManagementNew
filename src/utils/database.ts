@@ -17,7 +17,7 @@ export class DatabaseManager {
 
   private async initDatabase() {
     return openDB(DB_NAME, DB_VERSION, {
-      upgrade(db, oldVersion, newVersion) {
+      upgrade(db) {
         // Create or update shifts store
         if (!db.objectStoreNames.contains(STORES.SHIFTS)) {
           const shiftStore = db.createObjectStore(STORES.SHIFTS, { keyPath: 'id' });

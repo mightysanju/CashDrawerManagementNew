@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, Store, Hash, User, ArrowRight } from 'lucide-react';
 import { CashEntry } from '../types';
 import { OpeningBalanceForm } from './OpeningBalanceForm';
 
@@ -28,7 +28,7 @@ export function DrawerControls({
 
   const handleStartShift = () => {
     if (!drawerNumber || !cashierName) {
-      alert('Please enter both drawer number and cashier name');
+      alert('Please enter both drawer number and cashier name.');
       return;
     }
     setShowOpeningBalance(true);
@@ -46,44 +46,72 @@ export function DrawerControls({
     );
   }
 
+  const isValid = Boolean(drawerNumber.trim() && cashierName.trim());
+
   return (
-    <div className="bg-white rounded-lg shadow p-6 mb-6">
-      <h2 className="text-xl font-semibold mb-4">Start New Drawer</h2>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-        <input
-          type="text"
-          placeholder="Organization Name (Optional)"
-          value={organizationName}
-          onChange={(e) => onOrganizationNameChange(e.target.value)}
-          className="p-2 border rounded-lg"
-          disabled={disabled}
-        />
-        <input
-          type="text"
-          placeholder="Drawer Number *"
-          value={drawerNumber}
-          onChange={(e) => onDrawerNumberChange(e.target.value)}
-          className="p-2 border rounded-lg"
-          required
-          disabled={disabled}
-        />
-        <input
-          type="text"
-          placeholder="Cashier Name *"
-          value={cashierName}
-          onChange={(e) => onCashierNameChange(e.target.value)}
-          className="p-2 border rounded-lg"
-          required
-          disabled={disabled}
-        />
+    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h2 className="text-lg font-bold text-gray-900">Open a New Cash Drawer</h2>
+          <p className="text-xs text-gray-500">Register the drawer and cashier to begin counting the opening float.</p>
+        </div>
+        <span className="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full font-medium">
+          Step 1 of 2
+        </span>
       </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+        <div className="relative">
+          <Store className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+          <input
+            type="text"
+            placeholder="Store / Company Name (Optional)"
+            value={organizationName}
+            onChange={(e) => onOrganizationNameChange(e.target.value)}
+            className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
+            disabled={disabled}
+          />
+        </div>
+
+        <div className="relative">
+          <Hash className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+          <input
+            type="text"
+            placeholder="Drawer / Register # *"
+            value={drawerNumber}
+            onChange={(e) => onDrawerNumberChange(e.target.value)}
+            className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition font-medium"
+            required
+            disabled={disabled}
+          />
+        </div>
+
+        <div className="relative">
+          <User className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+          <input
+            type="text"
+            placeholder="Cashier Full Name *"
+            value={cashierName}
+            onChange={(e) => onCashierNameChange(e.target.value)}
+            className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition font-medium"
+            required
+            disabled={disabled}
+          />
+        </div>
+      </div>
+
       <button
         onClick={handleStartShift}
-        disabled={disabled || !drawerNumber || !cashierName}
-        className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        disabled={disabled || !isValid}
+        className={`w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg font-semibold text-sm transition shadow-sm ${
+          isValid && !disabled
+            ? 'bg-blue-600 text-white hover:bg-blue-700 hover:shadow'
+            : 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200'
+        }`}
       >
-        <Plus size={20} />
-        Start New Drawer
+        <Plus size={18} />
+        Continue to Opening Float Count
+        <ArrowRight size={16} className="ml-1" />
       </button>
     </div>
   );

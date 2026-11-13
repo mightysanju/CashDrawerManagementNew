@@ -1,15 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { format } from 'date-fns';
-import { Clock, History } from 'lucide-react';
+import { Clock, History, Printer, FileText } from 'lucide-react';
 import { CashEntry, ShiftRecord } from '../types';
 import { ShiftHistory } from './ShiftHistory';
 import { DatabaseManager } from '../utils/database';
-//import { AdUnit } from './AdUnit';
+import { AdUnit } from './AdUnit';
 import { CashSection } from './cash-sections/CashSection';
 import { ReceiptsSection } from './cash-sections/ReceiptsSection';
 import { ActiveDrawers } from './ActiveDrawers';
 import { DrawerControls } from './DrawerControls';
 import { Navbar } from './Navbar';
+import { Footer } from './Footer';
+import { generatePDF, printReceipt } from '../utils/pdfGenerator';
 
 const DENOMINATIONS = {
   bill: [100, 50, 20, 10, 5, 1],
@@ -65,14 +67,14 @@ export function CashDrawer() {
 
   const startShift = async (openingEntries: CashEntry[]) => {
     if (!drawerNumber || !cashierName) {
-      alert('Please enter both drawer number and cashier name');
+      alert('Please enter both drawer number and cashier name.');
       return;
     }
 
     // Check if drawer number is already in use
     if (activeShifts.some((shift) => shift.drawerNumber === drawerNumber)) {
       alert(
-        'This drawer number is already in use. Please choose a different one.'
+        'This drawer number is already in use. Please select a different number or close the active shift.'
       );
       return;
     }
@@ -116,15 +118,19 @@ export function CashDrawer() {
     const currentBalance = calculateTotal();
     const difference = currentBalance - selectedShift.openingBalance;
 
-    if (
-      !window.confirm(`
-      Opening Balance: $${selectedShift.openingBalance.toFixed(2)}
-      Current Balance: $${currentBalance.toFixed(2)}
-      Difference: ${difference >= 0 ? '+' : ''}$${difference.toFixed(2)}
-      
-      Are you sure you want to end this shift?
-    `)
-    ) {
+    const confirmMessage = `
+Shift Summary for Drawer #${selectedShift.drawerNumber}
+Cashier: ${selectedShift.cashierName}
+---------------------------------
+Opening Float:    $${selectedShift.openingBalance.toFixed(2)}
+Counted Balance:  $${currentBalance.toFixed(2)}
+Shift Drop:       $${shiftDrop.toFixed(2)}
+Variance:         ${difference >= 0 ? '+' : ''}$${difference.toFixed(2)}
+
+Would you like to close this shift and generate your report?
+    `;
+
+    if (!window.confirm(confirmMessage.trim())) {
       return;
     }
 
@@ -141,7 +147,7 @@ export function CashDrawer() {
 
       await db.saveShift(closedShift);
 
-      // Generate PDF after saving the shift
+      // Safely download PDF report without popup blocker issues
       setTimeout(() => {
         generatePDF(closedShift);
       }, 100);
@@ -168,63 +174,76 @@ export function CashDrawer() {
   ) => {
     const total = denomination * quantity;
     const existingIndex = entries.findIndex(
-      (e) => e.type === type && e.denomination === denomination
+      (entry) => entry.type === type && entry.denomination === denomination
     );
 
-    const newEntries = [...entries];
     if (existingIndex >= 0) {
-      if (quantity === 0) {
-        newEntries.splice(existingIndex, 1);
-      } else {
-        newEntries[existingIndex] = { type, denomination, quantity, total };
+      const newEntries = [...entries];
+      newEntries[existingIndex] = { type, denomination, quantity, total };
+      setEntries(newEntries);
+      if (selectedShift) {
+        db.saveShift({
+          ...selectedShift,
+          entries: newEntries,
+        });
       }
-    } else if (quantity > 0) {
-      newEntries.push({ type, denomination, quantity, total });
-    }
-    setEntries(newEntries);
-
-    // Update the active shift in real-time
-    if (selectedShift) {
-      const updatedShift = { ...selectedShift, entries: newEntries };
-      setSelectedShift(updatedShift);
-      db.saveShift(updatedShift).catch(console.error);
+    } else {
+      const newEntries = [
+        ...entries,
+        { type, denomination, quantity, total },
+      ];
+      setEntries(newEntries);
+      if (selectedShift) {
+        db.saveShift({
+          ...selectedShift,
+          entries: newEntries,
+        });
+      }
     }
   };
 
-  if (isLoading) {
+  if (isLoading && activeShifts.length === 0) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="bg-white p-8 rounded-lg shadow-md">
-          <div className="text-xl font-semibold text-gray-700">Loading...</div>
-          <p className="mt-2 text-gray-500">
-            Please wait while we initialize the system.
-          </p>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center p-6 bg-white rounded-xl shadow-sm border border-gray-100">
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-700 font-medium">Initializing Cash Register Database...</p>
         </div>
       </div>
     );
   }
 
-  return (
-    <div> <Navbar />
-    <div className="min-h-screen pt-32 bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 py-8">
-        {/*<div className="mb-8">
-          <AdUnit slot="top-banner" className="mx-auto max-w-[728px]" />
-        </div>*/}
+  const currentTotal = calculateTotal();
+  const currentDifference = selectedShift ? currentTotal - selectedShift.openingBalance : 0;
 
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-3xl font-bold text-gray-800">
-            Cash Drawer Manager
-          </h1>
+  return (
+    <div className="min-h-screen bg-gray-50 flex flex-col justify-between pt-16">
+      <Navbar />
+
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full flex-grow">
+        {/* AdSense Top Banner */}
+        <AdUnit slot="1234567890" format="auto" className="mb-6" />
+
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight">
+              Cash Drawer Register
+            </h1>
+            <p className="text-xs sm:text-sm text-gray-500 mt-0.5">
+              Tally currency, record mid-shift cash drops, and print shift audit receipts.
+            </p>
+          </div>
+
           <button
             onClick={() => setShowHistory(!showHistory)}
-            className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 text-gray-700 font-semibold text-sm rounded-lg hover:bg-gray-50 hover:text-blue-600 transition shadow-xs"
           >
-            <History size={20} />
-            {showHistory ? 'Hide History' : 'Show History'}
+            <History size={18} />
+            {showHistory ? 'Hide Shift History' : 'View Shift History'}
           </button>
         </div>
 
+        {/* New Drawer Setup Section */}
         <DrawerControls
           drawerNumber={drawerNumber}
           cashierName={cashierName}
@@ -235,54 +254,104 @@ export function CashDrawer() {
           onStartShift={startShift}
         />
 
+        {/* Active Drawers Tab */}
         {activeShifts.length > 0 && (
-          <>
-            <h2 className="text-2xl font-semibold mb-4">Active Drawers</h2>
+          <div className="mb-8">
+            <h2 className="text-lg font-bold text-gray-900 mb-3 flex items-center">
+              <span className="w-2.5 h-2.5 rounded-full bg-green-500 mr-2 animate-pulse"></span>
+              Active Registered Tills ({activeShifts.length})
+            </h2>
             <ActiveDrawers
               shifts={activeShifts}
               onSelectShift={handleSelectShift}
               selectedShiftId={selectedShift?.id || null}
             />
-          </>
+          </div>
         )}
 
+        {/* Active Drawer Working Canvas */}
         {selectedShift && (
-          <div className="bg-white rounded-lg shadow-lg p-6 mb-8">
-            <div className="flex items-center justify-between bg-green-50 p-4 rounded-lg mb-6">
-              <div className="flex items-center gap-2">
-                <Clock size={20} className="text-green-600" />
-                <div className="text-green-700">
-                  <div>
-                    Drawer #{selectedShift.drawerNumber} -{' '}
-                    {selectedShift.cashierName}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-8">
+            <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between bg-blue-50/70 border border-blue-200/80 p-5 rounded-xl mb-6 gap-4">
+              <div className="flex items-start gap-3">
+                <div className="p-2.5 bg-blue-600 text-white rounded-lg shadow-xs">
+                  <Clock size={22} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-bold text-gray-900 text-base">
+                      Drawer #{selectedShift.drawerNumber}
+                    </h3>
+                    <span className="text-xs bg-blue-100 text-blue-800 font-medium px-2 py-0.5 rounded">
+                      Cashier: {selectedShift.cashierName}
+                    </span>
                   </div>
-                  <div>
+                  <div className="text-xs text-gray-500 mt-1">
                     Started: {format(new Date(selectedShift.openTime), 'PPpp')}
                   </div>
-                  <div className="font-medium">
-                    Opening Balance: ${selectedShift.openingBalance.toFixed(2)}
+                  <div className="text-sm font-semibold text-gray-800 mt-0.5">
+                    Opening Float: ${selectedShift.openingBalance.toFixed(2)}
                   </div>
                 </div>
               </div>
-              <div className="flex items-center gap-4">
-                <input
-                  type="number"
-                  placeholder="Shift Drop Amount"
-                  value={shiftDrop || ''}
-                  onChange={(e) =>
-                    setShiftDrop(parseFloat(e.target.value) || 0)
-                  }
-                  className="p-2 border rounded-lg w-40"
-                />
+
+              {/* Quick Actions & Shift Drop */}
+              <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto justify-end">
+                <div className="flex items-center bg-white border border-gray-300 rounded-lg px-3 py-1.5 shadow-xs">
+                  <span className="text-xs font-medium text-gray-500 mr-2">Drop: $</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={shiftDrop || ''}
+                    onChange={(e) =>
+                      setShiftDrop(parseFloat(e.target.value) || 0)
+                    }
+                    className="w-20 text-sm font-semibold outline-hidden"
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => printReceipt({
+                    ...selectedShift,
+                    closingBalance: currentTotal,
+                    shiftDrop,
+                    entries,
+                  })}
+                  title="Print receipt of current count"
+                  className="inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-300 text-gray-700 text-xs font-semibold rounded-lg hover:bg-gray-50 hover:text-blue-600 transition shadow-xs"
+                >
+                  <Printer size={15} />
+                  Print Receipt
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => generatePDF({
+                    ...selectedShift,
+                    closingBalance: currentTotal,
+                    shiftDrop,
+                    entries,
+                  })}
+                  title="Download current count PDF"
+                  className="inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-300 text-gray-700 text-xs font-semibold rounded-lg hover:bg-gray-50 hover:text-blue-600 transition shadow-xs"
+                >
+                  <FileText size={15} />
+                  PDF Summary
+                </button>
+
                 <button
                   onClick={endShift}
-                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                  className="px-4 py-2 bg-red-600 text-white font-semibold text-xs rounded-lg hover:bg-red-700 transition shadow-xs"
                 >
-                  End Shift
+                  End Shift & Reconcile
                 </button>
               </div>
             </div>
 
+            {/* Currency Breakdown Grids */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               <CashSection
                 title="Bills"
@@ -292,14 +361,14 @@ export function CashDrawer() {
                 onUpdate={updateEntry}
               />
               <CashSection
-                title="Coins"
+                title="Loose Coins"
                 type="coin"
                 entries={entries}
                 denominations={DENOMINATIONS.coin}
                 onUpdate={updateEntry}
               />
               <CashSection
-                title="Rolls"
+                title="Bank Rolls"
                 type="roll"
                 entries={entries}
                 denominations={DENOMINATIONS.roll}
@@ -308,45 +377,59 @@ export function CashDrawer() {
               <ReceiptsSection entries={entries} onUpdate={updateEntry} />
             </div>
 
-            <div className="mt-6 p-4 bg-gray-100 rounded-lg">
-              <div className="flex justify-between items-center">
-                <span className="text-xl font-semibold">Current Balance:</span>
-                <div className="text-right">
-                  <span className="text-2xl font-bold">
-                    ${calculateTotal().toFixed(2)}
+            {/* Summary Bar */}
+            <div className="mt-8 p-5 bg-gray-50 border border-gray-200 rounded-xl">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                <div>
+                  <span className="text-xs uppercase tracking-wider font-bold text-gray-500 block mb-0.5">
+                    Live Cash Counted
                   </span>
-                  {calculateTotal() !== selectedShift.openingBalance && (
-                    <div
-                      className={`text-sm font-medium ${
-                        calculateTotal() > selectedShift.openingBalance
-                          ? 'text-green-600'
-                          : 'text-red-600'
-                      }`}
-                    >
-                      {calculateTotal() > selectedShift.openingBalance
-                        ? '+'
-                        : ''}
-                      $
-                      {(
-                        calculateTotal() - selectedShift.openingBalance
-                      ).toFixed(2)}{' '}
-                      from opening
-                    </div>
-                  )}
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-3xl font-extrabold text-gray-900 font-mono">
+                      ${currentTotal.toFixed(2)}
+                    </span>
+                    <span className="text-xs text-gray-500">
+                      (including float + receipts)
+                    </span>
+                  </div>
+                </div>
+
+                <div className="text-left sm:text-right">
+                  <span className="text-xs uppercase tracking-wider font-bold text-gray-500 block mb-0.5">
+                    Variance From Float
+                  </span>
+                  <span
+                    className={`inline-flex items-center text-sm font-bold px-2.5 py-1 rounded-md ${
+                      currentDifference === 0
+                        ? 'bg-gray-100 text-gray-700'
+                        : currentDifference > 0
+                          ? 'bg-green-100 text-green-800'
+                          : 'bg-red-100 text-red-800'
+                    }`}
+                  >
+                    {currentDifference >= 0 ? '+' : ''}${currentDifference.toFixed(2)}
+                    {currentDifference > 0 && ' (Intake / Over)'}
+                    {currentDifference < 0 && ' (Shortage)'}
+                  </span>
                 </div>
               </div>
             </div>
           </div>
         )}
 
+        {/* History Modal / Drawer */}
         {showHistory && (
-          <ShiftHistory history={shiftHistory} onHistoryCleared={loadData} />
+          <div className="mb-8">
+            <ShiftHistory history={shiftHistory} onHistoryCleared={loadData} />
+          </div>
         )}
 
-        {/*<div className="mt-8">
-          <AdUnit slot="bottom-banner" className="mx-auto max-w-[728px]" />
-        </div>*/}
-      </div>
-    </div></div>
+        {/* AdSense Bottom Banner */}
+        <AdUnit slot="9876543210" format="auto" className="mt-8" />
+      </main>
+
+      <Footer />
+    </div>
   );
 }
+export default CashDrawer;

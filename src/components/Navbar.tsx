@@ -1,60 +1,87 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Menu, X, DollarSign } from 'lucide-react';
+import { Link, useLocation } from 'react-router-dom';
+import { Menu, X, DollarSign, BookOpen } from 'lucide-react';
 
 export function Navbar() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const location = useLocation();
+
+  const isActive = (path: string) => location.pathname === path;
 
   return (
-    <nav className="bg-white shadow-sm fixed w-full top-0 z-50">
+    <nav className="bg-white/95 backdrop-blur-md shadow-sm fixed w-full top-0 z-50 border-b border-gray-100">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16">
-          <div className="flex">
-            <Link to="/" className="flex items-center">
-              <img src="/favicon.png" alt="Logo" className="h-9 w-9" />
-              {/*<DollarSign className="h-8 w-8 text-blue-600" />*/}
-              <span className="ml-2 text-2xl font-bold text-gray-900">Cash Manager</span>
+          <div className="flex items-center">
+            <Link to="/" className="flex items-center space-x-2">
+              <span className="bg-blue-600 text-white p-1.5 rounded-lg shadow-sm">
+                <DollarSign className="h-6 w-6" />
+              </span>
+              <span className="text-xl font-bold bg-gradient-to-r from-gray-900 to-gray-700 bg-clip-text text-transparent">
+                Cash Manager
+              </span>
             </Link>
           </div>
 
           {/* Desktop Navigation */}
-          <div className="hidden md:flex md:items-center md:space-x-8">
+          <div className="hidden md:flex md:items-center md:space-x-1 lg:space-x-4">
             <Link
               to="/app"
-              className="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition-colors"
+              className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                isActive('/app')
+                  ? 'text-blue-600 bg-blue-50'
+                  : 'text-gray-700 hover:text-blue-600 hover:bg-gray-50'
+              }`}
             >
-              Launch App
+              Open Drawer
             </Link>
-            <a
-              href="#features"
-              className="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition-colors"
+            <Link
+              to="/guide"
+              className={`px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center ${
+                isActive('/guide')
+                  ? 'text-blue-600 bg-blue-50'
+                  : 'text-gray-700 hover:text-blue-600 hover:bg-gray-50'
+              }`}
             >
-              Features
-            </a>
-            {/*<a
-              href="#privacy"
-              className="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition-colors"
+              <BookOpen size={16} className="mr-1.5" />
+              SOP Guide & FAQ
+            </Link>
+            <Link
+              to="/about"
+              className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                isActive('/about')
+                  ? 'text-blue-600 bg-blue-50'
+                  : 'text-gray-700 hover:text-blue-600 hover:bg-gray-50'
+              }`}
             >
-              Privacy
-            </a>*/}
+              About
+            </Link>
             <Link
               to="/contacts"
-              className="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition-colors"
+              className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                isActive('/contacts')
+                  ? 'text-blue-600 bg-blue-50'
+                  : 'text-gray-700 hover:text-blue-600 hover:bg-gray-50'
+              }`}
             >
-              Contact Us
+              Contact
             </Link>
-           <Link
+            <Link
               to="/privacy"
-              className="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium transition-colors"
+              className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                isActive('/privacy')
+                  ? 'text-blue-600 bg-blue-50'
+                  : 'text-gray-700 hover:text-blue-600 hover:bg-gray-50'
+              }`}
             >
-              Privacy Policy
+              Privacy
             </Link>
             
             <Link
               to="/app"
-              className="bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-700 transition-colors"
+              className="ml-3 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition shadow-sm hover:shadow"
             >
-              Get Started
+              Launch Register
             </Link>
           </div>
 
@@ -63,6 +90,7 @@ export function Navbar() {
             <button
               onClick={() => setIsMenuOpen(!isMenuOpen)}
               className="inline-flex items-center justify-center p-2 rounded-md text-gray-700 hover:text-blue-600 hover:bg-gray-100 transition-colors"
+              aria-label="Toggle navigation menu"
             >
               {isMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
             </button>
@@ -72,38 +100,56 @@ export function Navbar() {
 
       {/* Mobile menu */}
       {isMenuOpen && (
-        <div className="md:hidden">
-          <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3">
+        <div className="md:hidden border-b border-gray-200 bg-white shadow-lg">
+          <div className="px-3 pt-2 pb-4 space-y-1">
             <Link
               to="/app"
-              className="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-100 transition-colors"
-            >
-              Launch App
-            </Link>
-            <a
-              href="#features"
-              className="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-100 transition-colors"
               onClick={() => setIsMenuOpen(false)}
+              className="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-100"
             >
-              Features
-            </a>
+              Open Drawer
+            </Link>
+            <Link
+              to="/guide"
+              onClick={() => setIsMenuOpen(false)}
+              className="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-100"
+            >
+              SOP Guide & FAQ
+            </Link>
+            <Link
+              to="/about"
+              onClick={() => setIsMenuOpen(false)}
+              className="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-100"
+            >
+              About Platform
+            </Link>
             <Link
               to="/contacts"
-              className="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-100 transition-colors"
+              onClick={() => setIsMenuOpen(false)}
+              className="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-100"
             >
               Contact Us
             </Link>
             <Link
               to="/privacy"
-              className="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-100 transition-colors"
+              onClick={() => setIsMenuOpen(false)}
+              className="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-100"
             >
               Privacy Policy
             </Link>
             <Link
-              to="/app"
-              className="block px-3 py-2 rounded-md text-base font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+              to="/terms"
+              onClick={() => setIsMenuOpen(false)}
+              className="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-100"
             >
-              Get Started
+              Terms of Service
+            </Link>
+            <Link
+              to="/app"
+              onClick={() => setIsMenuOpen(false)}
+              className="block px-3 py-2 mt-2 text-center rounded-md text-base font-semibold bg-blue-600 text-white hover:bg-blue-700"
+            >
+              Launch Register
             </Link>
           </div>
         </div>

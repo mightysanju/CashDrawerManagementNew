@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://cashdrawermanagement.netlify.app/sitemap.xml
