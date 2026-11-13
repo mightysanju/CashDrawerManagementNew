@@ -33,13 +33,11 @@ export function CashDrawer() {
   const [showHistory, setShowHistory] = useState(false);
   const [entries, setEntries] = useState<CashEntry[]>([]);
   const [shiftDrop, setShiftDrop] = useState<number>(0);
-  const [isLoading, setIsLoading] = useState(false);
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
   const [syncState, setSyncState] = useState<SyncState>(p2pSyncManager.getState());
 
   const loadData = async () => {
     try {
-      setIsLoading(true);
       const allShifts = await db.getAllShifts();
       const active = allShifts.filter((shift) => shift.status === 'open');
       const closed = allShifts.filter((shift) => shift.status === 'closed');
@@ -47,13 +45,27 @@ export function CashDrawer() {
       setActiveShifts(active);
       setShiftHistory(closed);
 
-      if (active.length > 0 && !selectedShift) {
-        handleSelectShift(active[0]);
-      }
+      setSelectedShift((prevSelected) => {
+        if (prevSelected) {
+          const updated = active.find((s) => s.id === prevSelected.id);
+          if (updated) {
+            setEntries(updated.entries);
+            setShiftDrop(updated.shiftDrop || 0);
+            return updated;
+          }
+        }
+        if (active.length > 0) {
+          setEntries(active[0].entries);
+          setShiftDrop(active[0].shiftDrop || 0);
+          setOrganizationName(active[0].organizationName || '');
+          setDrawerNumber(active[0].drawerNumber);
+          setCashierName(active[0].cashierName);
+          return active[0];
+        }
+        return null;
+      });
     } catch (error) {
       console.error('Error loading data:', error);
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -97,7 +109,6 @@ export function CashDrawer() {
     }
 
     try {
-      setIsLoading(true);
       const openingBalance = openingEntries.reduce(
         (sum, entry) => sum + entry.total,
         0
@@ -126,8 +137,6 @@ export function CashDrawer() {
     } catch (error) {
       console.error('Error starting shift:', error);
       alert('Failed to start shift. Please try again.');
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -154,7 +163,6 @@ Would you like to close this shift and generate your report?
     }
 
     try {
-      setIsLoading(true);
       const closedShift: ShiftRecord = {
         ...selectedShift,
         closeTime: new Date().toISOString(),
@@ -179,8 +187,6 @@ Would you like to close this shift and generate your report?
     } catch (error) {
       console.error('Error ending shift:', error);
       alert('Failed to end shift. Please try again.');
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -218,17 +224,6 @@ Would you like to close this shift and generate your report?
       p2pSyncManager.broadcastShift(updatedShift);
     }
   };
-
-  if (isLoading && activeShifts.length === 0) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center p-6 bg-white rounded-xl shadow-sm border border-gray-100">
-          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-700 font-medium">Initializing Cash Register Database...</p>
-        </div>
-      </div>
-    );
-  }
 
   const currentTotal = calculateTotal();
   const currentDifference = selectedShift ? currentTotal - selectedShift.openingBalance : 0;

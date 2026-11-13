@@ -6,7 +6,7 @@ export type SyncMessage =
   | { type: 'FULL_SYNC'; shifts: ShiftRecord[]; senderId?: string }
   | { type: 'SHIFT_UPSERT'; shift: ShiftRecord; senderId?: string }
   | { type: 'HISTORY_CLEARED'; senderId?: string }
-  | { type: 'PING' };
+  | { type: 'HEARTBEAT'; senderId?: string };
 
 export type SyncRole = 'hub' | 'client' | 'standalone';
 export type SyncStatus = 'disconnected' | 'scanning' | 'connected' | 'error';
@@ -20,15 +20,29 @@ export interface SyncState {
   errorMessage: string | null;
 }
 
-const PEER_PREFIX = 'cdm-v2-';
+const PEER_PREFIX = 'cdm-lan-v3-';
+const BROADCAST_CHANNEL_NAME = 'cdm_lan_broadcast';
 const db = new DatabaseManager();
+
+// Google's public STUN servers for reliable local LAN / Wi-Fi NAT traversal
+const STUN_CONFIG = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+  ],
+};
 
 class P2PSyncManager {
   private peer: Peer | null = null;
   private connections: Map<string, DataConnection> = new Map();
+  private broadcastChannel: BroadcastChannel | null = null;
   private storeSlug: string = 'main-store';
   private reconnectTimer: NodeJS.Timeout | null = null;
-  private isAutoConnecting: boolean = false;
+  private heartbeatTimer: NodeJS.Timeout | null = null;
+  private isConnecting: boolean = false;
+  private myClientId: string = '';
 
   private state: SyncState = {
     status: 'disconnected',
@@ -41,6 +55,49 @@ class P2PSyncManager {
 
   private stateListeners: Set<(state: SyncState) => void> = new Set();
   private dataListeners: Set<(action: string, data?: unknown) => void> = new Set();
+
+  constructor() {
+    this.initBroadcastChannel();
+    // Load store name from localStorage if previously configured
+    try {
+      const saved = localStorage.getItem('cdm_store_name');
+      if (saved) {
+        this.state.storeName = saved;
+        this.storeSlug = this.sanitizeSlug(saved);
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  /**
+   * Initializes native BroadcastChannel for instant zero-latency sync across
+   * tabs / windows on the same machine
+   */
+  private initBroadcastChannel() {
+    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+      try {
+        this.broadcastChannel = new BroadcastChannel(BROADCAST_CHANNEL_NAME);
+        this.broadcastChannel.onmessage = async (event) => {
+          const msg = event.data as SyncMessage;
+          if (!msg || !msg.type || msg.senderId === this.myClientId) return;
+
+          if (msg.type === 'FULL_SYNC' && Array.isArray(msg.shifts)) {
+            await db.bulkSaveShifts(msg.shifts);
+            this.notifyData('SYNC_COMPLETED', msg.shifts);
+          } else if (msg.type === 'SHIFT_UPSERT' && msg.shift) {
+            await db.saveShift(msg.shift);
+            this.notifyData('SHIFT_UPDATED', msg.shift);
+          } else if (msg.type === 'HISTORY_CLEARED') {
+            await db.clearHistory();
+            this.notifyData('HISTORY_CLEARED');
+          }
+        };
+      } catch (err) {
+        console.debug('BroadcastChannel not available:', err);
+      }
+    }
+  }
 
   public getState(): SyncState {
     return { ...this.state };
@@ -78,12 +135,12 @@ class P2PSyncManager {
 
   /**
    * Automatically scans local network:
-   * 1. Tries to claim Hub role.
-   * 2. If Hub is already running on another computer, automatically connects to it as a Client!
+   * 1. Attempts to become the Primary Hub for this store.
+   * 2. If the Hub is already active on another machine, connects to it as a client peer.
    */
   public async autoConnect(storeName?: string) {
-    if (this.isAutoConnecting) return;
-    this.isAutoConnecting = true;
+    if (this.isConnecting) return;
+    this.isConnecting = true;
 
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
@@ -92,6 +149,11 @@ class P2PSyncManager {
 
     const currentStore = storeName || this.state.storeName || 'Main Store';
     this.storeSlug = this.sanitizeSlug(currentStore);
+    try {
+      localStorage.setItem('cdm_store_name', currentStore);
+    } catch {
+      // ignore
+    }
 
     this.updateState({
       status: 'scanning',
@@ -101,36 +163,51 @@ class P2PSyncManager {
 
     const hubId = this.getHubPeerId(this.storeSlug);
 
-    // Step 1: Try to bind as the Hub for this store
     try {
+      // Step 1: Try to claim the Hub role
       await this.tryHostHub(hubId);
-      this.isAutoConnecting = false;
     } catch {
-      // Step 2: Hub already exists! Connect to it as a client peer
+      // Step 2: Hub exists! Connect as Client
       try {
         await this.connectAsClient(hubId);
-      } catch (clientErr) {
-        console.warn('Auto-connect client attempt failed, will retry:', clientErr);
-        this.scheduleReconnect();
-      } finally {
-        this.isAutoConnecting = false;
+      } catch (err: unknown) {
+        console.debug('Client connection attempt failed, scheduling auto-retry:', err);
+        this.updateState({
+          status: 'error',
+          errorMessage: 'Unable to reach register hub. Retrying in background...',
+        });
+        this.scheduleReconnect(currentStore);
       }
+    } finally {
+      this.isConnecting = false;
+      this.startHeartbeat();
     }
   }
 
   /**
-   * Tries to become the Primary Hub
+   * Tries to bind as the Primary Hub
    */
   private tryHostHub(hubId: string): Promise<void> {
     return new Promise((resolve, reject) => {
       this.cleanupPeer();
 
-      const peer = new Peer(hubId, { debug: 1 });
-      let hasResolved = false;
+      let peer: Peer;
+      try {
+        peer = new Peer(hubId, {
+          config: STUN_CONFIG,
+          debug: 1,
+        });
+      } catch (e) {
+        reject(e);
+        return;
+      }
+
+      let settled = false;
 
       peer.on('open', (id) => {
-        hasResolved = true;
+        settled = true;
         this.peer = peer;
+        this.myClientId = id;
         this.updateState({
           status: 'connected',
           role: 'hub',
@@ -147,35 +224,64 @@ class P2PSyncManager {
       });
 
       peer.on('error', (err) => {
-        if (!hasResolved) {
-          peer.destroy();
+        if (!settled) {
+          settled = true;
+          try {
+            peer.destroy();
+          } catch {
+            // ignore
+          }
           reject(err);
         } else {
-          console.error('Hub error after open:', err);
-          this.updateState({ errorMessage: err.message });
+          console.error('Hub error after active:', err);
         }
       });
     });
   }
 
   /**
-   * Connects to the existing Primary Hub
+   * Connects to the existing Primary Hub as a Client Peer
    */
   private connectAsClient(hubId: string): Promise<void> {
     return new Promise((resolve, reject) => {
       this.cleanupPeer();
 
       const clientId = this.getClientPeerId(this.storeSlug);
-      const peer = new Peer(clientId, { debug: 1 });
-      let hasResolved = false;
+      let peer: Peer;
+      try {
+        peer = new Peer(clientId, {
+          config: STUN_CONFIG,
+          debug: 1,
+        });
+      } catch (e) {
+        reject(e);
+        return;
+      }
+
+      let settled = false;
+      const timeout = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          try {
+            peer.destroy();
+          } catch {
+            // ignore
+          }
+          reject(new Error('Connection timeout to hub'));
+        }
+      }, 6000);
 
       peer.on('open', (myId) => {
         this.peer = peer;
+        this.myClientId = myId;
 
         const conn = peer.connect(hubId, { reliable: true });
 
-        conn.on('open', async () => {
-          hasResolved = true;
+        const setupClient = async () => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timeout);
+
           this.connections.set(conn.peer, conn);
           this.setupConnectionHandlers(conn);
 
@@ -187,58 +293,97 @@ class P2PSyncManager {
             errorMessage: null,
           });
 
-          // Send our local shifts to the hub to ensure two-way sync
-          const localShifts = await db.getAllShifts();
-          conn.send({
-            type: 'FULL_SYNC',
-            shifts: localShifts,
-            senderId: myId,
-          });
+          // Send local database to Hub for two-way merge
+          try {
+            const localShifts = await db.getAllShifts();
+            if (conn.open) {
+              conn.send({
+                type: 'FULL_SYNC',
+                shifts: localShifts,
+                senderId: myId,
+              });
+            }
+          } catch (e) {
+            console.error('Error sending local shifts on connect:', e);
+          }
 
           resolve();
-        });
+        };
+
+        if (conn.open) {
+          setupClient();
+        } else {
+          conn.on('open', setupClient);
+        }
 
         conn.on('error', (err) => {
-          if (!hasResolved) {
-            peer.destroy();
+          if (!settled) {
+            settled = true;
+            clearTimeout(timeout);
+            try {
+              peer.destroy();
+            } catch {
+              // ignore
+            }
             reject(err);
           }
         });
 
         conn.on('close', () => {
-          console.log('Connection to Hub closed. Initiating failover/re-scan...');
           this.connections.delete(conn.peer);
           this.updateState({
             status: 'disconnected',
             connectedCount: 0,
           });
-          this.scheduleReconnect();
+          this.scheduleReconnect(this.state.storeName);
         });
       });
 
       peer.on('error', (err) => {
-        if (!hasResolved) {
-          peer.destroy();
+        if (!settled) {
+          settled = true;
+          clearTimeout(timeout);
+          try {
+            peer.destroy();
+          } catch {
+            // ignore
+          }
           reject(err);
         }
       });
     });
   }
 
+  /**
+   * Handles incoming peer connections on the Hub
+   * Checks both conn.open AND conn.on('open') to prevent missed events!
+   */
   private handleIncomingConnection(conn: DataConnection) {
-    conn.on('open', async () => {
+    const setupHubConn = async () => {
       this.connections.set(conn.peer, conn);
       this.setupConnectionHandlers(conn);
       this.updateState({ connectedCount: this.connections.size });
 
-      // Automatically send the Hub's shift database to the newly connected register
-      const allShifts = await db.getAllShifts();
-      conn.send({
-        type: 'FULL_SYNC',
-        shifts: allShifts,
-        senderId: this.peer?.id,
-      });
-    });
+      // Automatically send the Hub's full shift history and open drawers to the joining register
+      try {
+        const allShifts = await db.getAllShifts();
+        if (conn.open) {
+          conn.send({
+            type: 'FULL_SYNC',
+            shifts: allShifts,
+            senderId: this.myClientId,
+          });
+        }
+      } catch (err) {
+        console.error('Error sending initial sync to joined peer:', err);
+      }
+    };
+
+    if (conn.open) {
+      setupHubConn();
+    } else {
+      conn.on('open', setupHubConn);
+    }
   }
 
   private setupConnectionHandlers(conn: DataConnection) {
@@ -256,7 +401,7 @@ class P2PSyncManager {
           await db.saveShift(msg.shift);
           this.notifyData('SHIFT_UPDATED', msg.shift);
 
-          // If this machine is the Hub, forward the update to all OTHER connected registers!
+          // If this machine is the Hub, relay the update to all OTHER connected registers
           if (this.state.role === 'hub') {
             this.connections.forEach((otherConn) => {
               if (otherConn.peer !== conn.peer && otherConn.open) {
@@ -276,6 +421,8 @@ class P2PSyncManager {
             }
           });
         }
+      } else if (msg.type === 'HEARTBEAT') {
+        // Keep-alive received
       }
     });
 
@@ -290,12 +437,30 @@ class P2PSyncManager {
     });
   }
 
-  private scheduleReconnect() {
+  private startHeartbeat() {
+    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    this.heartbeatTimer = setInterval(() => {
+      if (this.connections.size > 0) {
+        const ping: SyncMessage = { type: 'HEARTBEAT', senderId: this.myClientId };
+        this.connections.forEach((conn) => {
+          if (conn.open) {
+            try {
+              conn.send(ping);
+            } catch {
+              // ignore
+            }
+          }
+        });
+      }
+    }, 12000);
+  }
+
+  private scheduleReconnect(storeName: string) {
     if (this.reconnectTimer) return;
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
-      this.autoConnect(this.state.storeName);
-    }, 3000);
+      this.autoConnect(storeName);
+    }, 4000);
   }
 
   private notifyData(action: string, data?: unknown) {
@@ -303,36 +468,67 @@ class P2PSyncManager {
   }
 
   /**
-   * Broadcasts a shift upsert to all active peer connections
+   * Broadcasts a shift upsert to both BroadcastChannel (local windows)
+   * and WebRTC DataChannels (remote computers on LAN)
    */
   public broadcastShift(shift: ShiftRecord) {
-    if (this.connections.size === 0) return;
-    const msg: SyncMessage = { 
-      type: 'SHIFT_UPSERT', 
-      shift, 
-      senderId: this.peer?.id 
+    const msg: SyncMessage = {
+      type: 'SHIFT_UPSERT',
+      shift,
+      senderId: this.myClientId,
     };
-    this.connections.forEach((conn) => {
-      if (conn.open) {
-        conn.send(msg);
+
+    // 1. Send via local BroadcastChannel (instant for other tabs/windows)
+    if (this.broadcastChannel) {
+      try {
+        this.broadcastChannel.postMessage(msg);
+      } catch {
+        // ignore
       }
-    });
+    }
+
+    // 2. Send via WebRTC DataChannels to other physical machines
+    if (this.connections.size > 0) {
+      this.connections.forEach((conn) => {
+        if (conn.open) {
+          try {
+            conn.send(msg);
+          } catch {
+            // ignore
+          }
+        }
+      });
+    }
   }
 
   /**
-   * Broadcasts history cleared
+   * Broadcasts history cleared across all channels
    */
   public broadcastHistoryCleared() {
-    if (this.connections.size === 0) return;
-    const msg: SyncMessage = { 
-      type: 'HISTORY_CLEARED', 
-      senderId: this.peer?.id 
+    const msg: SyncMessage = {
+      type: 'HISTORY_CLEARED',
+      senderId: this.myClientId,
     };
-    this.connections.forEach((conn) => {
-      if (conn.open) {
-        conn.send(msg);
+
+    if (this.broadcastChannel) {
+      try {
+        this.broadcastChannel.postMessage(msg);
+      } catch {
+        // ignore
       }
-    });
+    }
+
+    if (this.connections.size > 0) {
+      this.connections.forEach((conn) => {
+        if (conn.open) {
+          try {
+            conn.send(msg);
+          } catch {
+            // ignore
+          }
+        }
+      });
+    }
   }
 
   private cleanupPeer() {
@@ -359,6 +555,10 @@ class P2PSyncManager {
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
+    }
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
     }
     this.cleanupPeer();
     this.updateState({
