@@ -67,14 +67,22 @@ export function Navbar() {
               Privacy
             </Link>
             
-            {/* FrontDesk Call-To-Action Button */}
+            {/* FrontDesk Call-To-Action Button — Welcoming & Animated */}
             <Link
               to="/app"
-              className="ml-3 inline-flex items-center space-x-1.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white px-3.5 py-1.5 rounded-lg text-xs font-medium transition-colors shadow-xs"
+              className="group relative ml-3 inline-flex items-center space-x-2 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-600 bg-[length:200%_auto] hover:bg-right text-white px-4 py-2 rounded-xl text-xs font-bold transition-all duration-300 shadow-md shadow-blue-600/25 hover:shadow-lg hover:shadow-indigo-600/35 hover:scale-105 active:scale-95 ring-1 ring-white/20 overflow-hidden cursor-pointer"
             >
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-              <span>Register</span>
-              <ArrowRight size={13} className="text-blue-200" />
+              {/* Shimmer sweep animation on hover */}
+              <span className="absolute inset-0 w-1/2 h-full bg-gradient-to-r from-transparent via-white/25 to-transparent skew-x-[-20deg] -translate-x-full group-hover:translate-x-[300%] transition-transform duration-1000 ease-out pointer-events-none" />
+
+              {/* Pulsing Live Beacon Indicator */}
+              <span className="relative flex h-2 w-2 shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400 shadow-xs" />
+              </span>
+
+              <span className="tracking-wide">Open Register</span>
+              <ArrowRight size={13} className="text-blue-200 group-hover:text-white group-hover:translate-x-1 transition-all duration-200 shrink-0" />
             </Link>
 
             {/* Dark Mode Toggle Button */}
@@ -121,9 +129,16 @@ export function Navbar() {
             <Link
               to="/app"
               onClick={() => setIsMenuOpen(false)}
-              className="block px-3 py-2 rounded-lg text-sm font-medium text-blue-600 bg-blue-50 dark:bg-slate-800 dark:text-blue-400"
+              className="flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 shadow-sm transition active:scale-95"
             >
-              Register
+              <div className="flex items-center space-x-2">
+                <span className="relative flex h-2 w-2 shrink-0">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400" />
+                </span>
+                <span>Open Register</span>
+              </div>
+              <ArrowRight size={15} className="text-blue-100" />
             </Link>
             <Link
               to="/guide"
