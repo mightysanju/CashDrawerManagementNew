@@ -173,6 +173,16 @@ export class DatabaseManager {
   async saveOrganization(name: string): Promise<void> {
     const db = await this.dbPromise;
     await db.put(STORES.ORGANIZATION, { id: 'default', name });
+    try {
+      const currentSettings = await this.getSettings();
+      await this.saveSettings({ ...currentSettings, organizationName: name });
+    } catch {
+      // ignore
+    }
+  }
+
+  async saveOrganizationName(name: string): Promise<void> {
+    return this.saveOrganization(name);
   }
 
   async getOrganization(): Promise<string> {
@@ -218,9 +228,16 @@ export class DatabaseManager {
 
   async saveUser(user: UserAccount): Promise<void> {
     const db = await this.dbPromise;
+    const cleanUsername = user.username.trim().toLowerCase();
+
+    // Check if user with this username already exists so the unique index constraint is respected
+    const existing = await this.getUserByUsername(cleanUsername);
+    const idToUse = existing ? existing.id : (user.id || `usr_${Date.now()}`);
+
     await db.put(STORES.USERS, {
       ...user,
-      username: user.username.trim().toLowerCase(),
+      id: idToUse,
+      username: cleanUsername,
     });
   }
 

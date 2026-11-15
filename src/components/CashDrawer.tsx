@@ -463,7 +463,7 @@ export function CashDrawer() {
     setIsNewHotelSetupModalOpen(false);
     await loadShiftsData();
     await loadLogsData();
-    setWelcomeToast(`🎉 Welcome to ${manager.fullName}! Hotel network initialized successfully.`);
+    setWelcomeToast(`🎉 Welcome, ${manager.fullName}! Hotel network initialized successfully.`);
     setTimeout(() => setWelcomeToast(null), 5000);
   };
 

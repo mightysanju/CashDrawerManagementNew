@@ -77,9 +77,10 @@ export const NewHotelSetupModal: React.FC<NewHotelSetupModalProps> = ({
       authManager.updateCurrentUser(managerUser);
 
       onSetupComplete(managerUser);
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Setup error:', err);
-      setError('Failed to initialize database. Please try again.');
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(`Setup error: ${msg}`);
     } finally {
       setLoading(false);
     }
