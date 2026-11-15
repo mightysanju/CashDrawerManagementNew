@@ -34,7 +34,7 @@ export const ExtensionModal: React.FC<ExtensionModalProps> = ({
               <Puzzle className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h3 className="text-base font-bold">FrontDesk Pro — Browser Extension</h3>
+              <h3 className="text-base font-bold text-white">FrontDesk Pro — Browser Extension</h3>
               <p className="text-xs text-gray-400">Floating Shift Log & Lead Capture Assistant</p>
             </div>
           </div>

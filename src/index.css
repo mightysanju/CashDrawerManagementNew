@@ -79,10 +79,21 @@ html:not(.dark) footer .text-emerald-800 span {
   color: #065f46 !important;
 }
 
-html:not(.dark) h1,
-html:not(.dark) h2,
-html:not(.dark) h3 {
-  color: #0f172a !important;
+/* Ensure all dark/gradient modal headers and text-white elements stay crisp white */
+.text-white,
+[class*="text-white"] {
+  color: #ffffff !important;
+}
+
+.bg-gradient-to-r h1,
+.bg-gradient-to-r h2,
+.bg-gradient-to-r h3,
+.bg-gradient-to-r h4,
+.bg-slate-900 h1,
+.bg-slate-900 h2,
+.bg-slate-900 h3,
+.bg-slate-900 h4 {
+  color: #ffffff !important;
 }
 
 /* ==========================================================================

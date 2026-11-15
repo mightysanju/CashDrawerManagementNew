@@ -68,7 +68,7 @@ export const OpenShiftModal: React.FC<OpenShiftModalProps> = ({
               <Coins className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h3 className="text-base font-bold">Start Shift — Open Cash Drawer</h3>
+              <h3 className="text-base font-bold text-white">Start Shift — Open Cash Drawer</h3>
               <p className="text-xs text-gray-400">Confirm opening till float before taking payments</p>
             </div>
           </div>

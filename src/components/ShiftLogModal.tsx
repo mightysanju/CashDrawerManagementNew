@@ -311,7 +311,7 @@ export const ShiftLogModal: React.FC<ShiftLogModalProps> = ({
               <FileText className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h2 className="text-lg font-bold">
+              <h2 className="text-lg font-bold text-white">
                 {editEntry ? 'Edit Shift Log Entry' : 'New Shift Log & Hospitality Lead'}
               </h2>
               <p className="text-xs text-blue-100">

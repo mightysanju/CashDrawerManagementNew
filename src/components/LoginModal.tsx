@@ -59,7 +59,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
               <Lock className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h2 className="text-xl font-bold">Staff Login Required</h2>
+              <h2 className="text-xl font-bold text-white">Staff Login Required</h2>
               <p className="text-xs text-blue-100 mt-0.5">
                 Sign in to manage drawers, cash drops, and shift logs
               </p>

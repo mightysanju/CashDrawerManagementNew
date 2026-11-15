@@ -57,7 +57,7 @@ export const CloseShiftModal: React.FC<CloseShiftModalProps> = ({
               <Coins className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h3 className="text-base font-bold">Close Shift & Drawer #{shift.drawerNumber}</h3>
+              <h3 className="text-base font-bold text-white">Close Shift & Drawer #{shift.drawerNumber}</h3>
               <p className="text-xs text-gray-400">Final till balancing and safe deposit drop</p>
             </div>
           </div>

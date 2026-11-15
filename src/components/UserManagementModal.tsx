@@ -439,7 +439,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
               <ShieldCheck className="w-5 h-5 text-indigo-300" />
             </div>
             <div>
-              <h2 className="text-lg font-bold">Manager Administration Console</h2>
+              <h2 className="text-lg font-bold text-white">Manager Administration Console</h2>
               <p className="text-xs text-indigo-200">
                 Staff accounts, log categories, date-range audit reports & local database explorer
               </p>
