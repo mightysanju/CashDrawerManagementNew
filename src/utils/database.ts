@@ -338,6 +338,8 @@ export class DatabaseManager {
       return {
         ...s,
         maxOpenDrawers: typeof s.maxOpenDrawers === 'number' && s.maxOpenDrawers > 0 ? s.maxOpenDrawers : 1,
+        databaseEpoch: typeof s.databaseEpoch === 'number' ? s.databaseEpoch : 0,
+        databaseId: s.databaseId || 'default',
       };
     }
     return {
@@ -345,6 +347,8 @@ export class DatabaseManager {
       salesRateMultiplier: 120,
       organizationName: 'Grand Hotel & Suites',
       maxOpenDrawers: 1,
+      databaseEpoch: 0,
+      databaseId: 'default',
     };
   }
 
@@ -458,6 +462,8 @@ export class DatabaseManager {
       id: 'default',
       salesRateMultiplier: 120,
       organizationName: 'Grand Hotel & Suites',
+      databaseEpoch: 0,
+      databaseId: 'purged',
     });
   }
 
@@ -568,9 +574,16 @@ export class DatabaseManager {
     if (archive.users && archive.users.length > 0) {
       await this.bulkSaveUsers(archive.users);
     }
-    if (archive.settings) {
-      await this.saveSettings(archive.settings);
-    }
+    const restoreEpoch = Date.now();
+    const restoredSettings: AppSettings = {
+      ...(archive.settings || {}),
+      id: 'default',
+      salesRateMultiplier: archive.settings?.salesRateMultiplier || 120,
+      organizationName: archive.hotelName || archive.settings?.organizationName || 'Grand Hotel & Suites',
+      databaseEpoch: restoreEpoch,
+      databaseId: `db_restore_${restoreEpoch}_${Math.random().toString(36).substring(2, 7)}`,
+    };
+    await this.saveSettings(restoredSettings);
     if (archive.hotelName) {
       await this.saveOrganization(archive.hotelName);
     }

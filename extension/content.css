@@ -38,11 +38,49 @@
 
 .fdp-floating-trigger:hover {
   background: #1e293b;
-  transform: translateY(-1px);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.25), 0 2px 6px rgba(0, 0, 0, 0.12);
 }
 
 .fdp-floating-trigger:active {
   transform: translateY(0);
+}
+
+/* 3D Animated Log Book Hover & Motion */
+.fdp-logbook-svg {
+  overflow: visible;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.logbook-cover-3d {
+  transform-origin: 8px center;
+  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.fdp-floating-trigger:hover .logbook-stack-3d {
+  transform: perspective(320px) rotateY(-6deg) rotateZ(-2deg) scale(1.08);
+}
+
+.fdp-floating-trigger:hover .logbook-cover-3d {
+  transform: perspective(320px) rotateY(-28deg);
+}
+
+@keyframes fdp-ribbon-wave {
+  0%, 100% {
+    transform: rotate(0deg);
+  }
+  50% {
+    transform: rotate(6deg) translateY(-0.5px);
+  }
+}
+
+.fdp-ribbon {
+  transform-origin: 19px 24px;
+  animation: fdp-ribbon-wave 3s ease-in-out infinite;
+}
+
+.fdp-floating-trigger.dragging .fdp-logbook-svg {
+  transform: scale(1.06) rotate(5deg) !important;
 }
 
 .fdp-trigger-badge {
@@ -54,6 +92,7 @@
   background: #10b981;
   border: 2px solid #ffffff;
   border-radius: 50%;
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);
 }
 
 /* Floating Modal Box */

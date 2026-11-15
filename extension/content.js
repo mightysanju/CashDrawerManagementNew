@@ -128,13 +128,40 @@
 
   // Inject UI Skeleton
   root.innerHTML = `
-    <!-- Floating Circle Trigger -->
+    <!-- Floating Circle Trigger (Animated Log Book) -->
     <div class="fdp-floating-trigger" id="fdp-trigger" title="FrontDesk Pro — Quick Log Shift & Sales Lead">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-        <polyline points="14 2 14 8 20 8"></polyline>
-        <line x1="12" y1="18" x2="12" y2="12"></line>
-        <line x1="9" y1="15" x2="15" y2="15"></line>
+      <svg class="fdp-logbook-svg logbook-stack-3d" viewBox="0 0 44 48" width="36" height="40" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <ellipse cx="22" cy="45" rx="14" ry="2" fill="rgba(0,0,0,0.35)" />
+        <rect x="7" y="5" width="31" height="37" rx="3" fill="#0b1120" />
+        <rect x="9" y="6" width="30" height="35" rx="2" fill="#f8fafc" stroke="#cbd5e1" stroke-width="0.75" />
+        <line x1="36" y1="9" x2="36" y2="38" stroke="#94a3b8" stroke-width="0.75" stroke-dasharray="1.5 1.5" />
+        <line x1="37.5" y1="10" x2="37.5" y2="37" stroke="#cbd5e1" stroke-width="0.5" />
+        <line x1="14" y1="13" x2="32" y2="13" stroke="#60a5fa" stroke-width="1" stroke-linecap="round" />
+        <line x1="14" y1="18" x2="30" y2="18" stroke="#94a3b8" stroke-width="0.75" stroke-linecap="round" />
+        <line x1="14" y1="23" x2="32" y2="23" stroke="#94a3b8" stroke-width="0.75" stroke-linecap="round" />
+        <line x1="14" y1="28" x2="28" y2="28" stroke="#94a3b8" stroke-width="0.75" stroke-linecap="round" />
+        <line x1="14" y1="33" x2="31" y2="33" stroke="#94a3b8" stroke-width="0.75" stroke-linecap="round" />
+        <path d="M17 24 L17 44 L20 41.5 L23 44 L23 24 Z" fill="#10b981" class="fdp-ribbon" />
+        <g class="logbook-cover-3d">
+          <rect x="5" y="4" width="32" height="39" rx="3.5" fill="url(#ext-logbook-leather)" stroke="#334155" stroke-width="0.8" />
+          <path d="M5 4 H10.5 V43 H5 A2.5 2.5 0 0 1 5 4 Z" fill="#090d16" />
+          <line x1="6.5" y1="11" x2="9.5" y2="11" stroke="#f59e0b" stroke-width="1.2" stroke-linecap="round" />
+          <line x1="6.5" y1="23.5" x2="9.5" y2="23.5" stroke="#f59e0b" stroke-width="1.2" stroke-linecap="round" />
+          <line x1="6.5" y1="36" x2="9.5" y2="36" stroke="#f59e0b" stroke-width="1.2" stroke-linecap="round" />
+          <rect x="13.5" y="12" width="18" height="15" rx="2" fill="#0f172a" stroke="#f59e0b" stroke-width="0.75" />
+          <line x1="16" y1="16" x2="28" y2="16" stroke="#38bdf8" stroke-width="1.2" stroke-linecap="round" />
+          <line x1="16" y1="19.5" x2="25.5" y2="19.5" stroke="#f1f5f9" stroke-width="1" stroke-linecap="round" />
+          <line x1="16" y1="23" x2="27" y2="23" stroke="#94a3b8" stroke-width="0.8" stroke-linecap="round" />
+          <path d="M33 4.5 L36.5 4.5 L36.5 8 Z" fill="#94a3b8" opacity="0.6" />
+          <path d="M33 42.5 L36.5 42.5 L36.5 39 Z" fill="#94a3b8" opacity="0.6" />
+        </g>
+        <defs>
+          <linearGradient id="ext-logbook-leather" x1="5" y1="4" x2="37" y2="43" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#1e293b" />
+            <stop offset="45%" stop-color="#0f172a" />
+            <stop offset="100%" stop-color="#090d16" />
+          </linearGradient>
+        </defs>
       </svg>
       <div class="fdp-trigger-badge" id="fdp-badge" title="Status"></div>
     </div>

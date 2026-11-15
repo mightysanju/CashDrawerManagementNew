@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { Building2, ShieldCheck, User, Key, CheckCircle2, AlertCircle, ArrowRight } from 'lucide-react';
 import { DatabaseManager } from '../utils/database';
 import { authManager } from '../utils/authManager';
-import { UserAccount } from '../types';
+import { p2pSyncManager } from '../utils/p2pSyncManager';
+import { UserAccount, AppSettings } from '../types';
 
 interface NewHotelSetupModalProps {
   isOpen: boolean;
@@ -57,10 +58,23 @@ export const NewHotelSetupModal: React.FC<NewHotelSetupModalProps> = ({
     setLoading(true);
 
     try {
+      const newEpoch = Date.now();
+      const newDbId = `db_${newEpoch}_${Math.random().toString(36).substring(2, 7)}`;
+
       // 1. Save property name
       await db.saveOrganizationName(cleanProp);
 
-      // 2. Create primary Manager account
+      // 2. Save settings with fresh databaseEpoch and databaseId
+      const currentSettings = await db.getSettings();
+      const updatedSettings: AppSettings = {
+        ...currentSettings,
+        organizationName: cleanProp,
+        databaseEpoch: newEpoch,
+        databaseId: newDbId,
+      };
+      await db.saveSettings(updatedSettings);
+
+      // 3. Create primary Manager account
       const managerUser: UserAccount = {
         id: `usr_manager_${Date.now()}`,
         username: cleanUser,
@@ -73,7 +87,11 @@ export const NewHotelSetupModal: React.FC<NewHotelSetupModalProps> = ({
 
       await db.saveUser(managerUser);
 
-      // 3. Immediately log in the manager
+      // 4. Switch sync group to new hotel name and broadcast new database to all devices on network
+      await p2pSyncManager.switchSyncGroup(cleanProp);
+      p2pSyncManager.broadcastNewDatabaseCreated(updatedSettings, managerUser, cleanProp);
+
+      // 5. Immediately log in the manager
       authManager.updateCurrentUser(managerUser);
 
       onSetupComplete(managerUser);

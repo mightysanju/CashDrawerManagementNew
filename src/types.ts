@@ -129,6 +129,8 @@ export interface AppSettings {
   salesRateMultiplier: number; // Default multiplier for potential revenue (e.g. $120.00)
   organizationName: string;
   maxOpenDrawers?: number; // Maximum simultaneous open cash drawers allowed across the property (Default: 1)
+  databaseEpoch?: number; // Unique timestamp of database creation/reset to prevent resurrected deleted databases
+  databaseId?: string; // Unique database ID
 }
 
 /* -------------------------------------------------------------

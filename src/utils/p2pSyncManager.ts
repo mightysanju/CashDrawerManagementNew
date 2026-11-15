@@ -17,6 +17,8 @@ export type SyncMessage =
       categories?: LogCategoryConfig[];
       users?: UserAccount[];
       settings?: AppSettings;
+      databaseEpoch?: number;
+      databaseId?: string;
       senderId?: string 
     }
   | { type: 'SHIFT_UPSERT'; shift: ShiftRecord; senderId?: string }
@@ -33,12 +35,23 @@ export type SyncMessage =
       type: 'DATABASE_ARCHIVED_AND_PURGED'; 
       archive: DatabaseArchive; 
       syncGroupToDelete: string; 
+      purgedEpoch?: number;
       senderId?: string;
     }
   | { 
       type: 'DATABASE_RESTORED_FROM_ARCHIVE'; 
       archive: DatabaseArchive; 
       syncGroupName: string; 
+      senderId?: string;
+    }
+  | {
+      type: 'DATABASE_INITIALIZED';
+      hotelName: string;
+      syncGroup: string;
+      databaseEpoch: number;
+      databaseId: string;
+      managerUser?: UserAccount;
+      settings: AppSettings;
       senderId?: string;
     };
 
@@ -406,6 +419,8 @@ class P2PSyncManager {
                 categories: localCats,
                 users: localUsers,
                 settings: localSettings,
+                databaseEpoch: localSettings.databaseEpoch || 0,
+                databaseId: localSettings.databaseId || 'default',
                 senderId: myId,
               });
             }
@@ -487,6 +502,8 @@ class P2PSyncManager {
             categories: allCats,
             users: allUsers,
             settings: allSettings,
+            databaseEpoch: allSettings.databaseEpoch || 0,
+            databaseId: allSettings.databaseId || 'default',
             senderId: this.myClientId,
           });
         }
@@ -502,10 +519,71 @@ class P2PSyncManager {
     }
   }
 
+  private async sendFullSyncToPeer(peerId?: string, forceSettings?: AppSettings) {
+    if (!peerId) return;
+    const targetConn = this.connections.get(peerId);
+    if (!targetConn || !targetConn.open) return;
+
+    try {
+      const [allShifts, allLogs, allCats, allUsers, currentSettings] = await Promise.all([
+        db.getAllShifts(),
+        db.getShiftLogs(),
+        db.getCategories(),
+        db.getUsers(),
+        forceSettings || db.getSettings(),
+      ]);
+
+      targetConn.send({
+        type: 'FULL_SYNC',
+        shifts: allShifts,
+        shiftLogs: allLogs,
+        categories: allCats,
+        users: allUsers,
+        settings: currentSettings,
+        databaseEpoch: currentSettings.databaseEpoch || 0,
+        databaseId: currentSettings.databaseId || 'default',
+        senderId: this.myClientId,
+      });
+    } catch (e) {
+      console.error('Error sending full sync to peer:', e);
+    }
+  }
+
   private async processIncomingMessage(msg: SyncMessage, relayFromPeerId?: string) {
     if (!msg || !msg.type) return;
 
     if (msg.type === 'FULL_SYNC') {
+      const incomingEpoch = msg.databaseEpoch || msg.settings?.databaseEpoch || 0;
+      const localSettings = await db.getSettings();
+      const localEpoch = localSettings.databaseEpoch || 0;
+      const lastPurgedEpoch = parseInt(localStorage.getItem('cdm_last_purged_epoch') || '0', 10);
+
+      // 1. Guard against resurrected obsolete/purged databases
+      if (incomingEpoch > 0 && incomingEpoch <= lastPurgedEpoch && localEpoch > incomingEpoch) {
+        console.warn(`[P2P Sync] Rejected obsolete database (epoch ${incomingEpoch} <= purged ${lastPurgedEpoch}). Propagating current database.`);
+        this.sendFullSyncToPeer(relayFromPeerId, localSettings);
+        return;
+      }
+
+      // 2. If remote peer has an older database superseded by a newer one created here
+      if (localEpoch > 0 && incomingEpoch > 0 && incomingEpoch < localEpoch) {
+        console.warn(`[P2P Sync] Remote database epoch ${incomingEpoch} is older than local ${localEpoch}. Overwriting remote peer.`);
+        this.sendFullSyncToPeer(relayFromPeerId, localSettings);
+        return;
+      }
+
+      // 3. If local database is older than remote's newly created database, adopt remote
+      if (localEpoch > 0 && incomingEpoch > 0 && incomingEpoch > localEpoch) {
+        console.warn(`[P2P Sync] Remote database epoch ${incomingEpoch} is newer than local ${localEpoch}. Auto-archiving local and adopting new database.`);
+        try {
+          const currentSyncGroup = this.state.storeName || 'Main Store';
+          await db.createDatabaseArchive('Auto-Archive (Superseded DB)', currentSyncGroup);
+        } catch (e) {
+          console.error('Failed to auto-archive local data before adopting newer DB:', e);
+        }
+        await db.resetDatabaseToFactoryDefaults();
+      }
+
       if (msg.shifts && Array.isArray(msg.shifts)) {
         await db.bulkSaveShifts(msg.shifts);
       }
@@ -520,6 +598,10 @@ class P2PSyncManager {
       }
       if (msg.settings) {
         await db.saveSettings(msg.settings);
+        if (msg.settings.organizationName) {
+          await db.saveOrganization(msg.settings.organizationName);
+          localStorage.setItem('cdm_store_name', msg.settings.organizationName);
+        }
       }
       this.notifyData('SYNC_COMPLETED', msg);
     } else if (msg.type === 'SHIFT_UPSERT' && msg.shift) {
@@ -561,6 +643,9 @@ class P2PSyncManager {
     } else if (msg.type === 'DATABASE_ARCHIVED_AND_PURGED' && msg.archive) {
       db.saveDatabaseArchive(msg.archive);
       await db.resetDatabaseToFactoryDefaults();
+      if (msg.purgedEpoch) {
+        localStorage.setItem('cdm_last_purged_epoch', String(msg.purgedEpoch));
+      }
       if (msg.syncGroupToDelete) {
         this.removeKnownSyncGroup(msg.syncGroupToDelete);
         const currentSaved = localStorage.getItem('cdm_store_name');
@@ -570,8 +655,27 @@ class P2PSyncManager {
       }
       localStorage.removeItem('cdm_local_active_shift_id');
       localStorage.removeItem('frontdesk_external_logs');
-      this.disconnect();
+      try {
+        sessionStorage.clear();
+      } catch {
+        // ignore
+      }
+      authManager.logout();
       this.notifyData('DATABASE_PURGED', msg);
+      this.relayIfHub(msg, relayFromPeerId);
+    } else if (msg.type === 'DATABASE_INITIALIZED' && msg.settings) {
+      await db.saveSettings(msg.settings);
+      if (msg.hotelName) {
+        await db.saveOrganization(msg.hotelName);
+      }
+      if (msg.managerUser) {
+        await db.saveUser(msg.managerUser);
+      }
+      if (msg.syncGroup) {
+        this.rememberSyncGroup(msg.syncGroup);
+        localStorage.setItem('cdm_store_name', msg.syncGroup);
+      }
+      this.notifyData('DATABASE_INITIALIZED', msg);
       this.relayIfHub(msg, relayFromPeerId);
     } else if (msg.type === 'DATABASE_RESTORED_FROM_ARCHIVE' && msg.archive) {
       db.saveDatabaseArchive(msg.archive);
@@ -746,11 +850,25 @@ class P2PSyncManager {
     });
   }
 
-  public broadcastDatabaseArchivedAndPurged(archive: DatabaseArchive, syncGroupToDelete: string) {
+  public broadcastDatabaseArchivedAndPurged(archive: DatabaseArchive, syncGroupToDelete: string, purgedEpoch?: number) {
     this.sendToAll({
       type: 'DATABASE_ARCHIVED_AND_PURGED',
       archive,
       syncGroupToDelete,
+      purgedEpoch: purgedEpoch || Date.now(),
+      senderId: this.myClientId,
+    });
+  }
+
+  public broadcastNewDatabaseCreated(settings: AppSettings, managerUser: UserAccount, syncGroup: string) {
+    this.sendToAll({
+      type: 'DATABASE_INITIALIZED',
+      hotelName: settings.organizationName,
+      syncGroup,
+      databaseEpoch: settings.databaseEpoch || Date.now(),
+      databaseId: settings.databaseId || `db_${Date.now()}`,
+      managerUser,
+      settings,
       senderId: this.myClientId,
     });
   }

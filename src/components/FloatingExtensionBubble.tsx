@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
-  FileText,
   X,
   Building2,
   AlertTriangle,
@@ -267,7 +266,7 @@ export const FloatingExtensionBubble: React.FC<FloatingExtensionBubbleProps> = (
 
   return (
     <>
-      {/* Floating Trigger Button (Movable Anywhere on Screen) */}
+      {/* Floating Trigger Button (Movable Anywhere on Screen — Animated Log Book) */}
       <button
         id="fdp-inapp-bubble"
         data-fdp-inapp-bubble="true"
@@ -275,13 +274,80 @@ export const FloatingExtensionBubble: React.FC<FloatingExtensionBubbleProps> = (
         onPointerDown={handlePointerDown}
         onClick={handleButtonClick}
         style={triggerStyle}
-        title="FrontDesk Pro — Floating Shift Log (Drag to move anywhere)"
-        className={`fixed ${!position ? 'bottom-6 right-6' : ''} w-12 h-12 rounded-xl bg-slate-900 hover:bg-slate-800 text-white shadow-md flex items-center justify-center transition-colors z-50 border border-slate-700/50 select-none ${
-          isDragging ? 'cursor-grabbing' : 'cursor-grab'
+        title="FrontDesk Pro — Floating Shift Log Book (Drag to move anywhere)"
+        className={`group fixed ${!position ? 'bottom-6 right-6' : ''} w-13 h-14 p-1 rounded-2xl bg-slate-900/90 dark:bg-slate-900/95 hover:bg-slate-800 text-white shadow-xl flex items-center justify-center transition-all duration-200 z-50 border border-slate-700/70 backdrop-blur-md select-none ${
+          isDragging ? 'cursor-grabbing scale-105 rotate-3' : 'cursor-grab animate-logbook-float'
         }`}
       >
-        <FileText className="w-5 h-5 text-slate-200 pointer-events-none" />
-        <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-500 border border-white dark:border-slate-900 rounded-full pointer-events-none"></span>
+        <svg
+          viewBox="0 0 44 48"
+          className="w-10 h-11 pointer-events-none logbook-stack-3d transition-transform duration-300"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          {/* Subtle Ground Shadow */}
+          <ellipse cx="22" cy="45" rx="14" ry="2" fill="rgba(0,0,0,0.35)" />
+
+          {/* Book Back Cover & Page Block */}
+          <rect x="7" y="5" width="31" height="37" rx="3" fill="#0b1120" />
+          {/* Stacked Ivory Pages with subtle ruled edge */}
+          <rect x="9" y="6" width="30" height="35" rx="2" fill="#f8fafc" stroke="#cbd5e1" strokeWidth="0.75" />
+          <line x1="36" y1="9" x2="36" y2="38" stroke="#94a3b8" strokeWidth="0.75" strokeDasharray="1.5 1.5" />
+          <line x1="37.5" y1="10" x2="37.5" y2="37" stroke="#cbd5e1" strokeWidth="0.5" />
+
+          {/* Interior Ruled Page Details (visible when cover opens on hover) */}
+          <line x1="14" y1="13" x2="32" y2="13" stroke="#60a5fa" strokeWidth="1" strokeLinecap="round" />
+          <line x1="14" y1="18" x2="30" y2="18" stroke="#94a3b8" strokeWidth="0.75" strokeLinecap="round" />
+          <line x1="14" y1="23" x2="32" y2="23" stroke="#94a3b8" strokeWidth="0.75" strokeLinecap="round" />
+          <line x1="14" y1="28" x2="28" y2="28" stroke="#94a3b8" strokeWidth="0.75" strokeLinecap="round" />
+          <line x1="14" y1="33" x2="31" y2="33" stroke="#94a3b8" strokeWidth="0.75" strokeLinecap="round" />
+
+          {/* Silk Bookmark Ribbon with flutter animation */}
+          <path
+            d="M17 24 L17 44 L20 41.5 L23 44 L23 24 Z"
+            fill="#10b981"
+            className="animate-ribbon-wave"
+          />
+
+          {/* 3D Animated Front Cover (opens on hover) */}
+          <g className="logbook-cover-3d">
+            {/* Front Leather Cover */}
+            <rect x="5" y="4" width="32" height="39" rx="3.5" fill="url(#inapp-logbook-leather)" stroke="#334155" strokeWidth="0.8" />
+
+            {/* Bound Leather Spine */}
+            <path d="M5 4 H10.5 V43 H5 A2.5 2.5 0 0 1 5 4 Z" fill="#090d16" />
+
+            {/* Gold Spine Ribs / Stitching Bands */}
+            <line x1="6.5" y1="11" x2="9.5" y2="11" stroke="#f59e0b" strokeWidth="1.2" strokeLinecap="round" />
+            <line x1="6.5" y1="23.5" x2="9.5" y2="23.5" stroke="#f59e0b" strokeWidth="1.2" strokeLinecap="round" />
+            <line x1="6.5" y1="36" x2="9.5" y2="36" stroke="#f59e0b" strokeWidth="1.2" strokeLinecap="round" />
+
+            {/* Debossed Gold/Navy Ledger Label Plate */}
+            <rect x="13.5" y="12" width="18" height="15" rx="2" fill="#0f172a" stroke="#f59e0b" strokeWidth="0.75" />
+            {/* Front Desk Shift Log Header Icon / Emblem */}
+            <line x1="16" y1="16" x2="28" y2="16" stroke="#38bdf8" strokeWidth="1.2" strokeLinecap="round" />
+            <line x1="16" y1="19.5" x2="25.5" y2="19.5" stroke="#f1f5f9" strokeWidth="1" strokeLinecap="round" />
+            <line x1="16" y1="23" x2="27" y2="23" stroke="#94a3b8" strokeWidth="0.8" strokeLinecap="round" />
+
+            {/* Metal Corner Accent Protectors */}
+            <path d="M33 4.5 L36.5 4.5 L36.5 8 Z" fill="#94a3b8" opacity="0.6" />
+            <path d="M33 42.5 L36.5 42.5 L36.5 39 Z" fill="#94a3b8" opacity="0.6" />
+          </g>
+
+          <defs>
+            <linearGradient id="inapp-logbook-leather" x1="5" y1="4" x2="37" y2="43" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stopColor="#1e293b" />
+              <stop offset="45%" stopColor="#0f172a" />
+              <stop offset="100%" stopColor="#090d16" />
+            </linearGradient>
+          </defs>
+        </svg>
+
+        {/* Live Network Beacon (Pulsing Emerald) */}
+        <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5 pointer-events-none">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+          <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-emerald-500 border-2 border-white dark:border-slate-900"></span>
+        </span>
       </button>
 
       {/* Floating Modal Panel (Dynamically Positioned Relative to Bubble) */}

@@ -145,31 +145,41 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
     try {
       setIsResettingDb(true);
       const currentSyncGroup = p2pSyncManager.getState().storeName || 'Main Store';
+      const purgedEpoch = Date.now();
 
       // 1. Snapshot database into archive
       const archive = await db.createDatabaseArchive(currentUser?.fullName || 'Manager', currentSyncGroup);
 
-      // 2. Broadcast purge & archive to all connected peers across LAN/Wi-Fi
-      p2pSyncManager.broadcastDatabaseArchivedAndPurged(archive, currentSyncGroup);
+      // 2. Broadcast purge & archive to all connected peers across LAN/Wi-Fi with purgedEpoch
+      p2pSyncManager.broadcastDatabaseArchivedAndPurged(archive, currentSyncGroup, purgedEpoch);
 
-      // 3. Purge local database to factory defaults
+      // 3. Mark last purged epoch locally so obsolete incoming syncs are rejected
+      localStorage.setItem('cdm_last_purged_epoch', String(purgedEpoch));
+
+      // 4. Purge local database to factory defaults
       await db.resetDatabaseToFactoryDefaults();
 
-      // 4. Delete the associated Sync Group
+      // 5. Delete the associated Sync Group
       p2pSyncManager.removeKnownSyncGroup(currentSyncGroup);
       localStorage.removeItem('cdm_store_name');
       localStorage.removeItem('cdm_local_active_shift_id');
       localStorage.removeItem('frontdesk_external_logs');
-
-      p2pSyncManager.disconnect();
-      authManager.logout();
+      try {
+        sessionStorage.clear();
+      } catch {
+        // ignore
+      }
 
       setIsResetDbModalOpen(false);
       setResetConfirmationInput('');
       setResetDbSuccess(true);
+
+      // 6. Grace period (600ms) to ensure WebRTC & BroadcastChannel packets are delivered across network
       setTimeout(() => {
+        p2pSyncManager.disconnect();
+        authManager.logout();
         window.location.reload();
-      }, 1000);
+      }, 600);
     } catch (err) {
       console.error('Failed to reset database:', err);
       alert('Failed to reset database. Please try again.');

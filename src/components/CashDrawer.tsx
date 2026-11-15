@@ -335,7 +335,33 @@ export function CashDrawer() {
     }, 3000);
 
     const unsubState = p2pSyncManager.subscribeState(setSyncState);
-    const unsubData = p2pSyncManager.subscribeData(() => {
+    const unsubData = p2pSyncManager.subscribeData(async (action, data) => {
+      if (action === 'DATABASE_PURGED') {
+        setSelectedShift(null);
+        setActiveShifts([]);
+        setAllShifts([]);
+        setShiftLogs([]);
+        setEntries([]);
+        setShiftDrop(0);
+        setCurrentUser(null);
+        authManager.logout();
+        setIsLoginModalOpen(false);
+        setIsNewHotelSetupModalOpen(true);
+        setWelcomeToast('Register database was archived and reset by a manager. Ready for new hotel setup.');
+        return;
+      }
+
+      if (action === 'DATABASE_INITIALIZED') {
+        setIsNewHotelSetupModalOpen(false);
+        await loadShiftsData();
+        await loadLogsData();
+        await loadSettingsData();
+        const hotelName = (data as { hotelName?: string })?.hotelName || 'Hotel';
+        setWelcomeToast(`Connected and synced to new hotel database: ${hotelName}`);
+        setTimeout(() => setWelcomeToast(null), 4000);
+        return;
+      }
+
       loadShiftsData();
       loadLogsData();
       loadSettingsData();
