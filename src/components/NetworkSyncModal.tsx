@@ -11,9 +11,28 @@ import {
   Plus,
   Trash2,
   ArrowRightLeft,
-  Radio
+  Radio,
+  User,
+  Clock
 } from 'lucide-react';
 import { p2pSyncManager, SyncState, AvailableNetworkDatabase } from '../utils/p2pSyncManager';
+
+const formatCreatedTime = (timestamp?: string | number) => {
+  if (!timestamp) return null;
+  try {
+    const d = new Date(timestamp);
+    if (isNaN(d.getTime())) return null;
+    return d.toLocaleString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  } catch {
+    return null;
+  }
+};
 
 interface NetworkSyncModalProps {
   isOpen: boolean;
@@ -247,13 +266,25 @@ export function NetworkSyncModal({ isOpen, onClose, onSyncTriggered }: NetworkSy
                             </span>
                           )}
                         </div>
-                        <p className="text-[10px] text-gray-500 dark:text-gray-400 truncate">
-                          {isActive 
-                            ? 'Currently connected & syncing with all registers' 
-                            : dbItem.isHostedOnPeer 
-                              ? 'Hosted on network register · Click to switch entire network' 
-                              : 'Click to switch & auto-sync all devices'}
-                        </p>
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">
+                          <span className="font-medium text-gray-700 dark:text-gray-300 flex items-center">
+                            <User size={10} className="mr-0.5 text-blue-500" />
+                            Created by {dbItem.createdBy || 'Manager'}
+                          </span>
+                          {(dbItem.createdAt || dbItem.epoch > 0) && (
+                            <span className="flex items-center text-gray-400">
+                              <Clock size={10} className="mr-0.5" />
+                              {formatCreatedTime(dbItem.createdAt || dbItem.epoch)}
+                            </span>
+                          )}
+                          <span className="text-gray-400">
+                            {isActive 
+                              ? '· Connected' 
+                              : dbItem.isHostedOnPeer 
+                                ? '· Ready to switch' 
+                                : '· Auto-sync ready'}
+                          </span>
+                        </div>
                       </div>
                     </div>
 

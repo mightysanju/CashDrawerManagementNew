@@ -19,6 +19,8 @@ export interface AvailableNetworkDatabase {
   lastSeen: number;
   isHostedOnPeer: boolean;
   isActive: boolean;
+  createdBy?: string;
+  createdAt?: string | number;
 }
 
 export type SyncMessage =
@@ -95,6 +97,8 @@ export type SyncMessage =
       shiftsCount?: number;
       usersCount?: number;
       peerId: string;
+      createdBy?: string;
+      createdAt?: string | number;
       senderId?: string;
     }
   | {
@@ -397,7 +401,7 @@ class P2PSyncManager {
       const dbName = msg.databaseName?.trim();
       if (!dbName) return;
 
-      this.rememberSyncGroup(dbName);
+      this.rememberSyncGroup(dbName, { createdBy: msg.createdBy, createdAt: msg.createdAt });
       const isRemote = msg.senderId !== this.myClientId;
       const existing = this.discoveredDatabases.get(dbName);
 
@@ -411,6 +415,8 @@ class P2PSyncManager {
         lastSeen: Date.now(),
         isHostedOnPeer: isRemote,
         isActive: dbName === this.state.storeName,
+        createdBy: msg.createdBy || existing?.createdBy,
+        createdAt: msg.createdAt || existing?.createdAt,
       });
 
       // Relay to other discovery peers if we are Discovery Hub
@@ -528,6 +534,11 @@ class P2PSyncManager {
       const epoch = settings.databaseEpoch || 0;
       const databaseId = settings.databaseId || 'default';
 
+      // Find manager if createdBy is not explicitly set in settings
+      const manager = users.find((u) => u.role === 'manager');
+      const createdBy = settings.createdBy || manager?.fullName || manager?.username || 'General Manager';
+      const createdAt = settings.createdAt || (manager?.createdAt ? manager.createdAt : epoch ? new Date(epoch).toISOString() : new Date().toISOString());
+
       const entry: AvailableNetworkDatabase = {
         name,
         epoch,
@@ -538,10 +549,12 @@ class P2PSyncManager {
         lastSeen: Date.now(),
         isHostedOnPeer: false,
         isActive: true,
+        createdBy,
+        createdAt,
       };
 
       this.discoveredDatabases.set(name, entry);
-      this.rememberSyncGroup(name);
+      this.rememberSyncGroup(name, { createdBy, createdAt });
 
       const packet: SyncMessage = {
         type: 'DISCOVERY_ANNOUNCE',
@@ -551,6 +564,8 @@ class P2PSyncManager {
         shiftsCount: shifts.length,
         usersCount: users.length,
         peerId: this.myClientId,
+        createdBy,
+        createdAt,
         senderId: this.myClientId,
       };
 
@@ -612,12 +627,15 @@ class P2PSyncManager {
     for (const group of known) {
       if (!seenNames.has(group) && group.toLowerCase() !== 'main store') {
         seenNames.add(group);
+        const meta = this.getSyncGroupMeta(group);
         list.push({
           name: group,
           epoch: 0,
           lastSeen: 0,
           isHostedOnPeer: false,
           isActive: group === this.state.storeName,
+          createdBy: meta?.createdBy,
+          createdAt: meta?.createdAt,
         });
       }
     }
@@ -805,7 +823,7 @@ class P2PSyncManager {
     }
   }
 
-  public rememberSyncGroup(groupName: string) {
+  public rememberSyncGroup(groupName: string, meta?: { createdBy?: string; createdAt?: string | number }) {
     if (!groupName || !groupName.trim()) return;
     try {
       const trimmed = groupName.trim();
@@ -814,8 +832,27 @@ class P2PSyncManager {
         current.unshift(trimmed);
       }
       localStorage.setItem('cdm_known_sync_groups', JSON.stringify(current));
+      if (meta && (meta.createdBy || meta.createdAt)) {
+        const existingMeta = this.getSyncGroupMeta(trimmed) || {};
+        localStorage.setItem(
+          `cdm_group_meta_${trimmed.toLowerCase()}`,
+          JSON.stringify({
+            ...existingMeta,
+            ...meta,
+          })
+        );
+      }
     } catch {
       // ignore
+    }
+  }
+
+  public getSyncGroupMeta(groupName: string): { createdBy?: string; createdAt?: string | number } | null {
+    try {
+      const raw = localStorage.getItem(`cdm_group_meta_${groupName.trim().toLowerCase()}`);
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
     }
   }
 

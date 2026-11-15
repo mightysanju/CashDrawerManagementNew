@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Building2, 
   ShieldCheck, 
@@ -12,7 +12,8 @@ import {
   RefreshCw,
   Radio,
   PlusCircle,
-  Download
+  Download,
+  Clock
 } from 'lucide-react';
 import { DatabaseManager } from '../utils/database';
 import { authManager } from '../utils/authManager';
@@ -26,11 +27,29 @@ interface NewHotelSetupModalProps {
 
 const db = new DatabaseManager();
 
+const formatCreatedTime = (timestamp?: string | number) => {
+  if (!timestamp) return null;
+  try {
+    const d = new Date(timestamp);
+    if (isNaN(d.getTime())) return null;
+    return d.toLocaleString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  } catch {
+    return null;
+  }
+};
+
 export const NewHotelSetupModal: React.FC<NewHotelSetupModalProps> = ({
   isOpen,
   onSetupComplete,
 }) => {
   const [activeTab, setActiveTab] = useState<'sync' | 'create'>('sync');
+  const userSelectedTabRef = useRef(false);
   const [availableDbs, setAvailableDbs] = useState<AvailableNetworkDatabase[]>([]);
   const [isScanning, setIsScanning] = useState(false);
   const [syncingDbName, setSyncingDbName] = useState<string | null>(null);
@@ -46,16 +65,24 @@ export const NewHotelSetupModal: React.FC<NewHotelSetupModalProps> = ({
 
   // Load and subscribe to network-discovered databases
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      userSelectedTabRef.current = false;
+      return;
+    }
 
     const refreshDatabases = () => {
       const dbs = p2pSyncManager.getAvailableNetworkDatabases().filter(
         (d) => d.name.toLowerCase() !== 'main store'
       );
       setAvailableDbs(dbs);
-      // If network databases already exist, default to Option 1 (Sync)
-      if (dbs.length > 0) {
-        setActiveTab('sync');
+
+      // ONLY set default tab on initial load if user hasn't clicked/typed in a tab yet
+      if (!userSelectedTabRef.current) {
+        if (dbs.length > 0) {
+          setActiveTab('sync');
+        } else {
+          setActiveTab('create');
+        }
       }
     };
 
@@ -170,6 +197,7 @@ export const NewHotelSetupModal: React.FC<NewHotelSetupModalProps> = ({
       await db.saveOrganizationName(cleanProp);
 
       // 2. Save settings with fresh databaseEpoch and databaseId
+      const nowIso = new Date().toISOString();
       const currentSettings = await db.getSettings();
       const updatedSettings: AppSettings = {
         ...currentSettings,
@@ -177,6 +205,8 @@ export const NewHotelSetupModal: React.FC<NewHotelSetupModalProps> = ({
         databaseEpoch: newEpoch,
         databaseId: newDbId,
         isRestoredArchive: false,
+        createdBy: cleanFull,
+        createdAt: nowIso,
       };
       await db.saveSettings(updatedSettings);
 
@@ -187,7 +217,7 @@ export const NewHotelSetupModal: React.FC<NewHotelSetupModalProps> = ({
         fullName: cleanFull,
         passwordHash: password,
         role: 'manager',
-        createdAt: new Date().toISOString(),
+        createdAt: nowIso,
         isActive: true,
       };
 
@@ -195,6 +225,7 @@ export const NewHotelSetupModal: React.FC<NewHotelSetupModalProps> = ({
 
       // 4. Switch sync group to new hotel name and broadcast new database to all devices on network
       await p2pSyncManager.switchNetworkSyncGroup(cleanProp, true);
+      p2pSyncManager.rememberSyncGroup(cleanProp, { createdBy: cleanFull, createdAt: nowIso });
       p2pSyncManager.broadcastNewDatabaseCreated(updatedSettings, managerUser, cleanProp);
       await p2pSyncManager.announceCurrentDatabase();
 
@@ -235,6 +266,7 @@ export const NewHotelSetupModal: React.FC<NewHotelSetupModalProps> = ({
             <button
               type="button"
               onClick={() => {
+                userSelectedTabRef.current = true;
                 setActiveTab('sync');
                 setError(null);
               }}
@@ -256,6 +288,7 @@ export const NewHotelSetupModal: React.FC<NewHotelSetupModalProps> = ({
             <button
               type="button"
               onClick={() => {
+                userSelectedTabRef.current = true;
                 setActiveTab('create');
                 setError(null);
               }}
@@ -323,16 +356,28 @@ export const NewHotelSetupModal: React.FC<NewHotelSetupModalProps> = ({
                               <span className="text-xs font-bold text-gray-900 dark:text-white truncate">
                                 {dbItem.name}
                               </span>
-                              <span className="inline-flex items-center px-1.5 py-0.5 bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 text-[10px] font-semibold rounded">
+                              <span className="inline-flex items-center px-1.5 py-0.5 bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 text-[10px] font-semibold rounded shrink-0">
                                 <Radio className="w-2.5 h-2.5 mr-1 text-emerald-600 animate-pulse" />
                                 Online on LAN
                               </span>
                             </div>
-                            <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate mt-0.5">
-                              {dbItem.shiftsCount !== undefined && dbItem.shiftsCount > 0
-                                ? `${dbItem.shiftsCount} shift records · Auto-sync ready`
-                                : 'Active hotel register · Ready to sync'}
-                            </p>
+                            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                              <span className="inline-flex items-center text-gray-700 dark:text-gray-300 font-medium">
+                                <User className="w-3 h-3 mr-1 text-blue-500 shrink-0" />
+                                Created by <strong className="ml-1 text-gray-900 dark:text-white">{dbItem.createdBy || 'Manager'}</strong>
+                              </span>
+                              {(dbItem.createdAt || dbItem.epoch > 0) && (
+                                <span className="inline-flex items-center text-gray-500 dark:text-gray-400">
+                                  <Clock className="w-3 h-3 mr-1 text-gray-400 shrink-0" />
+                                  {formatCreatedTime(dbItem.createdAt || dbItem.epoch)}
+                                </span>
+                              )}
+                              <span className="text-gray-400 dark:text-gray-500 text-[10px]">
+                                {dbItem.shiftsCount !== undefined && dbItem.shiftsCount > 0
+                                  ? `· ${dbItem.shiftsCount} shift records`
+                                  : '· Ready to sync'}
+                              </span>
+                            </div>
                           </div>
                         </div>
 
@@ -421,7 +466,10 @@ export const NewHotelSetupModal: React.FC<NewHotelSetupModalProps> = ({
                       required
                       placeholder="e.g. Best Western Inn & Suites"
                       value={propertyName}
-                      onChange={(e) => setPropertyName(e.target.value)}
+                      onChange={(e) => {
+                        userSelectedTabRef.current = true;
+                        setPropertyName(e.target.value);
+                      }}
                       className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-gray-700/50 border border-gray-300 dark:border-gray-600 rounded-xl text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs font-semibold transition"
                     />
                   </div>
@@ -441,7 +489,10 @@ export const NewHotelSetupModal: React.FC<NewHotelSetupModalProps> = ({
                       required
                       placeholder="e.g. Sarah Jenkins (General Manager)"
                       value={fullName}
-                      onChange={(e) => setFullName(e.target.value)}
+                      onChange={(e) => {
+                        userSelectedTabRef.current = true;
+                        setFullName(e.target.value);
+                      }}
                       className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-gray-700/50 border border-gray-300 dark:border-gray-600 rounded-xl text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs font-semibold transition"
                     />
                   </div>
@@ -462,7 +513,10 @@ export const NewHotelSetupModal: React.FC<NewHotelSetupModalProps> = ({
                         required
                         placeholder="e.g. manager"
                         value={username}
-                        onChange={(e) => setUsername(e.target.value)}
+                        onChange={(e) => {
+                          userSelectedTabRef.current = true;
+                          setUsername(e.target.value);
+                        }}
                         className="w-full pl-10 pr-4 py-2 bg-gray-50 dark:bg-gray-700/50 border border-gray-300 dark:border-gray-600 rounded-xl text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs font-mono font-semibold transition"
                       />
                     </div>
@@ -482,7 +536,10 @@ export const NewHotelSetupModal: React.FC<NewHotelSetupModalProps> = ({
                         required
                         placeholder="Min 4 chars"
                         value={password}
-                        onChange={(e) => setPassword(e.target.value)}
+                        onChange={(e) => {
+                          userSelectedTabRef.current = true;
+                          setPassword(e.target.value);
+                        }}
                         className="w-full pl-10 pr-4 py-2 bg-gray-50 dark:bg-gray-700/50 border border-gray-300 dark:border-gray-600 rounded-xl text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs transition"
                       />
                     </div>
@@ -502,7 +559,10 @@ export const NewHotelSetupModal: React.FC<NewHotelSetupModalProps> = ({
                         required
                         placeholder="Re-type password"
                         value={confirmPassword}
-                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        onChange={(e) => {
+                          userSelectedTabRef.current = true;
+                          setConfirmPassword(e.target.value);
+                        }}
                         className="w-full pl-10 pr-4 py-2 bg-gray-50 dark:bg-gray-700/50 border border-gray-300 dark:border-gray-600 rounded-xl text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs transition"
                       />
                     </div>

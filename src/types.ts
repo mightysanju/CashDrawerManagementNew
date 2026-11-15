@@ -132,6 +132,8 @@ export interface AppSettings {
   databaseEpoch?: number; // Unique timestamp of database creation/reset to prevent resurrected deleted databases
   databaseId?: string; // Unique database ID
   isRestoredArchive?: boolean; // Whether database was restored from an archive rather than freshly initialized
+  createdBy?: string; // Full name or username of manager who created this database
+  createdAt?: string; // ISO timestamp or formatted timestamp of when database was initialized
 }
 
 /* -------------------------------------------------------------
