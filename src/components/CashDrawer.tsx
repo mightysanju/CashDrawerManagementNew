@@ -694,7 +694,7 @@ export function CashDrawer() {
 
         {/* -------------------- 2. ACTIVE TILL & CASH REGISTER COMMAND BAR -------------------- */}
         {selectedShift ? (
-          <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-5 mb-6 shadow-xs">
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4 sm:p-5 mb-6 shadow-xs transition-colors">
             <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
               {/* Drawer Info & Metrics */}
               <div className="flex items-start gap-3">
@@ -703,27 +703,27 @@ export function CashDrawer() {
                 </div>
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="font-bold text-gray-900 text-base">
+                    <h3 className="font-bold text-gray-900 dark:text-white text-base">
                       Active Till: Drawer #{selectedShift.drawerNumber}
                     </h3>
-                    <span className="text-[11px] bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold px-2 py-0.5 rounded-full inline-flex items-center space-x-1">
+                    <span className="text-[11px] bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 font-semibold px-2 py-0.5 rounded-full inline-flex items-center space-x-1">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                       <span>Active Shift</span>
                     </span>
-                    <span className="text-xs bg-gray-100 text-gray-700 font-medium px-2 py-0.5 rounded">
+                    <span className="text-xs bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-medium px-2 py-0.5 rounded">
                       Cashier: {selectedShift.cashierName}
                     </span>
                   </div>
 
                   {/* Financial Metrics Strip */}
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-600 mt-1.5">
-                    <span>Opening Float: <strong className="text-gray-900 font-bold">${selectedShift.openingBalance.toFixed(2)}</strong></span>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-600 dark:text-gray-400 mt-1.5">
+                    <span>Opening Float: <strong className="text-gray-900 dark:text-white font-bold">${selectedShift.openingBalance.toFixed(2)}</strong></span>
                     <span>•</span>
-                    <span>Counted Cash: <strong className="text-blue-700 font-bold">${currentTotal.toFixed(2)}</strong></span>
+                    <span>Counted Cash: <strong className="text-blue-700 dark:text-blue-400 font-bold">${currentTotal.toFixed(2)}</strong></span>
                     <span>•</span>
-                    <span>Safe Drops: <strong className="text-gray-900 font-bold">${(shiftDrop || 0).toFixed(2)}</strong></span>
+                    <span>Safe Drops: <strong className="text-gray-900 dark:text-white font-bold">${(shiftDrop || 0).toFixed(2)}</strong></span>
                     <span>•</span>
-                    <span>Variance: <strong className={currentDifference === 0 ? 'text-gray-700 font-bold' : currentDifference > 0 ? 'text-emerald-700 font-bold' : 'text-rose-600 font-bold'}>
+                    <span>Variance: <strong className={currentDifference === 0 ? 'text-gray-700 dark:text-gray-300 font-bold' : currentDifference > 0 ? 'text-emerald-700 dark:text-emerald-400 font-bold' : 'text-rose-600 dark:text-rose-400 font-bold'}>
                       {currentDifference >= 0 ? '+' : ''}${currentDifference.toFixed(2)}
                     </strong></span>
                   </div>
@@ -733,8 +733,8 @@ export function CashDrawer() {
               {/* Till Quick Actions */}
               <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto justify-start lg:justify-end">
                 {/* Cash Drop input */}
-                <div className="flex items-center bg-gray-50 border border-gray-300 rounded-lg px-2.5 py-1.5 text-xs">
-                  <span className="text-gray-500 font-medium mr-1.5">Drop: $</span>
+                <div className="flex items-center bg-gray-50 dark:bg-gray-750 border border-gray-300 dark:border-gray-600 rounded-lg px-2.5 py-1.5 text-xs">
+                  <span className="text-gray-500 dark:text-gray-400 font-medium mr-1.5">Drop: $</span>
                   <input
                     type="number"
                     min="0"
@@ -742,7 +742,7 @@ export function CashDrawer() {
                     placeholder="0.00"
                     value={shiftDrop || ''}
                     onChange={(e) => setShiftDrop(parseFloat(e.target.value) || 0)}
-                    className="w-16 bg-transparent text-xs font-bold outline-none"
+                    className="w-16 bg-transparent text-xs font-bold outline-none text-gray-900 dark:text-white"
                     title="Record mid-shift cash skim to safe"
                   />
                 </div>
@@ -754,7 +754,7 @@ export function CashDrawer() {
                   className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition shadow-xs ${
                     isTallyExpanded
                       ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                      : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-650'
                   }`}
                 >
                   <Coins size={14} />
@@ -770,7 +770,7 @@ export function CashDrawer() {
                     entries,
                   })}
                   title="Print current till receipt"
-                  className="p-1.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition"
+                  className="p-1.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-650 transition"
                 >
                   <Printer size={15} />
                 </button>
@@ -784,7 +784,7 @@ export function CashDrawer() {
                     entries,
                   })}
                   title="Download audit PDF report"
-                  className="p-1.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition"
+                  className="p-1.5 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-650 transition"
                 >
                   <FileText size={15} />
                 </button>
@@ -794,7 +794,9 @@ export function CashDrawer() {
                   onClick={() => setShowHistory(!showHistory)}
                   title="Review previous shift records"
                   className={`p-1.5 border rounded-lg transition ${
-                    showHistory ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
+                    showHistory
+                      ? 'bg-blue-50 dark:bg-blue-900/40 border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300'
+                      : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-650'
                   }`}
                 >
                   <History size={15} />
@@ -804,7 +806,7 @@ export function CashDrawer() {
                 <button
                   type="button"
                   onClick={() => setIsCloseShiftModalOpen(true)}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 rounded-lg text-xs font-bold transition shadow-xs"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900 hover:bg-rose-100 dark:hover:bg-rose-900/60 rounded-lg text-xs font-bold transition shadow-xs"
                 >
                   <LogOut size={14} />
                   <span>Close Shift</span>
@@ -814,14 +816,14 @@ export function CashDrawer() {
 
             {/* Collapsible Inline Denomination Counter */}
             {isTallyExpanded && (
-              <div className="mt-4 pt-4 border-t border-gray-200 space-y-4 animate-in fade-in duration-150">
+              <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 space-y-4 animate-in fade-in duration-150">
                 <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
                     Active Till Denomination Breakdown
                   </h4>
                   <button
                     onClick={() => setIsTallyExpanded(false)}
-                    className="text-xs text-blue-600 hover:underline flex items-center space-x-1"
+                    className="text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-center space-x-1"
                   >
                     <span>Collapse Till Counter</span>
                     <ChevronUp className="w-3.5 h-3.5" />
@@ -862,16 +864,16 @@ export function CashDrawer() {
           </div>
         ) : (
           /* No Shift Active — Till Starter Bar */
-          <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-5 mb-6 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4 sm:p-5 mb-6 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 transition-colors">
             <div className="flex items-center space-x-3">
-              <div className="p-2.5 bg-slate-100 text-slate-700 rounded-xl">
+              <div className="p-2.5 bg-slate-100 dark:bg-gray-700 text-slate-700 dark:text-slate-300 rounded-xl">
                 <Coins size={22} />
               </div>
               <div>
-                <h3 className="font-bold text-gray-900 text-sm sm:text-base">
+                <h3 className="font-bold text-gray-900 dark:text-white text-sm sm:text-base">
                   Cash Register: No Active Till Open
                 </h3>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-gray-500 dark:text-gray-400">
                   {currentUser
                     ? `Welcome ${currentUser.fullName}. Open drawer to verify opening float and balance tills.`
                     : 'Sign in to start your shift drawer and access live registers.'}

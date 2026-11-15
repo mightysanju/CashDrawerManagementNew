@@ -43,18 +43,18 @@ export function OpeningBalanceForm({ onSubmit, onCancel }: OpeningBalanceFormPro
   const total = calculateTotal();
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
-      <div className="flex items-center justify-between border-b pb-4 mb-6">
+    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 mb-6 transition-colors">
+      <div className="flex items-center justify-between border-b border-gray-100 dark:border-gray-750 pb-4 mb-6">
         <div className="flex items-center gap-3">
-          <div className="p-2 bg-blue-100 text-blue-700 rounded-lg">
+          <div className="p-2 bg-blue-100 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 rounded-lg">
             <DollarSign size={24} />
           </div>
           <div>
-            <h2 className="text-xl font-bold text-gray-900">Count Opening Float</h2>
-            <p className="text-xs text-gray-500">Count all bills and coin rolls present in the drawer before starting transactions.</p>
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white">Count Opening Float</h2>
+            <p className="text-xs text-gray-500 dark:text-gray-400">Count all bills and coin rolls present in the drawer before starting transactions.</p>
           </div>
         </div>
-        <span className="text-xs bg-blue-50 text-blue-700 font-semibold px-2.5 py-1 rounded-full border border-blue-200">
+        <span className="text-xs bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-semibold px-2.5 py-1 rounded-full border border-blue-200 dark:border-blue-800">
           Step 2 of 2
         </span>
       </div>
@@ -87,12 +87,12 @@ export function OpeningBalanceForm({ onSubmit, onCancel }: OpeningBalanceFormPro
         />
       </div>
 
-      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/80 p-5 rounded-xl mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-gray-750 dark:to-gray-800 border border-blue-200/80 dark:border-gray-700 p-5 rounded-xl mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <div>
-          <span className="text-xs uppercase tracking-wider text-blue-700 font-bold block mb-0.5">
+          <span className="text-xs uppercase tracking-wider text-blue-700 dark:text-blue-400 font-bold block mb-0.5">
             Total Starting Float
           </span>
-          <span className="text-3xl font-extrabold text-blue-900 font-mono">
+          <span className="text-3xl font-extrabold text-blue-900 dark:text-white font-mono">
             ${total.toFixed(2)}
           </span>
         </div>
@@ -101,7 +101,7 @@ export function OpeningBalanceForm({ onSubmit, onCancel }: OpeningBalanceFormPro
           <button
             type="button"
             onClick={onCancel}
-            className="inline-flex items-center gap-1.5 px-4 py-2 bg-white border border-gray-300 text-gray-700 font-semibold text-xs rounded-lg hover:bg-gray-50 transition shadow-xs"
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 font-semibold text-xs rounded-lg hover:bg-gray-50 dark:hover:bg-gray-650 transition shadow-xs"
           >
             <X size={15} />
             Back
