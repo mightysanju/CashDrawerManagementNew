@@ -87,21 +87,21 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
       <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-gray-100 dark:border-slate-800 transition-colors">
         
         {/* Header */}
-        <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 px-6 py-4 text-white flex items-center justify-between">
+        <div className="bg-slate-900 px-6 py-4 text-white flex items-center justify-between border-b border-slate-800">
           <div className="flex items-center space-x-2.5">
-            <div className="p-2 bg-white/10 rounded-xl backdrop-blur-sm">
-              <Key className="w-5 h-5 text-blue-200" />
+            <div className="p-2 bg-slate-800 text-slate-200 rounded-xl border border-slate-700">
+              <Key className="w-5 h-5 text-blue-400" />
             </div>
             <div>
-              <h3 className="text-base font-bold">Change My Password</h3>
-              <p className="text-xs text-blue-100">
-                Logged in as <span className="font-semibold">{currentUser.fullName}</span> (@{currentUser.username})
+              <h3 className="text-base font-bold tracking-tight">Change My Password</h3>
+              <p className="text-xs text-slate-400">
+                Logged in as <span className="font-semibold text-slate-200">{currentUser.fullName}</span> (@{currentUser.username})
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 text-blue-100 hover:text-white hover:bg-white/10 rounded-lg transition cursor-pointer"
+            className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>

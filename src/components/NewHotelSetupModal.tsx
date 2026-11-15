@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Building2, ShieldCheck, User, Key, CheckCircle2, AlertCircle, Sparkles, ArrowRight } from 'lucide-react';
+import { Building2, ShieldCheck, User, Key, CheckCircle2, AlertCircle, ArrowRight } from 'lucide-react';
 import { DatabaseManager } from '../utils/database';
 import { authManager } from '../utils/authManager';
 import { UserAccount } from '../types';
@@ -90,23 +90,16 @@ export const NewHotelSetupModal: React.FC<NewHotelSetupModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200">
       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-gray-100 dark:border-gray-700">
         {/* Welcome Header */}
-        <div className="bg-gradient-to-r from-blue-700 via-indigo-700 to-purple-800 px-6 py-6 text-white text-center relative overflow-hidden">
-          <div className="absolute top-0 right-0 -mt-4 -mr-4 w-28 h-28 bg-white/10 rounded-full blur-xl pointer-events-none"></div>
-          
-          <div className="inline-flex items-center space-x-1.5 bg-white/15 px-3 py-1 rounded-full text-[11px] font-semibold text-blue-100 mb-3 backdrop-blur-xs border border-white/20">
-            <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-            <span>New Hotel Network Setup</span>
+        <div className="bg-slate-900 px-6 py-6 text-white text-center border-b border-slate-800">
+          <div className="w-12 h-12 bg-slate-800 rounded-xl flex items-center justify-center mx-auto mb-3 border border-slate-700">
+            <Building2 className="w-6 h-6 text-blue-400" />
           </div>
 
-          <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-3 backdrop-blur-sm shadow-inner border border-white/30">
-            <Building2 className="w-8 h-8 text-white" />
-          </div>
-
-          <h2 className="text-xl font-extrabold text-white tracking-tight">
-            Welcome to FrontDesk Pro!
+          <h2 className="text-lg font-bold text-white tracking-tight">
+            Hotel Network Setup
           </h2>
-          <p className="text-xs text-blue-100 mt-1 max-w-sm mx-auto leading-relaxed">
-            No register database was found. Set up your property name and primary Manager account to initialize your secure register.
+          <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto leading-relaxed">
+            No register database was found. Set up your property name and primary Manager account to initialize your register.
           </p>
         </div>
 
@@ -237,7 +230,7 @@ export const NewHotelSetupModal: React.FC<NewHotelSetupModalProps> = ({
             <button
               type="submit"
               disabled={loading}
-              className={`w-full py-3 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold text-xs rounded-xl shadow-md shadow-blue-500/20 hover:shadow-lg transition flex items-center justify-center space-x-2 ${
+              className={`w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center justify-center space-x-2 cursor-pointer ${
                 loading ? 'opacity-70 cursor-not-allowed' : ''
               }`}
             >

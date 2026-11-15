@@ -53,14 +53,14 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-gray-100 dark:border-gray-700">
         {/* Header */}
-        <div className="bg-gradient-to-r from-blue-600 to-indigo-700 px-6 py-5 text-white flex items-center justify-between">
+        <div className="bg-slate-900 px-6 py-5 text-white flex items-center justify-between border-b border-slate-800">
           <div className="flex items-center space-x-3">
-            <div className="p-2.5 bg-white/10 rounded-xl backdrop-blur-sm">
-              <Lock className="w-6 h-6 text-white" />
+            <div className="p-2.5 bg-slate-800 text-slate-200 rounded-xl border border-slate-700">
+              <Lock className="w-5 h-5 text-blue-400" />
             </div>
             <div>
-              <h2 className="text-xl font-bold text-white">Staff Login Required</h2>
-              <p className="text-xs text-blue-100 mt-0.5">
+              <h2 className="text-base font-bold text-white tracking-tight">Staff Sign In</h2>
+              <p className="text-xs text-slate-400 mt-0.5">
                 Sign in to manage drawers, cash drops, and shift logs
               </p>
             </div>
@@ -69,10 +69,9 @@ export const LoginModal: React.FC<LoginModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="p-1.5 text-white/70 hover:text-white hover:bg-white/10 rounded-lg transition"
-              title="Close"
+              className="p-1 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition cursor-pointer"
             >
-              <span className="text-xl font-bold leading-none">&times;</span>
+              <X className="w-5 h-5" />
             </button>
           )}
         </div>
@@ -147,7 +146,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
               <button
                 type="submit"
                 disabled={loading}
-                className={`flex-1 py-2.5 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-medium rounded-xl shadow-md shadow-blue-500/20 hover:shadow-lg hover:shadow-blue-500/30 transition flex items-center justify-center space-x-2 ${
+                className={`flex-1 py-2.5 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-medium rounded-xl shadow-xs transition flex items-center justify-center space-x-2 cursor-pointer ${
                   loading ? 'opacity-70 cursor-not-allowed' : ''
                 }`}
               >

@@ -523,32 +523,32 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in overflow-y-auto">
-      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-4xl w-full my-6 overflow-hidden border border-gray-100 dark:border-gray-700 flex flex-col max-h-[92vh] transition-colors">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-in fade-in">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-4xl w-full h-[90vh] max-h-[860px] flex flex-col overflow-hidden border border-gray-200 dark:border-gray-700 transition-colors">
         
         {/* Header */}
-        <div className="bg-gradient-to-r from-slate-800 via-indigo-900 to-blue-900 px-6 py-4 text-white flex items-center justify-between">
+        <div className="flex-shrink-0 bg-slate-900 px-6 py-4 text-white flex items-center justify-between border-b border-slate-800">
           <div className="flex items-center space-x-3">
-            <div className="p-2 bg-white/10 rounded-xl backdrop-blur-sm">
-              <ShieldCheck className="w-5 h-5 text-indigo-300" />
+            <div className="p-2 bg-slate-800 text-slate-200 rounded-xl border border-slate-700">
+              <ShieldCheck className="w-5 h-5 text-blue-400" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-white">Manager Administration Console</h2>
-              <p className="text-xs text-indigo-200">
+              <h2 className="text-base font-bold text-white tracking-tight">Manager Administration Console</h2>
+              <p className="text-xs text-slate-400">
                 Staff accounts, log categories, date-range audit reports & local database explorer
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 text-indigo-200 hover:text-white hover:bg-white/10 rounded-lg transition cursor-pointer"
+            className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Tab Navigation */}
-        <div className="flex border-b border-gray-200 dark:border-gray-700 px-6 bg-gray-50 dark:bg-gray-800/60 overflow-x-auto">
+        {/* Tab Navigation (Always visible and anchored) */}
+        <div className="flex-shrink-0 sticky top-0 z-20 bg-gray-50 dark:bg-gray-800/95 backdrop-blur-xs border-b border-gray-200 dark:border-gray-700 px-6 flex items-center overflow-x-auto">
           <button
             onClick={() => setActiveTab('users')}
             className={`py-3 px-3.5 font-semibold text-xs border-b-2 transition flex items-center space-x-1.5 whitespace-nowrap cursor-pointer ${
@@ -558,7 +558,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
             }`}
           >
             <Users className="w-4 h-4" />
-            <span>Staff Users ({users.length})</span>
+            <span>Staff Users (<span className="tabular-nums font-mono">{users.length}</span>)</span>
           </button>
 
           <button
@@ -582,7 +582,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
             }`}
           >
             <FileText className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-            <span className="font-bold">Reports & Shift Audits ({allShiftLogs.length})</span>
+            <span className="font-bold">Reports & Shift Audits (<span className="tabular-nums font-mono">{allShiftLogs.length}</span>)</span>
           </button>
 
           <button
@@ -610,8 +610,8 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
           </button>
         </div>
 
-        {/* Tab Body */}
-        <div className="p-6 overflow-y-auto flex-1 space-y-6">
+        {/* Tab Body (Scrolls independently while header and tabs remain sticky) */}
+        <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-6">
 
           {/* -------------------- TAB 1: USERS -------------------- */}
           {activeTab === 'users' && (
@@ -801,14 +801,14 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
               {resetPasswordTargetUser && (
                 <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in">
                   <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-gray-100 dark:border-slate-800">
-                    <div className="bg-gradient-to-r from-blue-600 to-indigo-700 px-5 py-3.5 text-white flex items-center justify-between">
+                    <div className="bg-slate-900 px-5 py-3.5 text-white flex items-center justify-between border-b border-slate-800">
                       <div className="flex items-center space-x-2">
-                        <Key className="w-4 h-4 text-blue-200" />
-                        <h4 className="text-sm font-bold">Manage User Password</h4>
+                        <Key className="w-4 h-4 text-blue-400" />
+                        <h4 className="text-sm font-bold tracking-tight">Manage User Password</h4>
                       </div>
                       <button
                         onClick={() => setResetPasswordTargetUser(null)}
-                        className="p-1 text-blue-100 hover:text-white hover:bg-white/10 rounded-lg cursor-pointer"
+                        className="p-1 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg cursor-pointer"
                       >
                         <X className="w-4 h-4" />
                       </button>
@@ -1153,7 +1153,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                     type="button"
                     onClick={() => generateShiftLogAuditPDF(filteredLogs, reportStartDate, reportEndDate, orgNameInput || settings.organizationName || 'FrontDesk Pro')}
                     disabled={filteredLogs.length === 0}
-                    className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center space-x-2 shadow-md shadow-emerald-600/20 disabled:opacity-50 cursor-pointer"
+                    className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center space-x-2 shadow-xs disabled:opacity-50 cursor-pointer"
                   >
                     <FileText className="w-4 h-4" />
                     <span>Download Shift Log Audit Report (PDF)</span>
@@ -1668,7 +1668,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
 
                   <button
                     type="submit"
-                    className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 transition flex items-center space-x-2 cursor-pointer"
+                    className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center space-x-2 cursor-pointer"
                   >
                     <Check className="w-4 h-4" />
                     <span>Save & Broadcast Settings</span>

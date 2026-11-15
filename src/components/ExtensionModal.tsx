@@ -107,7 +107,7 @@ export const ExtensionModal: React.FC<ExtensionModalProps> = ({
             {/* Target Domain Callout */}
             <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-center justify-between text-xs">
               <div className="flex items-center space-x-2">
-                <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
                 <span className="text-slate-600 font-medium">Default App Domain:</span>
                 <code className="text-[11px] font-mono font-bold text-slate-800 bg-white px-1.5 py-0.5 rounded border border-slate-200">
                   https://cashdrawermanagement.netlify.app/app

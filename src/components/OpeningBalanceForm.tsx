@@ -87,12 +87,12 @@ export function OpeningBalanceForm({ onSubmit, onCancel }: OpeningBalanceFormPro
         />
       </div>
 
-      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-gray-750 dark:to-gray-800 border border-blue-200/80 dark:border-gray-700 p-5 rounded-xl mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+      <div className="bg-slate-50 dark:bg-gray-800 border border-slate-200 dark:border-gray-700 p-5 rounded-xl mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <div>
-          <span className="text-xs uppercase tracking-wider text-blue-700 dark:text-blue-400 font-bold block mb-0.5">
+          <span className="text-xs uppercase tracking-wider text-slate-600 dark:text-slate-400 font-bold block mb-0.5">
             Total Starting Float
           </span>
-          <span className="text-3xl font-extrabold text-blue-900 dark:text-white font-mono">
+          <span className="text-3xl font-extrabold text-slate-900 dark:text-white font-mono tabular-nums">
             ${total.toFixed(2)}
           </span>
         </div>

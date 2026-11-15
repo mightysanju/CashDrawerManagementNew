@@ -305,23 +305,23 @@ export const ShiftLogModal: React.FC<ShiftLogModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in overflow-y-auto">
       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-2xl w-full my-8 overflow-hidden border border-gray-100 dark:border-gray-700 flex flex-col max-h-[90vh]">
         {/* Modal Header */}
-        <div className="bg-gradient-to-r from-blue-700 via-indigo-700 to-purple-800 px-6 py-4 text-white flex items-center justify-between">
+        <div className="bg-slate-900 px-6 py-4 text-white flex items-center justify-between border-b border-slate-800">
           <div className="flex items-center space-x-3">
-            <div className="p-2 bg-white/10 rounded-xl backdrop-blur-sm">
-              <FileText className="w-5 h-5 text-white" />
+            <div className="p-2 bg-slate-800 text-slate-200 rounded-xl border border-slate-700">
+              <FileText className="w-5 h-5 text-blue-400" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-white">
+              <h2 className="text-base font-bold text-white tracking-tight">
                 {editEntry ? 'Edit Shift Log Entry' : 'New Shift Log & Hospitality Lead'}
               </h2>
-              <p className="text-xs text-blue-100">
+              <p className="text-xs text-slate-400">
                 Logged by {currentUser.fullName} ({currentUser.role})
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 text-blue-100 hover:text-white hover:bg-white/10 rounded-lg transition"
+            className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -355,10 +355,10 @@ export const ShiftLogModal: React.FC<ShiftLogModalProps> = ({
                     className={`py-2.5 px-3 rounded-xl border text-sm font-semibold flex items-center justify-center space-x-2 transition ${
                       isSelected
                         ? cat === 'Sales'
-                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-md shadow-emerald-500/20'
+                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
                           : cat === 'Complaint'
-                          ? 'bg-rose-600 text-white border-rose-600 shadow-md shadow-rose-500/20'
-                          : 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-500/20'
+                          ? 'bg-rose-600 text-white border-rose-600 shadow-xs'
+                          : 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
                         : 'bg-gray-50 dark:bg-gray-700/50 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'
                     }`}
                   >
@@ -763,7 +763,7 @@ export const ShiftLogModal: React.FC<ShiftLogModalProps> = ({
             </button>
             <button
               type="submit"
-              className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm rounded-xl shadow-md shadow-blue-500/20 hover:shadow-lg hover:shadow-blue-500/30 transition flex items-center space-x-2"
+              className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm rounded-xl shadow-xs transition flex items-center space-x-2 cursor-pointer"
             >
               <CheckCircle className="w-4 h-4" />
               <span>{editEntry ? 'Save Changes' : 'Save Shift Log'}</span>

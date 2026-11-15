@@ -24,6 +24,9 @@ import {
   Users,
   Send,
   ExternalLink,
+  Check,
+  Activity,
+  FileText,
 } from 'lucide-react';
 import {
   ShiftLogEntry,
@@ -65,11 +68,17 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [replyText, setReplyText] = useState('');
 
-  // Interactive Recent Activity States
-  const [recentActivityFilter, setRecentActivityFilter] = useState<'All' | 'Sales' | 'Complaint' | 'Miscellaneous'>('All');
-  const [recentActivitySearch, setRecentActivitySearch] = useState('');
   const [expandedActivityId, setExpandedActivityId] = useState<string | null>(null);
   const [activityReplyText, setActivityReplyText] = useState<{ [id: string]: string }>({});
+
+  // Inline Card Reminder State
+  const [reminderTargetLogId, setReminderTargetLogId] = useState<string | null>(null);
+  const [reminderDateInput, setReminderDateInput] = useState<string>('');
+  const [reminderNoteInput, setReminderNoteInput] = useState<string>('');
+
+  // Unified Recent Activity Feed Filter
+  type ActivityFeedFilterType = 'All' | 'Replies' | 'Status' | 'Reminders' | 'Created';
+  const [activityFeedFilter, setActivityFeedFilter] = useState<ActivityFeedFilterType>('All');
 
   /* ----- Metrics ----- */
   const salesMetrics = useMemo(() => {
@@ -100,8 +109,6 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
 
   /* ----- Filtered lists ----- */
   const salesLeads = useMemo(() => logs.filter((l) => l.category === 'Sales'), [logs]);
-  const complaintLogs = useMemo(() => logs.filter((l) => l.category === 'Complaint'), [logs]);
-  const miscLogs = useMemo(() => logs.filter((l) => l.category !== 'Sales' && l.category !== 'Complaint'), [logs]);
 
   const filteredComplaints = useMemo(() => {
     return logs.filter((l) => {
@@ -213,6 +220,184 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
     }
   };
 
+  /* ----- Inline Card Reminder Handlers ----- */
+  const setQuickReminderPreset = (hoursFromNow: number) => {
+    const target = new Date(Date.now() + hoursFromNow * 3600 * 1000);
+    const year = target.getFullYear();
+    const month = String(target.getMonth() + 1).padStart(2, '0');
+    const day = String(target.getDate()).padStart(2, '0');
+    const hours = String(target.getHours()).padStart(2, '0');
+    const mins = String(target.getMinutes()).padStart(2, '0');
+    setReminderDateInput(`${year}-${month}-${day}T${hours}:${mins}`);
+  };
+
+  const handleSaveReminder = async (entry: ShiftLogEntry) => {
+    if (!reminderDateInput) return;
+    const updated: ShiftLogEntry = {
+      ...entry,
+      hasReminder: true,
+      reminderDate: reminderDateInput,
+      reminderNote: reminderNoteInput.trim() || undefined,
+      isReminderCompleted: false,
+      updatedAt: new Date().toISOString(),
+    };
+    await db.saveShiftLog(updated);
+    p2pSyncManager.broadcastShiftLog(updated);
+    setReminderTargetLogId(null);
+    setReminderSuccessLogId(entry.id);
+    setTimeout(() => setReminderSuccessLogId(null), 3000);
+    onRefresh();
+  };
+
+  const handleClearReminder = async (entry: ShiftLogEntry) => {
+    const updated: ShiftLogEntry = {
+      ...entry,
+      hasReminder: false,
+      reminderDate: undefined,
+      reminderNote: undefined,
+      isReminderCompleted: true,
+      updatedAt: new Date().toISOString(),
+    };
+    await db.saveShiftLog(updated);
+    p2pSyncManager.broadcastShiftLog(updated);
+    setReminderTargetLogId(null);
+    onRefresh();
+  };
+
+  const formatReminderDate = (isoOrDateString?: string) => {
+    if (!isoOrDateString) return 'Reminder';
+    try {
+      const d = new Date(isoOrDateString);
+      return d.toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return isoOrDateString;
+    }
+  };
+
+  /* ----- Unified Recent Activity Feed (Replies, Status Changes, Reminders & Logs) ----- */
+  const recentActivityFeed = useMemo(() => {
+    const items: Array<{
+      id: string;
+      type: 'reply' | 'status' | 'reminder' | 'created';
+      logId: string;
+      category: PrimaryCategory;
+      subCategory?: string;
+      logTitle: string;
+      actor: string;
+      actorRole?: string;
+      summary: string;
+      detail?: string;
+      timestamp: string;
+      badgeText: string;
+      badgeColor: string;
+    }> = [];
+
+    logs.forEach((log) => {
+      const title = log.name || log.topic || `${log.category} Log`;
+
+      // 1. Creation event
+      items.push({
+        id: `created_${log.id}`,
+        type: 'created',
+        logId: log.id,
+        category: log.category,
+        subCategory: log.subCategory,
+        logTitle: title,
+        actor: log.clerkName || 'Staff',
+        actorRole: log.clerkRole,
+        summary: `Created ${log.category.toLowerCase()} log`,
+        detail: log.clerkNotes || log.topic,
+        timestamp: log.createdAt,
+        badgeText: 'New Log',
+        badgeColor: 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700',
+      });
+
+      // 2. Replies / Comments events
+      if (log.responses && log.responses.length > 0) {
+        log.responses.forEach((r) => {
+          items.push({
+            id: `reply_${r.id}`,
+            type: 'reply',
+            logId: log.id,
+            category: log.category,
+            subCategory: log.subCategory,
+            logTitle: title,
+            actor: r.authorName,
+            actorRole: r.authorRole,
+            summary: `Replied on "${title}"`,
+            detail: r.message,
+            timestamp: r.createdAt,
+            badgeText: 'Reply',
+            badgeColor: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800',
+          });
+        });
+      }
+
+      // 3. Status updates events
+      if (log.updatedAt && log.updatedAt !== log.createdAt) {
+        if (log.category === 'Complaint' && log.complaintStatus) {
+          items.push({
+            id: `status_${log.id}_${log.updatedAt}`,
+            type: 'status',
+            logId: log.id,
+            category: log.category,
+            subCategory: log.subCategory,
+            logTitle: title,
+            actor: log.clerkName || 'Staff',
+            summary: `Complaint marked as ${log.complaintStatus}`,
+            detail: log.clerkNotes,
+            timestamp: log.updatedAt,
+            badgeText: log.complaintStatus,
+            badgeColor: log.complaintStatus === 'Resolved'
+              ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800'
+              : 'bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800',
+          });
+        } else if (log.category === 'Sales' && log.salesStatus) {
+          items.push({
+            id: `sales_status_${log.id}_${log.updatedAt}`,
+            type: 'status',
+            logId: log.id,
+            category: log.category,
+            subCategory: log.subCategory,
+            logTitle: title,
+            actor: log.clerkName || 'Staff',
+            summary: `Lead progress: ${log.salesStatus}`,
+            timestamp: log.updatedAt,
+            badgeText: log.salesStatus,
+            badgeColor: 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800',
+          });
+        }
+      }
+
+      // 4. Follow-up Reminders
+      if (log.hasReminder && log.reminderDate) {
+        items.push({
+          id: `reminder_${log.id}_${log.reminderDate}`,
+          type: 'reminder',
+          logId: log.id,
+          category: log.category,
+          subCategory: log.subCategory,
+          logTitle: title,
+          actor: log.clerkName || 'Staff',
+          summary: `Follow-up reminder: ${log.reminderNote || 'Follow-up scheduled'}`,
+          detail: `Due: ${new Date(log.reminderDate).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`,
+          timestamp: log.updatedAt || log.createdAt,
+          badgeText: 'Reminder',
+          badgeColor: 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800',
+        });
+      }
+    });
+
+    items.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+    if (activityFeedFilter === 'Replies') return items.filter((i) => i.type === 'reply');
+    if (activityFeedFilter === 'Status') return items.filter((i) => i.type === 'status');
+    if (activityFeedFilter === 'Reminders') return items.filter((i) => i.type === 'reminder');
+    if (activityFeedFilter === 'Created') return items.filter((i) => i.type === 'created');
+
+    return items;
+  }, [logs, activityFeedFilter]);
+
   const getActivityIconConfig = (entry: ShiftLogEntry) => {
     if (entry.category === 'Sales') {
       switch (entry.subCategory) {
@@ -258,25 +443,20 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
   };
 
   const filteredRecentLogs = useMemo(() => {
+    if (!searchQuery.trim()) return logs;
+    const q = searchQuery.toLowerCase();
     return logs.filter((l) => {
-      if (recentActivityFilter !== 'All' && l.category !== recentActivityFilter) {
-        return false;
-      }
-      if (recentActivitySearch.trim()) {
-        const q = recentActivitySearch.toLowerCase();
-        const textMatch =
-          (l.name && l.name.toLowerCase().includes(q)) ||
-          (l.topic && l.topic.toLowerCase().includes(q)) ||
-          (l.clerkNotes && l.clerkNotes.toLowerCase().includes(q)) ||
-          (l.clerkName && l.clerkName.toLowerCase().includes(q)) ||
-          (l.subCategory && l.subCategory.toLowerCase().includes(q)) ||
-          (l.phone && l.phone.toLowerCase().includes(q)) ||
-          (l.roomNumber && l.roomNumber.toLowerCase().includes(q));
-        if (!textMatch) return false;
-      }
-      return true;
+      return (
+        (l.name && l.name.toLowerCase().includes(q)) ||
+        (l.topic && l.topic.toLowerCase().includes(q)) ||
+        (l.clerkNotes && l.clerkNotes.toLowerCase().includes(q)) ||
+        (l.clerkName && l.clerkName.toLowerCase().includes(q)) ||
+        (l.subCategory && l.subCategory.toLowerCase().includes(q)) ||
+        (l.phoneNumber && l.phoneNumber.toLowerCase().includes(q)) ||
+        (l.roomNumber && l.roomNumber.toLowerCase().includes(q))
+      );
     });
-  }, [logs, recentActivityFilter, recentActivitySearch]);
+  }, [logs, searchQuery]);
 
   /* ================================================================
      OVERVIEW — 3 Summary Cards
@@ -400,55 +580,114 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
         </button>
       </div>
 
-      {/* -------------------- RECENT ACTIVITY (INTERACTIVE & INFORMATIVE) -------------------- */}
-      <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-xs space-y-4">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-gray-100 pb-3">
+      {/* -------------------- RECENT ACTIVITY STREAM (CHANGES, REPLIES, STATUS & LOGS) -------------------- */}
+      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5 shadow-xs space-y-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-gray-100 dark:border-gray-700 pb-3">
           <div className="flex items-center space-x-2.5">
-            <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
-              <Clock className="w-4 h-4" />
+            <div className="p-2 bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 rounded-lg border border-blue-200 dark:border-blue-900">
+              <Activity className="w-4 h-4" />
             </div>
             <div>
               <div className="flex items-center space-x-2">
-                <h3 className="text-sm font-bold text-gray-900">Recent Shift Activity</h3>
-                <span className="text-[11px] font-semibold bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
-                  {filteredRecentLogs.length} logs
+                <h3 className="text-sm font-bold text-gray-900 dark:text-white">Recent Activity & Updates</h3>
+                <span className="text-[11px] font-semibold bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 py-0.5 rounded-full font-mono tabular-nums">
+                  {recentActivityFeed.length} updates
                 </span>
               </div>
-              <p className="text-xs text-gray-500">Live operational log stream across all staff shifts</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Live stream of replies, status updates, reminders, and shift notes</p>
             </div>
           </div>
 
-          {/* Quick Search */}
-          <div className="relative w-full sm:w-64">
-            <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Filter by guest, note, clerk..."
-              value={recentActivitySearch}
-              onChange={(e) => setRecentActivitySearch(e.target.value)}
-              className="w-full pl-8 pr-3 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
-            />
+          {/* Filter Pills */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            {(['All', 'Replies', 'Status', 'Reminders', 'Created'] as const).map((filterType) => (
+              <button
+                key={filterType}
+                type="button"
+                onClick={() => setActivityFeedFilter(filterType)}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition cursor-pointer ${
+                  activityFeedFilter === filterType
+                    ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 shadow-xs'
+                    : 'bg-gray-100 dark:bg-gray-700/60 text-gray-600 dark:text-gray-300 hover:bg-gray-200/70'
+                }`}
+              >
+                {filterType === 'All' ? 'All Updates' :
+                 filterType === 'Replies' ? 'Staff Replies' :
+                 filterType === 'Status' ? 'Status Changes' :
+                 filterType === 'Reminders' ? 'Reminders' : 'New Logs'}
+              </button>
+            ))}
           </div>
         </div>
 
-        {/* Filter Pills */}
-        <div className="flex flex-wrap items-center gap-1.5">
-          {(['All', 'Sales', 'Complaint', 'Miscellaneous'] as const).map((cat) => (
-            <button
-              key={cat}
-              onClick={() => setRecentActivityFilter(cat)}
-              className={`px-3 py-1 text-xs font-semibold rounded-lg transition-all ${
-                recentActivityFilter === cat
-                  ? 'bg-gray-900 text-white shadow-xs'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200/70'
-              }`}
-            >
-              {cat === 'All' ? `All (${logs.length})` :
-               cat === 'Sales' ? `Sales Leads (${salesLeads.length})` :
-               cat === 'Complaint' ? `Complaints (${complaintLogs.length})` :
-               `Shift Notes (${miscLogs.length})`}
-            </button>
-          ))}
+        {/* Activity Stream Feed */}
+        <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+          {recentActivityFeed.length === 0 ? (
+            <div className="py-6 text-center text-gray-400 text-xs">
+              No recent changes recorded yet. When staff reply, update statuses, or set reminders, they will appear here.
+            </div>
+          ) : (
+            recentActivityFeed.slice(0, 15).map((act) => (
+              <div
+                key={act.id}
+                onClick={() => {
+                  setExpandedActivityId(act.logId);
+                }}
+                className="p-3 bg-gray-50 dark:bg-gray-700/40 hover:bg-blue-50/50 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded-xl transition cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+              >
+                <div className="flex items-start space-x-3 min-w-0 flex-1">
+                  <div className="p-1.5 rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 shrink-0 mt-0.5">
+                    {act.type === 'reply' ? (
+                      <MessageSquare className="w-3.5 h-3.5 text-blue-600" />
+                    ) : act.type === 'status' ? (
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    ) : act.type === 'reminder' ? (
+                      <Bell className="w-3.5 h-3.5 text-amber-600" />
+                    ) : (
+                      <FileText className="w-3.5 h-3.5 text-slate-600" />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1 text-xs">
+                    <div className="flex flex-wrap items-center gap-1.5 mb-0.5">
+                      <span className="font-bold text-gray-900 dark:text-white">
+                        {act.actor}
+                      </span>
+                      {act.actorRole && (
+                        <span className="text-[10px] text-gray-500 font-mono">({act.actorRole})</span>
+                      )}
+                      <span className="text-gray-400">&bull;</span>
+                      <span className="text-gray-600 dark:text-gray-300 font-medium">
+                        {act.summary}
+                      </span>
+                      <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.2 rounded border ${act.badgeColor}`}>
+                        {act.badgeText}
+                      </span>
+                    </div>
+                    {act.detail && (
+                      <p className="text-gray-600 dark:text-gray-300 italic truncate max-w-xl">
+                        "{act.detail}"
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center space-x-2 shrink-0 text-[11px] text-gray-500 font-mono tabular-nums">
+                  <Clock className="w-3 h-3 text-gray-400" />
+                  <span>{formatRelativeTime(act.timestamp)}</span>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* -------------------- MAIN SHIFT LOG CARDS STREAM -------------------- */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between pb-1">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300">
+            Shift Logs Feed (<span className="font-mono tabular-nums">{filteredRecentLogs.length}</span>)
+          </h4>
+          <span className="text-[11px] text-gray-400">Click any card to inspect full details or reply</span>
         </div>
 
         {/* Activity Items List */}
@@ -505,19 +744,39 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
                             </span>
                           )}
 
-                          {entry.category === 'Complaint' && entry.complaintStatus && (
-                            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
-                              entry.complaintStatus === 'Resolved' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' :
-                              entry.complaintStatus === 'In Progress' ? 'bg-blue-50 border-blue-200 text-blue-700' :
-                              'bg-amber-50 border-amber-200 text-amber-700'
-                            }`}>
-                              {entry.complaintStatus}
-                            </span>
+                          {entry.category === 'Complaint' && (
+                            <div 
+                              className="relative inline-flex items-center" 
+                              onClick={(e) => e.stopPropagation()}
+                              onPointerDown={(e) => e.stopPropagation()}
+                            >
+                              <select
+                                value={entry.complaintStatus || 'Open'}
+                                onChange={(e) => {
+                                  e.stopPropagation();
+                                  handleUpdateComplaintStatus(entry, e.target.value as ComplaintStatus);
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                onPointerDown={(e) => e.stopPropagation()}
+                                className={`text-[11px] font-bold py-0.5 pl-2 pr-5 rounded-md border transition cursor-pointer appearance-none focus:outline-none focus:ring-1 focus:ring-blue-500 ${
+                                  (entry.complaintStatus || 'Open') === 'Resolved'
+                                    ? 'bg-emerald-50 text-emerald-800 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800'
+                                    : (entry.complaintStatus || 'Open') === 'In Progress'
+                                    ? 'bg-blue-50 text-blue-800 border-blue-300 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800'
+                                    : 'bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800'
+                                }`}
+                              >
+                                <option value="Open">Status: Open</option>
+                                <option value="In Progress">Status: In Progress</option>
+                                <option value="Resolved">Status: Resolved</option>
+                              </select>
+                              <ChevronDown className="w-3 h-3 text-current absolute right-1 pointer-events-none opacity-60" />
+                            </div>
                           )}
 
                           {/* Room or Revenue summary */}
                           {(entry.potentialRevenue || 0) > 0 && (
-                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 tabular-nums">
                               ${entry.potentialRevenue?.toLocaleString()}
                             </span>
                           )}
@@ -528,12 +787,30 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
                             </span>
                           )}
 
-                          {entry.hasReminder && (
-                            <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full inline-flex items-center space-x-1">
-                              <Bell className="w-2.5 h-2.5" />
-                              <span>{entry.reminderTime || 'Reminder'}</span>
-                            </span>
-                          )}
+                          {/* Interactive Card Reminder Button */}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (reminderTargetLogId === entry.id) {
+                                setReminderTargetLogId(null);
+                              } else {
+                                setReminderTargetLogId(entry.id);
+                                setReminderDateInput(entry.reminderDate || '');
+                                setReminderNoteInput(entry.reminderNote || '');
+                              }
+                            }}
+                            onPointerDown={(e) => e.stopPropagation()}
+                            title={entry.hasReminder ? 'Edit follow-up reminder' : 'Set follow-up reminder'}
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold border transition cursor-pointer ${
+                              entry.hasReminder && !entry.isReminderCompleted
+                                ? 'bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800 hover:bg-amber-100'
+                                : 'bg-gray-50 dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:text-amber-700 hover:border-amber-300'
+                            }`}
+                          >
+                            <Bell className={`w-3.5 h-3.5 ${entry.hasReminder && !entry.isReminderCompleted ? 'text-amber-600 fill-amber-500/20' : 'text-gray-400'}`} />
+                            <span>{entry.hasReminder && entry.reminderDate ? formatReminderDate(entry.reminderDate) : 'Reminder'}</span>
+                          </button>
                         </div>
 
                         {/* Subline: author & full timestamp */}
@@ -566,6 +843,102 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
                       {isExpanded ? <ChevronDown className="w-4 h-4 text-gray-600" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
                     </div>
                   </div>
+
+                  {/* Inline Quick Reminder Drawer for this Card */}
+                  {reminderTargetLogId === entry.id && (
+                    <div 
+                      onClick={(e) => e.stopPropagation()}
+                      className="bg-amber-50/70 dark:bg-amber-950/30 border-t border-b border-amber-200 dark:border-amber-800/60 p-3.5 space-y-3 animate-in fade-in"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-1.5 text-xs font-bold text-amber-900 dark:text-amber-200">
+                          <Bell className="w-3.5 h-3.5 text-amber-600" />
+                          <span>Set Follow-Up Reminder for this Card</span>
+                        </div>
+                        <div className="flex items-center gap-1 text-[11px]">
+                          <button
+                            type="button"
+                            onClick={() => setQuickReminderPreset(1)}
+                            className="px-2 py-0.5 bg-white dark:bg-gray-800 border border-amber-200 dark:border-amber-800 rounded text-amber-800 dark:text-amber-200 hover:bg-amber-100 transition cursor-pointer"
+                          >
+                            +1 Hour
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setQuickReminderPreset(4)}
+                            className="px-2 py-0.5 bg-white dark:bg-gray-800 border border-amber-200 dark:border-amber-800 rounded text-amber-800 dark:text-amber-200 hover:bg-amber-100 transition cursor-pointer"
+                          >
+                            +4 Hours
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setQuickReminderPreset(24)}
+                            className="px-2 py-0.5 bg-white dark:bg-gray-800 border border-amber-200 dark:border-amber-800 rounded text-amber-800 dark:text-amber-200 hover:bg-amber-100 transition cursor-pointer"
+                          >
+                            Tomorrow
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                        <div>
+                          <label className="block text-[10px] font-bold text-amber-900 dark:text-amber-200 uppercase tracking-wider mb-1">
+                            Date & Time
+                          </label>
+                          <input
+                            type="datetime-local"
+                            value={reminderDateInput}
+                            onChange={(e) => setReminderDateInput(e.target.value)}
+                            className="w-full px-2.5 py-1.5 bg-white dark:bg-gray-800 border border-amber-300 dark:border-amber-700 rounded-lg text-xs text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-amber-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-amber-900 dark:text-amber-200 uppercase tracking-wider mb-1">
+                            Reminder Note / Action
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="e.g. Call guest back, follow up on AC repair..."
+                            value={reminderNoteInput}
+                            onChange={(e) => setReminderNoteInput(e.target.value)}
+                            className="w-full px-2.5 py-1.5 bg-white dark:bg-gray-800 border border-amber-300 dark:border-amber-700 rounded-lg text-xs text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-amber-500"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-1">
+                        <div>
+                          {entry.hasReminder && (
+                            <button
+                              type="button"
+                              onClick={() => handleClearReminder(entry)}
+                              className="text-[11px] font-semibold text-rose-600 hover:text-rose-700 hover:underline cursor-pointer"
+                            >
+                              Clear Reminder
+                            </button>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setReminderTargetLogId(null)}
+                            className="px-3 py-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg text-xs font-semibold hover:bg-gray-50 transition cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!reminderDateInput}
+                            onClick={() => handleSaveReminder(entry)}
+                            className="px-3.5 py-1 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold transition flex items-center space-x-1 cursor-pointer"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            <span>Save Reminder</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Expanded Detail View */}
                   {isExpanded && (
@@ -854,9 +1227,9 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
                       <div className="flex flex-wrap items-center gap-2 mb-1">
                         {/* Status badge */}
                         <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full border ${
-                          entry.complaintStatus === 'Resolved' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' :
-                          entry.complaintStatus === 'In Progress' ? 'bg-blue-50 border-blue-200 text-blue-700' :
-                          'bg-amber-50 border-amber-200 text-amber-700'
+                          entry.complaintStatus === 'Resolved' ? 'bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800' :
+                          entry.complaintStatus === 'In Progress' ? 'bg-blue-50 border-blue-200 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800' :
+                          'bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800'
                         }`}>
                           {entry.complaintStatus || 'Open'}
                         </span>
@@ -865,9 +1238,30 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
                             Room {entry.roomNumber}
                           </span>
                         )}
-                        {entry.hasReminder && !entry.isReminderCompleted && (
-                          <Bell className="w-3.5 h-3.5 text-amber-500 animate-pulse" />
-                        )}
+                        {/* Interactive Reminder Button */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (reminderTargetLogId === entry.id) {
+                              setReminderTargetLogId(null);
+                            } else {
+                              setReminderTargetLogId(entry.id);
+                              setReminderDateInput(entry.reminderDate || '');
+                              setReminderNoteInput(entry.reminderNote || '');
+                            }
+                          }}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          title={entry.hasReminder ? 'Edit follow-up reminder' : 'Set follow-up reminder'}
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold border transition cursor-pointer ${
+                            entry.hasReminder && !entry.isReminderCompleted
+                              ? 'bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800 hover:bg-amber-100'
+                              : 'bg-gray-50 dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:text-amber-700 hover:border-amber-300'
+                          }`}
+                        >
+                          <Bell className={`w-3.5 h-3.5 ${entry.hasReminder && !entry.isReminderCompleted ? 'text-amber-600 fill-amber-500/20' : 'text-gray-400'}`} />
+                          <span>{entry.hasReminder && entry.reminderDate ? formatReminderDate(entry.reminderDate) : 'Reminder'}</span>
+                        </button>
                       </div>
                       <h4 className="text-base font-bold text-gray-900">{entry.name}</h4>
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-xs text-gray-500">
@@ -892,11 +1286,16 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
                     <div className="flex flex-col items-end space-y-2 flex-shrink-0">
                       <select
                         value={entry.complaintStatus || 'Open'}
-                        onChange={(e) => handleUpdateComplaintStatus(entry, e.target.value as ComplaintStatus)}
-                        className={`text-xs font-bold py-1.5 px-2 rounded-xl border focus:outline-none focus:ring-2 transition cursor-pointer ${
-                          entry.complaintStatus === 'Resolved' ? 'bg-emerald-600 text-white border-emerald-600' :
-                          entry.complaintStatus === 'In Progress' ? 'bg-blue-100 text-blue-900 border-blue-300' :
-                          'bg-amber-100 text-amber-900 border-amber-300'
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          handleUpdateComplaintStatus(entry, e.target.value as ComplaintStatus);
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        className={`text-xs font-bold py-1.5 px-2 rounded-xl border focus:outline-none focus:ring-1 focus:ring-blue-500 transition cursor-pointer ${
+                          entry.complaintStatus === 'Resolved' ? 'bg-emerald-50 text-emerald-800 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800' :
+                          entry.complaintStatus === 'In Progress' ? 'bg-blue-50 text-blue-800 border-blue-300 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800' :
+                          'bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800'
                         }`}
                       >
                         <option value="Open">Open</option>
@@ -904,13 +1303,13 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
                         <option value="Resolved">Resolved</option>
                       </select>
                       <div className="flex items-center space-x-1">
-                        <button onClick={() => onEditLog(entry)} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition">
+                        <button onClick={() => onEditLog(entry)} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition cursor-pointer">
                           <Edit3 className="w-4 h-4" />
                         </button>
                         {(currentUser.role === 'manager' || currentUser.id === entry.clerkId) && (
                           <button
                             onClick={() => { if (window.confirm('Delete this complaint?')) onDeleteLog(entry.id); }}
-                            className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
+                            className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -918,6 +1317,102 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
                       </div>
                     </div>
                   </div>
+
+                  {/* Inline Reminder Drawer in Complaints View */}
+                  {reminderTargetLogId === entry.id && (
+                    <div 
+                      onClick={(e) => e.stopPropagation()}
+                      className="mt-3 bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 rounded-xl p-3.5 space-y-3 animate-in fade-in"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-1.5 text-xs font-bold text-amber-900 dark:text-amber-200">
+                          <Bell className="w-3.5 h-3.5 text-amber-600" />
+                          <span>Set Follow-Up Reminder</span>
+                        </div>
+                        <div className="flex items-center gap-1 text-[11px]">
+                          <button
+                            type="button"
+                            onClick={() => setQuickReminderPreset(1)}
+                            className="px-2 py-0.5 bg-white dark:bg-gray-800 border border-amber-200 dark:border-amber-800 rounded text-amber-800 dark:text-amber-200 hover:bg-amber-100 transition cursor-pointer"
+                          >
+                            +1h
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setQuickReminderPreset(4)}
+                            className="px-2 py-0.5 bg-white dark:bg-gray-800 border border-amber-200 dark:border-amber-800 rounded text-amber-800 dark:text-amber-200 hover:bg-amber-100 transition cursor-pointer"
+                          >
+                            +4h
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setQuickReminderPreset(24)}
+                            className="px-2 py-0.5 bg-white dark:bg-gray-800 border border-amber-200 dark:border-amber-800 rounded text-amber-800 dark:text-amber-200 hover:bg-amber-100 transition cursor-pointer"
+                          >
+                            Tomorrow
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                        <div>
+                          <label className="block text-[10px] font-bold text-amber-900 dark:text-amber-200 uppercase tracking-wider mb-1">
+                            Date & Time
+                          </label>
+                          <input
+                            type="datetime-local"
+                            value={reminderDateInput}
+                            onChange={(e) => setReminderDateInput(e.target.value)}
+                            className="w-full px-2.5 py-1.5 bg-white dark:bg-gray-800 border border-amber-300 dark:border-amber-700 rounded-lg text-xs text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-amber-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-amber-900 dark:text-amber-200 uppercase tracking-wider mb-1">
+                            Action Note
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="e.g. Call guest back..."
+                            value={reminderNoteInput}
+                            onChange={(e) => setReminderNoteInput(e.target.value)}
+                            className="w-full px-2.5 py-1.5 bg-white dark:bg-gray-800 border border-amber-300 dark:border-amber-700 rounded-lg text-xs text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-amber-500"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-1">
+                        <div>
+                          {entry.hasReminder && (
+                            <button
+                              type="button"
+                              onClick={() => handleClearReminder(entry)}
+                              className="text-[11px] font-semibold text-rose-600 hover:text-rose-700 hover:underline cursor-pointer"
+                            >
+                              Clear Reminder
+                            </button>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setReminderTargetLogId(null)}
+                            className="px-3 py-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg text-xs font-semibold hover:bg-gray-50 transition cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!reminderDateInput}
+                            onClick={() => handleSaveReminder(entry)}
+                            className="px-3.5 py-1 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold transition flex items-center space-x-1 cursor-pointer"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            <span>Save Reminder</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Expand button */}
                   <button
