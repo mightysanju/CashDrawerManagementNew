@@ -63,10 +63,13 @@
   border-radius: 16px;
   box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
   overflow: hidden;
-  display: flex;
   flex-direction: column;
   z-index: 2147483647;
   animation: fdp-pop 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.fdp-modal-overlay.open {
+  display: flex !important;
 }
 
 @keyframes fdp-pop {

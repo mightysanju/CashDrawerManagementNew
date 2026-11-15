@@ -219,9 +219,22 @@ export class DatabaseManager {
 
   async getUserByUsername(username: string): Promise<UserAccount | undefined> {
     const db = await this.dbPromise;
+    const clean = username.trim().toLowerCase();
     const tx = db.transaction(STORES.USERS, 'readonly');
     const index = tx.store.index('username');
-    return index.get(username.trim().toLowerCase());
+    const user = await index.get(clean);
+    if (user) return user;
+
+    // Friendly alias fallback: if user typed "clerk", check "clerk1"; if "clerk1", check "clerk"
+    if (clean === 'clerk') {
+      const aliasUser = await index.get('clerk1');
+      if (aliasUser) return aliasUser;
+    } else if (clean === 'clerk1') {
+      const aliasUser = await index.get('clerk');
+      if (aliasUser) return aliasUser;
+    }
+
+    return undefined;
   }
 
   async saveUser(user: UserAccount): Promise<void> {

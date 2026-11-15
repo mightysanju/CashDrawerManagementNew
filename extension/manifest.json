@@ -5,8 +5,13 @@
   "description": "Floating shift log & lead capture bubble for hotel front desks. Log sales leads, guest complaints, and handover notes from any tab.",
   "permissions": [
     "storage",
-    "activeTab"
+    "activeTab",
+    "scripting",
+    "tabs"
   ],
+  "background": {
+    "service_worker": "background.js"
+  },
   "host_permissions": [
     "<all_urls>"
   ],

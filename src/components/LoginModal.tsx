@@ -6,7 +6,9 @@ import { UserAccount } from '../types';
 interface LoginModalProps {
   isOpen: boolean;
   onClose?: () => void;
-  onSuccess: (user: UserAccount) => void;
+  onSuccess?: (user: UserAccount) => void;
+  onLoginSuccess?: (user: UserAccount) => void;
+  requiredAction?: string | null;
   required?: boolean;
 }
 
@@ -14,6 +16,8 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   isOpen,
   onClose,
   onSuccess,
+  onLoginSuccess,
+  requiredAction,
   required = false,
 }) => {
   const [username, setUsername] = useState('');
@@ -31,12 +35,14 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     try {
       const result = await authManager.login(username, password);
       if (result.success && result.user) {
-        onSuccess(result.user);
+        if (onSuccess) onSuccess(result.user);
+        if (onLoginSuccess) onLoginSuccess(result.user);
         if (onClose) onClose();
       } else {
         setError(result.error || 'Authentication failed. Please verify credentials.');
       }
-    } catch {
+    } catch (err) {
+      console.error('Login submit error:', err);
       setError('An unexpected error occurred. Please try again.');
     } finally {
       setLoading(false);
@@ -53,7 +59,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-gray-100 dark:border-gray-700">
         {/* Header */}
-        <div className="bg-gradient-to-r from-blue-600 to-indigo-700 px-6 py-5 text-white">
+        <div className="bg-gradient-to-r from-blue-600 to-indigo-700 px-6 py-5 text-white flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <div className="p-2.5 bg-white/10 rounded-xl backdrop-blur-sm">
               <Lock className="w-6 h-6 text-white" />
@@ -65,7 +71,25 @@ export const LoginModal: React.FC<LoginModalProps> = ({
               </p>
             </div>
           </div>
+          {!required && onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1.5 text-white/70 hover:text-white hover:bg-white/10 rounded-lg transition"
+              title="Close"
+            >
+              <span className="text-xl font-bold leading-none">&times;</span>
+            </button>
+          )}
         </div>
+
+        {/* Required Action Banner */}
+        {requiredAction && (
+          <div className="bg-blue-50 dark:bg-blue-900/30 border-b border-blue-100 dark:border-blue-800 px-6 py-2.5 text-xs text-blue-700 dark:text-blue-300 font-medium flex items-center gap-1.5">
+            <Lock className="w-3.5 h-3.5 flex-shrink-0" />
+            <span>Action requires authentication: <strong>{requiredAction}</strong></span>
+          </div>
+        )}
 
         {/* Form Body */}
         <div className="p-6">

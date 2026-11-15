@@ -52,6 +52,18 @@ class AuthManager {
         console.error('Error in auth listener:', e);
       }
     });
+
+    if (typeof window !== 'undefined') {
+      try {
+        window.dispatchEvent(
+          new CustomEvent('FDP_APP_USER_SYNC', {
+            detail: this.currentUser,
+          })
+        );
+      } catch {
+        // ignore
+      }
+    }
   }
 
   public async login(username: string, passwordPlain: string): Promise<{ success: boolean; error?: string; user?: UserAccount }> {

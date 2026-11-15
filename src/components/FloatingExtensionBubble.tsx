@@ -128,6 +128,8 @@ export const FloatingExtensionBubble: React.FC<FloatingExtensionBubbleProps> = (
     <>
       {/* Floating Trigger Button */}
       <button
+        id="fdp-inapp-bubble"
+        data-fdp-inapp-bubble="true"
         type="button"
         onClick={onToggle}
         title="FrontDesk Pro — Floating Shift Log"

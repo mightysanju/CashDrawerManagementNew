@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   History, 
   Printer, 
@@ -58,7 +58,6 @@ export function CashDrawer() {
   // Shift & Drawer State
   const [organizationName, setOrganizationName] = useState('');
   const [drawerNumber, setDrawerNumber] = useState('');
-  const [cashierName, setCashierName] = useState(currentUser?.fullName || '');
   const [activeShifts, setActiveShifts] = useState<ShiftRecord[]>([]);
   const [selectedShift, setSelectedShift] = useState<ShiftRecord | null>(null);
   const [shiftHistory, setShiftHistory] = useState<ShiftRecord[]>([]);
@@ -90,6 +89,17 @@ export function CashDrawer() {
   const [isFloatingBubbleEnabled, setIsFloatingBubbleEnabled] = useState(true);
   const [isFloatingBubbleOpen, setIsFloatingBubbleOpen] = useState(false);
 
+  // Compute next suggested drawer number for multi-terminal operations
+  const nextSuggestedDrawerNumber = useMemo(() => {
+    if (activeShifts.length === 0) return '1';
+    const usedNumbers = activeShifts
+      .map((s) => parseInt(s.drawerNumber, 10))
+      .filter((n) => !isNaN(n));
+    if (usedNumbers.length === 0) return '1';
+    const maxNum = Math.max(...usedNumbers);
+    return (maxNum + 1).toString();
+  }, [activeShifts]);
+
   // Load shifts and settings from IndexedDB
   const loadShiftsData = useCallback(async () => {
     try {
@@ -100,7 +110,11 @@ export function CashDrawer() {
       setActiveShifts(active);
       setShiftHistory(closed);
 
+      const localUser = authManager.getCurrentUser();
+      const localShiftId = localStorage.getItem('cdm_local_active_shift_id');
+
       setSelectedShift((prevSelected) => {
+        // 1. Maintain currently selected shift if still open
         if (prevSelected) {
           const updated = active.find((s) => s.id === prevSelected.id);
           if (updated) {
@@ -109,14 +123,39 @@ export function CashDrawer() {
             return updated;
           }
         }
-        if (active.length > 0) {
+
+        // 2. Load shift previously active on this local terminal
+        if (localShiftId) {
+          const remembered = active.find((s) => s.id === localShiftId);
+          if (remembered) {
+            setEntries(remembered.entries);
+            setShiftDrop(remembered.shiftDrop || 0);
+            setDrawerNumber(remembered.drawerNumber);
+            return remembered;
+          }
+        }
+
+        // 3. Match an active shift owned by the logged-in user on this computer
+        if (localUser) {
+          const myShift = active.find((s) => s.cashierId === localUser.id);
+          if (myShift) {
+            localStorage.setItem('cdm_local_active_shift_id', myShift.id);
+            setEntries(myShift.entries);
+            setShiftDrop(myShift.shiftDrop || 0);
+            setDrawerNumber(myShift.drawerNumber);
+            return myShift;
+          }
+        }
+
+        // 4. If no user is logged in and exactly 1 active shift exists, display it for monitoring
+        if (!localUser && active.length === 1) {
           setEntries(active[0].entries);
           setShiftDrop(active[0].shiftDrop || 0);
-          setOrganizationName(active[0].organizationName || '');
           setDrawerNumber(active[0].drawerNumber);
-          setCashierName(active[0].cashierName);
           return active[0];
         }
+
+        // Keep unselected so this terminal can open its own drawer independently without session clobbering
         return null;
       });
     } catch (error) {
@@ -142,21 +181,45 @@ export function CashDrawer() {
     const unsubAuth = authManager.subscribe((user) => {
       setCurrentUser(user);
       if (user) {
-        if (!cashierName) setCashierName(user.fullName);
         const hasSnoozed = sessionStorage.getItem(`fdp_snooze_float_${user.id}`) === 'true';
         if (hasSnoozed) {
           setIsBusyRemindPending(true);
         } else {
-          // Auto-prompt to open drawer if no shift is currently open
+          // Auto-prompt to open drawer if THIS user does not have an active drawer
           db.getAllShifts().then((shifts) => {
-            const hasActive = shifts.some((s) => s.status === 'open');
-            if (!hasActive) {
+            const myActive = shifts.some((s) => s.status === 'open' && s.cashierId === user.id);
+            if (!myActive) {
               setIsOpenShiftModalOpen(true);
             }
           });
         }
       }
     });
+
+    // Listen for shift logs captured by the browser extension
+    const handleExtensionLog = async (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const entry = customEvent.detail;
+      if (entry && entry.id) {
+        await db.saveShiftLog(entry);
+        p2pSyncManager.broadcastShiftLog(entry);
+        await loadLogsData();
+      }
+    };
+
+    const handleExtensionLogsSync = async (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const logs = customEvent.detail;
+      if (Array.isArray(logs) && logs.length > 0) {
+        for (const l of logs) {
+          await db.saveShiftLog(l);
+        }
+        await loadLogsData();
+      }
+    };
+
+    window.addEventListener('FDP_EXTENSION_LOG_RECEIVED', handleExtensionLog);
+    window.addEventListener('FDP_EXTENSION_LOGS_SYNC', handleExtensionLogsSync);
 
     const unsubState = p2pSyncManager.subscribeState(setSyncState);
     const unsubData = p2pSyncManager.subscribeData(() => {
@@ -168,20 +231,27 @@ export function CashDrawer() {
       unsubAuth();
       unsubState();
       unsubData();
+      window.removeEventListener('FDP_EXTENSION_LOG_RECEIVED', handleExtensionLog);
+      window.removeEventListener('FDP_EXTENSION_LOGS_SYNC', handleExtensionLogsSync);
     };
-  }, [loadShiftsData, loadLogsData, cashierName]);
+  }, [loadShiftsData, loadLogsData]);
 
   // Initial check for open drawer on mount
   useEffect(() => {
-    if (currentUser && !selectedShift && activeShifts.length === 0) {
+    if (currentUser && !selectedShift) {
       const hasSnoozed = sessionStorage.getItem(`fdp_snooze_float_${currentUser.id}`) === 'true';
       if (hasSnoozed) {
         setIsBusyRemindPending(true);
       } else {
-        setIsOpenShiftModalOpen(true);
+        db.getAllShifts().then((shifts) => {
+          const myActive = shifts.some((s) => s.status === 'open' && s.cashierId === currentUser.id);
+          if (!myActive) {
+            setIsOpenShiftModalOpen(true);
+          }
+        });
       }
     }
-  }, [currentUser, selectedShift, activeShifts.length]);
+  }, [currentUser, selectedShift]);
 
   const pendingRemindersCount = shiftLogs.filter(
     (l) => l.hasReminder && !l.isReminderCompleted
@@ -190,9 +260,10 @@ export function CashDrawer() {
   const handleSelectShift = (shift: ShiftRecord) => {
     setSelectedShift(shift);
     setEntries(shift.entries);
+    setShiftDrop(shift.shiftDrop || 0);
     setOrganizationName(shift.organizationName || '');
     setDrawerNumber(shift.drawerNumber);
-    setCashierName(shift.cashierName);
+    localStorage.setItem('cdm_local_active_shift_id', shift.id);
   };
 
   const handleModalStartShift = async (
@@ -300,6 +371,7 @@ export function CashDrawer() {
       generatePDF(closedShift);
     }, 100);
 
+    localStorage.removeItem('cdm_local_active_shift_id');
     setSelectedShift(null);
     setEntries([]);
     setShiftDrop(0);
@@ -313,6 +385,7 @@ export function CashDrawer() {
       // Auto-popup close drawer modal!
       setIsCloseShiftModalOpen(true);
     } else {
+      localStorage.removeItem('cdm_local_active_shift_id');
       authManager.logout();
     }
   };
@@ -538,6 +611,50 @@ export function CashDrawer() {
             >
               Count Opening Float Now
             </button>
+          </div>
+        )}
+
+        {/* Multi-Drawer & Multi-Terminal Switcher Strip */}
+        {activeShifts.length > 0 && (
+          <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 mb-4 flex flex-wrap items-center justify-between gap-2 shadow-xs">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5 mr-1">
+                <Coins className="w-3.5 h-3.5 text-blue-600" />
+                <span>Active Registers ({activeShifts.length}):</span>
+              </span>
+              {activeShifts.map((shift) => {
+                const isSelected = selectedShift?.id === shift.id;
+                const isMyShift = currentUser && shift.cashierId === currentUser.id;
+                return (
+                  <button
+                    key={shift.id}
+                    type="button"
+                    onClick={() => handleSelectShift(shift)}
+                    className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition border cursor-pointer ${
+                      isSelected
+                        ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                        : 'bg-slate-50 dark:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-600'
+                    }`}
+                  >
+                    <span className={`w-2 h-2 rounded-full ${isSelected ? 'bg-emerald-300 animate-pulse' : 'bg-emerald-500'}`} />
+                    <span>Drawer #{shift.drawerNumber}</span>
+                    <span className={`text-[10px] font-normal ${isSelected ? 'text-blue-100' : 'text-slate-500 dark:text-slate-400'}`}>
+                      ({shift.cashierName}{isMyShift ? ' • You' : ''})
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            {currentUser && (
+              <button
+                type="button"
+                onClick={() => setIsOpenShiftModalOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg text-xs font-semibold transition cursor-pointer"
+                title="Open another register drawer on this machine"
+              >
+                <span>+ Open Drawer #{nextSuggestedDrawerNumber}</span>
+              </button>
+            )}
           </div>
         )}
 
@@ -904,7 +1021,7 @@ export function CashDrawer() {
         onClose={() => setIsOpenShiftModalOpen(false)}
         onStartShift={handleModalStartShift}
         onRemindLater={handleRemindLater}
-        defaultDrawerNumber={drawerNumber || '1'}
+        defaultDrawerNumber={selectedShift?.drawerNumber || nextSuggestedDrawerNumber}
         cashierName={currentUser?.fullName || 'Front Desk Staff'}
       />
 
