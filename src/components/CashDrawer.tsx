@@ -196,7 +196,7 @@ export function CashDrawer() {
       }
     });
 
-    // Listen for shift logs captured by the browser extension
+    // Listen for shift logs captured by the browser extension across all domains
     const handleExtensionLog = async (e: Event) => {
       const customEvent = e as CustomEvent;
       const entry = customEvent.detail;
@@ -212,14 +212,44 @@ export function CashDrawer() {
       const logs = customEvent.detail;
       if (Array.isArray(logs) && logs.length > 0) {
         for (const l of logs) {
-          await db.saveShiftLog(l);
+          if (l && l.id) await db.saveShiftLog(l);
         }
         await loadLogsData();
       }
     };
 
+    // Cross-World postMessage listener (Guaranteed bridge between Chrome extension & Netlify/localhost)
+    const handleWindowMessage = async (event: MessageEvent) => {
+      if (!event.data || typeof event.data !== 'object') return;
+
+      if (event.data.type === 'FDP_EXTENSION_LOG_RECEIVED' && event.data.log) {
+        const entry = event.data.log;
+        if (entry && entry.id) {
+          await db.saveShiftLog(entry);
+          p2pSyncManager.broadcastShiftLog(entry);
+          await loadLogsData();
+        }
+      } else if (event.data.type === 'FDP_EXTENSION_LOGS_SYNC' && Array.isArray(event.data.logs)) {
+        for (const l of event.data.logs) {
+          if (l && l.id) await db.saveShiftLog(l);
+        }
+        await loadLogsData();
+      }
+    };
+
+    window.addEventListener('message', handleWindowMessage);
     window.addEventListener('FDP_EXTENSION_LOG_RECEIVED', handleExtensionLog);
     window.addEventListener('FDP_EXTENSION_LOGS_SYNC', handleExtensionLogsSync);
+    document.addEventListener('FDP_EXTENSION_LOG_RECEIVED', handleExtensionLog);
+    document.addEventListener('FDP_EXTENSION_LOGS_SYNC', handleExtensionLogsSync);
+
+    // Initial request for any pending extension logs
+    window.postMessage({ type: 'FDP_REQUEST_PENDING_LOGS' }, '*');
+
+    // Periodic pull every 3 seconds to guarantee background sync from other tabs
+    const pollInterval = setInterval(() => {
+      window.postMessage({ type: 'FDP_REQUEST_PENDING_LOGS' }, '*');
+    }, 3000);
 
     const unsubState = p2pSyncManager.subscribeState(setSyncState);
     const unsubData = p2pSyncManager.subscribeData(() => {
@@ -231,8 +261,12 @@ export function CashDrawer() {
       unsubAuth();
       unsubState();
       unsubData();
+      clearInterval(pollInterval);
+      window.removeEventListener('message', handleWindowMessage);
       window.removeEventListener('FDP_EXTENSION_LOG_RECEIVED', handleExtensionLog);
       window.removeEventListener('FDP_EXTENSION_LOGS_SYNC', handleExtensionLogsSync);
+      document.removeEventListener('FDP_EXTENSION_LOG_RECEIVED', handleExtensionLog);
+      document.removeEventListener('FDP_EXTENSION_LOGS_SYNC', handleExtensionLogsSync);
     };
   }, [loadShiftsData, loadLogsData]);
 

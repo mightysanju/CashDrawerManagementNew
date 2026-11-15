@@ -12,10 +12,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Open App in tab
   openAppBtn.addEventListener('click', async () => {
+    // Prefer the deployed production app or current localhost
+    const appUrl = 'https://cashdrawermanagement.netlify.app/app';
     if (typeof chrome !== 'undefined' && chrome.tabs) {
-      await chrome.tabs.create({ url: 'http://localhost:5173/app' });
+      await chrome.tabs.create({ url: appUrl });
     } else {
-      window.open('http://localhost:5173/app', '_blank');
+      window.open(appUrl, '_blank');
     }
   });
 });

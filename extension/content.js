@@ -1,10 +1,13 @@
 // FrontDesk Pro — Floating Shift Log Extension Content Script
 (function () {
-  const isFrontDeskPage =
-    window.location.hostname === 'localhost' ||
-    window.location.hostname === '127.0.0.1' ||
-    document.title.includes('FrontDesk') ||
-    !!document.getElementById('root');
+  const hostname = window.location.hostname;
+  const isFrontDeskApp =
+    hostname.includes('cashdrawermanagement') ||
+    (hostname.endsWith('netlify.app') && (window.location.pathname.startsWith('/app') || document.title.includes('Cash Drawer'))) ||
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    document.title.includes('Cash Drawer Management') ||
+    document.title.includes('FrontDesk Pro');
 
   // Sync / Login state
   let currentStaff = {
@@ -13,9 +16,11 @@
     role: 'clerk',
   };
 
-  // If this is the FrontDesk Pro Dashboard page, act as the Live Sync Bridge!
-  if (isFrontDeskPage) {
-    // 1. Sync active user from FrontDesk Pro session to extension storage
+  // =========================================================================
+  // 1. FRONTDESK PRO WEB APP BRIDGE (Runs on cashdrawermanagement.netlify.app & localhost)
+  // =========================================================================
+  if (isFrontDeskApp) {
+    // A. Sync active user from FrontDesk Pro session to extension storage
     try {
       const rawUser = localStorage.getItem('cdm_session_user') || localStorage.getItem('frontdesk_auth_session');
       if (rawUser) {
@@ -32,8 +37,83 @@
       // Ignore parse errors
     }
 
-    // 2. Listen for user sign-in/switch events from FrontDesk Pro
-    window.addEventListener('FDP_APP_USER_SYNC', (e) => {
+    // Function to deliver logs to the page script using BOTH postMessage AND CustomEvent
+    function deliverLogsToPage(logs) {
+      if (!Array.isArray(logs) || logs.length === 0) return;
+      // 1. window.postMessage (Crosses Isolated World -> Main World reliably)
+      window.postMessage({ type: 'FDP_EXTENSION_LOGS_SYNC', logs }, '*');
+      // 2. document CustomEvent
+      try {
+        document.dispatchEvent(new CustomEvent('FDP_EXTENSION_LOGS_SYNC', { detail: logs }));
+      } catch {}
+    }
+
+    function deliverSingleLogToPage(log) {
+      if (!log || !log.id) return;
+      window.postMessage({ type: 'FDP_EXTENSION_LOG_RECEIVED', log }, '*');
+      try {
+        document.dispatchEvent(new CustomEvent('FDP_EXTENSION_LOG_RECEIVED', { detail: log }));
+      } catch {}
+    }
+
+    // B. Deliver all stored extension logs on initial load
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+      chrome.storage.local.get(['frontdesk_logs'], (res) => {
+        if (res && Array.isArray(res.frontdesk_logs) && res.frontdesk_logs.length > 0) {
+          deliverLogsToPage(res.frontdesk_logs);
+        }
+      });
+
+      // C. Live listener for logs saved from other browser tabs
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (area === 'local' && changes.frontdesk_logs) {
+          const newLogs = changes.frontdesk_logs.newValue || [];
+          const oldLogs = changes.frontdesk_logs.oldValue || [];
+          if (newLogs.length > 0 && (!oldLogs.length || newLogs[0]?.id !== oldLogs[0]?.id)) {
+            deliverSingleLogToPage(newLogs[0]);
+          }
+        }
+      });
+    }
+
+    // D. Listen for runtime messages from background service worker
+    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
+      chrome.runtime.onMessage.addListener((msg) => {
+        if (msg && msg.type === 'FDP_NEW_LOG_BROADCAST' && msg.log) {
+          deliverSingleLogToPage(msg.log);
+        }
+      });
+    }
+
+    // E. Listen for messages from the FrontDesk Pro React Page (Main World)
+    window.addEventListener('message', (event) => {
+      if (event.source !== window || !event.data || typeof event.data !== 'object') return;
+
+      // React page requests all pending logs
+      if (event.data.type === 'FDP_REQUEST_PENDING_LOGS') {
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+          chrome.storage.local.get(['frontdesk_logs'], (res) => {
+            if (res && Array.isArray(res.frontdesk_logs) && res.frontdesk_logs.length > 0) {
+              deliverLogsToPage(res.frontdesk_logs);
+            }
+          });
+        }
+      }
+
+      // React page notifies active staff changed
+      if (event.data.type === 'FDP_APP_USER_SYNC' && event.data.user) {
+        currentStaff = event.data.user;
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+          chrome.storage.local.set({ frontdesk_user: currentStaff });
+        }
+        if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+          chrome.runtime.sendMessage({ type: 'FDP_USER_CHANGED', user: currentStaff }).catch(() => {});
+        }
+      }
+    });
+
+    // Also support document event listeners
+    document.addEventListener('FDP_APP_USER_SYNC', (e) => {
       const user = e.detail;
       if (user && user.id) {
         currentStaff = user;
@@ -46,55 +126,14 @@
       }
     });
 
-    // 3. Deliver pending logs to FrontDesk Pro IndexedDB
-    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-      chrome.storage.local.get(['frontdesk_logs'], (res) => {
-        if (res && Array.isArray(res.frontdesk_logs) && res.frontdesk_logs.length > 0) {
-          window.dispatchEvent(
-            new CustomEvent('FDP_EXTENSION_LOGS_SYNC', {
-              detail: res.frontdesk_logs,
-            })
-          );
-        }
-      });
-
-      // 4. Live listener for logs arriving from other browser tabs
-      chrome.storage.onChanged.addListener((changes, area) => {
-        if (area === 'local' && changes.frontdesk_logs) {
-          const newLogs = changes.frontdesk_logs.newValue || [];
-          const oldLogs = changes.frontdesk_logs.oldValue || [];
-          if (newLogs.length > 0 && (!oldLogs.length || newLogs[0]?.id !== oldLogs[0]?.id)) {
-            window.dispatchEvent(
-              new CustomEvent('FDP_EXTENSION_LOG_RECEIVED', {
-                detail: newLogs[0],
-              })
-            );
-          }
-        }
-      });
-    }
-
-    // 5. Background message receiver
-    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
-      chrome.runtime.onMessage.addListener((msg) => {
-        if (msg && msg.type === 'FDP_NEW_LOG_BROADCAST' && msg.log) {
-          window.dispatchEvent(
-            new CustomEvent('FDP_EXTENSION_LOG_RECEIVED', {
-              detail: msg.log,
-            })
-          );
-        }
-      });
-    }
-
-    // Return here so FrontDesk Pro page uses its native in-app React bubble without duplicate trigger
+    // Return here so the FrontDesk Pro app uses its in-app till and bubble without duplicate external buttons
     return;
   }
 
-  // -------------------------------------------------------------
-  // FOR ALL OTHER WEBSITES (Google, OTA Portals, PMS, Booking, etc.)
+  // =========================================================================
+  // 2. FOR ALL OTHER WEBSITES (Google, OTA Portals, PMS, Booking, CRM, etc.)
   // Render the Floating Quick Log Bubble
-  // -------------------------------------------------------------
+  // =========================================================================
   if (document.getElementById('fdp-bubble-root')) return;
 
   const root = document.createElement('div');
@@ -446,7 +485,7 @@
       });
     }
 
-    // 2. Broadcast via background service worker
+    // 2. Broadcast via background service worker to all tabs (especially Netlify / localhost)
     if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
       chrome.runtime.sendMessage({ type: 'FDP_LOG_CREATED', log: entry }).catch(() => {});
     }
