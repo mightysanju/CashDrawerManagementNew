@@ -12,12 +12,12 @@ import {
   User, 
   LogOut, 
   LogIn, 
-  AlertCircle 
+  AlertCircle,
+  Puzzle
 } from 'lucide-react';
 import { CashEntry, ShiftRecord, ShiftLogEntry, UserAccount, PrimaryCategory } from '../types';
 import { ShiftHistory } from './ShiftHistory';
 import { DatabaseManager } from '../utils/database';
-import { AdUnit } from './AdUnit';
 import { CashSection } from './cash-sections/CashSection';
 import { ReceiptsSection } from './cash-sections/ReceiptsSection';
 import { ActiveDrawers } from './ActiveDrawers';
@@ -30,6 +30,8 @@ import { ShiftLogModal } from './ShiftLogModal';
 import { ShiftLogDashboard } from './ShiftLogDashboard';
 import { RemindersTab } from './RemindersTab';
 import { UserManagementModal } from './UserManagementModal';
+import { ExtensionModal } from './ExtensionModal';
+import { FloatingExtensionBubble } from './FloatingExtensionBubble';
 import { generatePDF, printReceipt } from '../utils/pdfGenerator';
 import { p2pSyncManager, SyncState } from '../utils/p2pSyncManager';
 import { authManager } from '../utils/authManager';
@@ -74,6 +76,11 @@ export function CashDrawer() {
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
   const [isUserMgmtModalOpen, setIsUserMgmtModalOpen] = useState(false);
   const [syncState, setSyncState] = useState<SyncState>(p2pSyncManager.getState());
+
+  // Browser Extension & Floating Bubble States
+  const [isExtensionModalOpen, setIsExtensionModalOpen] = useState(false);
+  const [isFloatingBubbleEnabled, setIsFloatingBubbleEnabled] = useState(true);
+  const [isFloatingBubbleOpen, setIsFloatingBubbleOpen] = useState(false);
 
   // Load shifts and settings from IndexedDB
   const loadShiftsData = useCallback(async () => {
@@ -345,9 +352,6 @@ Close this shift, record the cash drop, and generate receipt?
       <Navbar />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full flex-grow">
-        {/* AdSense Top Banner */}
-        <AdUnit slot="1234567890" format="auto" className="mb-6" />
-
         {/* -------------------- MAIN APP HEADER & USER PROFILE BAR -------------------- */}
         <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-6">
           <div>
@@ -442,6 +446,18 @@ Close this shift, record the cash drop, and generate receipt?
               ) : (
                 'Connect Registers'
               )}
+            </button>
+
+            {/* Browser Extension Button */}
+            <button
+              type="button"
+              onClick={() => setIsExtensionModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-2 bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 rounded-xl text-xs font-semibold transition shadow-xs"
+              title="Get FrontDesk Pro Browser Extension for floating shift logs"
+            >
+              <Puzzle size={15} className="text-blue-600" />
+              <span>Browser Extension</span>
+              <span className="bg-blue-100 text-blue-700 text-[10px] font-bold px-1.5 py-0.2 rounded-full">Extension</span>
             </button>
           </div>
         </div>
@@ -781,9 +797,6 @@ Close this shift, record the cash drop, and generate receipt?
             />
           </div>
         )}
-
-        {/* AdSense Bottom Banner */}
-        <AdUnit slot="9876543210" format="auto" className="mt-8" />
       </main>
 
       {/* Staff Login Modal */}
@@ -841,6 +854,27 @@ Close this shift, record the cash drop, and generate receipt?
           loadLogsData();
         }}
       />
+
+      {/* Browser Extension Info & Download Modal */}
+      <ExtensionModal
+        isOpen={isExtensionModalOpen}
+        onClose={() => setIsExtensionModalOpen(false)}
+        isFloatingBubbleEnabled={isFloatingBubbleEnabled}
+        onToggleFloatingBubble={() => {
+          setIsFloatingBubbleEnabled(!isFloatingBubbleEnabled);
+          if (!isFloatingBubbleEnabled) setIsFloatingBubbleOpen(true);
+        }}
+      />
+
+      {/* Interactive In-App Floating Extension Bubble */}
+      {isFloatingBubbleEnabled && (
+        <FloatingExtensionBubble
+          currentUser={currentUser}
+          onLogSaved={loadLogsData}
+          isOpen={isFloatingBubbleOpen}
+          onToggle={() => setIsFloatingBubbleOpen(!isFloatingBubbleOpen)}
+        />
+      )}
 
       <Footer />
     </div>

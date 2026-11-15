@@ -18,9 +18,16 @@ import {
   ChevronRight,
   LayoutGrid,
   List,
+  Heart,
+  Trophy,
+  Briefcase,
+  Users,
+  Send,
+  ExternalLink,
 } from 'lucide-react';
 import {
   ShiftLogEntry,
+  SalesLeadStatus,
   ComplaintStatus,
   UserAccount,
   PrimaryCategory,
@@ -57,6 +64,12 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [replyText, setReplyText] = useState('');
 
+  // Interactive Recent Activity States
+  const [recentActivityFilter, setRecentActivityFilter] = useState<'All' | 'Sales' | 'Complaint' | 'Miscellaneous'>('All');
+  const [recentActivitySearch, setRecentActivitySearch] = useState('');
+  const [expandedActivityId, setExpandedActivityId] = useState<string | null>(null);
+  const [activityReplyText, setActivityReplyText] = useState<{ [id: string]: string }>({});
+
   /* ----- Metrics ----- */
   const salesMetrics = useMemo(() => {
     const sl = logs.filter((l) => l.category === 'Sales');
@@ -86,6 +99,8 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
 
   /* ----- Filtered lists ----- */
   const salesLeads = useMemo(() => logs.filter((l) => l.category === 'Sales'), [logs]);
+  const complaintLogs = useMemo(() => logs.filter((l) => l.category === 'Complaint'), [logs]);
+  const miscLogs = useMemo(() => logs.filter((l) => l.category !== 'Sales' && l.category !== 'Complaint'), [logs]);
 
   const filteredComplaints = useMemo(() => {
     return logs.filter((l) => {
@@ -154,6 +169,113 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
       return next;
     });
   };
+
+  const handleUpdateSalesStatus = async (entry: ShiftLogEntry, status: SalesLeadStatus) => {
+    const updated = { ...entry, salesStatus: status, updatedAt: new Date().toISOString() };
+    await db.saveShiftLog(updated);
+    p2pSyncManager.broadcastShiftLog(updated);
+    onRefresh();
+  };
+
+  const handleActivityReply = async (entry: ShiftLogEntry) => {
+    const text = (activityReplyText[entry.id] || '').trim();
+    if (!text) return;
+    const newResp = {
+      id: `resp_${Date.now()}`,
+      authorId: currentUser.id,
+      authorName: currentUser.fullName,
+      authorRole: currentUser.role,
+      message: text,
+      createdAt: new Date().toISOString(),
+    };
+    const updated: ShiftLogEntry = {
+      ...entry,
+      responses: [...(entry.responses || []), newResp],
+      updatedAt: new Date().toISOString(),
+    };
+    await db.saveShiftLog(updated);
+    p2pSyncManager.broadcastShiftLog(updated);
+    setActivityReplyText((prev) => ({ ...prev, [entry.id]: '' }));
+    onRefresh();
+  };
+
+  const formatRelativeTime = (isoString: string) => {
+    try {
+      const diff = (Date.now() - new Date(isoString).getTime()) / 1000;
+      if (diff < 60) return 'Just now';
+      if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+      if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+      if (diff < 172800) return 'Yesterday';
+      return new Date(isoString).toLocaleDateString([], { month: 'short', day: 'numeric' });
+    } catch {
+      return isoString;
+    }
+  };
+
+  const getActivityIconConfig = (entry: ShiftLogEntry) => {
+    if (entry.category === 'Sales') {
+      switch (entry.subCategory) {
+        case 'Wedding':
+          return {
+            icon: <Heart className="w-4 h-4 text-rose-600" />,
+            badge: 'bg-rose-50 border-rose-200 text-rose-700',
+            label: 'Wedding Lead',
+          };
+        case 'Sports team':
+          return {
+            icon: <Trophy className="w-4 h-4 text-amber-600" />,
+            badge: 'bg-amber-50 border-amber-200 text-amber-700',
+            label: 'Sports Team',
+          };
+        case 'Company':
+          return {
+            icon: <Briefcase className="w-4 h-4 text-blue-600" />,
+            badge: 'bg-blue-50 border-blue-200 text-blue-700',
+            label: 'Corporate Lead',
+          };
+        case 'Group':
+        default:
+          return {
+            icon: <Users className="w-4 h-4 text-emerald-600" />,
+            badge: 'bg-emerald-50 border-emerald-200 text-emerald-700',
+            label: 'Group Lead',
+          };
+      }
+    }
+    if (entry.category === 'Complaint') {
+      return {
+        icon: <AlertTriangle className="w-4 h-4 text-amber-600" />,
+        badge: 'bg-amber-50 border-amber-200 text-amber-700',
+        label: 'Guest Complaint',
+      };
+    }
+    return {
+      icon: <Tag className="w-4 h-4 text-indigo-600" />,
+      badge: 'bg-indigo-50 border-indigo-200 text-indigo-700',
+      label: 'Shift Note',
+    };
+  };
+
+  const filteredRecentLogs = useMemo(() => {
+    return logs.filter((l) => {
+      if (recentActivityFilter !== 'All' && l.category !== recentActivityFilter) {
+        return false;
+      }
+      if (recentActivitySearch.trim()) {
+        const q = recentActivitySearch.toLowerCase();
+        const textMatch =
+          (l.name && l.name.toLowerCase().includes(q)) ||
+          (l.topic && l.topic.toLowerCase().includes(q)) ||
+          (l.clerkNotes && l.clerkNotes.toLowerCase().includes(q)) ||
+          (l.clerkName && l.clerkName.toLowerCase().includes(q)) ||
+          (l.subCategory && l.subCategory.toLowerCase().includes(q)) ||
+          (l.phone && l.phone.toLowerCase().includes(q)) ||
+          (l.roomNumber && l.roomNumber.toLowerCase().includes(q));
+        if (!textMatch) return false;
+      }
+      return true;
+    });
+  }, [logs, recentActivityFilter, recentActivitySearch]);
 
   /* ================================================================
      OVERVIEW — 3 Summary Cards
@@ -277,31 +399,341 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
         </button>
       </div>
 
-      {/* Recent activity — last 5 logs */}
-      {logs.length > 0 && (
-        <div>
-          <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-3">Recent Activity</h3>
-          <div className="space-y-2">
-            {logs.slice(0, 5).map((entry) => (
-              <div key={entry.id} className="flex items-center space-x-3 bg-white border border-gray-100 rounded-xl px-4 py-2.5 shadow-sm hover:shadow-md transition">
-                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                  entry.category === 'Sales' ? 'bg-emerald-500' :
-                  entry.category === 'Complaint' ? 'bg-rose-500' : 'bg-indigo-500'
-                }`} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-gray-900 truncate">
-                    {entry.name || entry.topic || 'Shift Note'}
-                  </p>
-                  <p className="text-xs text-gray-400">{entry.clerkName} · {entry.category}</p>
-                </div>
-                <span className="text-xs text-gray-400 flex-shrink-0">
-                  {new Date(entry.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+      {/* -------------------- RECENT ACTIVITY (INTERACTIVE & INFORMATIVE) -------------------- */}
+      <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-xs space-y-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-gray-100 pb-3">
+          <div className="flex items-center space-x-2.5">
+            <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
+              <Clock className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="flex items-center space-x-2">
+                <h3 className="text-sm font-bold text-gray-900">Recent Shift Activity</h3>
+                <span className="text-[11px] font-semibold bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
+                  {filteredRecentLogs.length} logs
                 </span>
               </div>
-            ))}
+              <p className="text-xs text-gray-500">Live operational log stream across all staff shifts</p>
+            </div>
+          </div>
+
+          {/* Quick Search */}
+          <div className="relative w-full sm:w-64">
+            <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Filter by guest, note, clerk..."
+              value={recentActivitySearch}
+              onChange={(e) => setRecentActivitySearch(e.target.value)}
+              className="w-full pl-8 pr-3 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
           </div>
         </div>
-      )}
+
+        {/* Filter Pills */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          {(['All', 'Sales', 'Complaint', 'Miscellaneous'] as const).map((cat) => (
+            <button
+              key={cat}
+              onClick={() => setRecentActivityFilter(cat)}
+              className={`px-3 py-1 text-xs font-semibold rounded-lg transition-all ${
+                recentActivityFilter === cat
+                  ? 'bg-gray-900 text-white shadow-xs'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200/70'
+              }`}
+            >
+              {cat === 'All' ? `All (${logs.length})` :
+               cat === 'Sales' ? `Sales Leads (${salesLeads.length})` :
+               cat === 'Complaint' ? `Complaints (${complaintLogs.length})` :
+               `Shift Notes (${miscLogs.length})`}
+            </button>
+          ))}
+        </div>
+
+        {/* Activity Items List */}
+        <div className="space-y-2 pt-1">
+          {filteredRecentLogs.length === 0 ? (
+            <div className="py-8 text-center text-gray-400 text-xs">
+              No recent activity matching your filter.
+            </div>
+          ) : (
+            filteredRecentLogs.slice(0, 10).map((entry) => {
+              const isExpanded = expandedActivityId === entry.id;
+              const config = getActivityIconConfig(entry);
+              const responsesCount = entry.responses?.length || 0;
+
+              return (
+                <div
+                  key={entry.id}
+                  className="border border-gray-200 rounded-xl bg-white hover:border-blue-200 transition-all duration-150 overflow-hidden shadow-xs"
+                >
+                  {/* Top Bar / Row */}
+                  <div
+                    onClick={() => setExpandedActivityId(isExpanded ? null : entry.id)}
+                    className="p-3 sm:px-4 cursor-pointer flex items-center justify-between gap-3 hover:bg-gray-50/60 transition"
+                  >
+                    <div className="flex items-center space-x-3 min-w-0 flex-1">
+                      {/* Prominent Quick-Identify Icon Badge */}
+                      <div className={`p-2 rounded-lg border flex-shrink-0 ${config.badge}`}>
+                        {config.icon}
+                      </div>
+
+                      {/* Title & Key Tags */}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-1.5 mb-0.5">
+                          <p className="text-sm font-bold text-gray-900 truncate">
+                            {entry.name || entry.topic || 'Shift Note'}
+                          </p>
+
+                          {/* Subcategory Pill */}
+                          {entry.subCategory && (
+                            <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-gray-100 text-gray-700">
+                              {entry.subCategory}
+                            </span>
+                          )}
+
+                          {/* Status Pill */}
+                          {entry.category === 'Sales' && entry.salesStatus && (
+                            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+                              entry.salesStatus === 'Closed Definite' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' :
+                              entry.salesStatus === 'Processing' ? 'bg-amber-50 border-amber-200 text-amber-700' :
+                              entry.salesStatus === 'Lost' ? 'bg-gray-100 border-gray-200 text-gray-600' :
+                              'bg-blue-50 border-blue-200 text-blue-700'
+                            }`}>
+                              {entry.salesStatus}
+                            </span>
+                          )}
+
+                          {entry.category === 'Complaint' && entry.complaintStatus && (
+                            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+                              entry.complaintStatus === 'Resolved' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' :
+                              entry.complaintStatus === 'In Progress' ? 'bg-blue-50 border-blue-200 text-blue-700' :
+                              'bg-amber-50 border-amber-200 text-amber-700'
+                            }`}>
+                              {entry.complaintStatus}
+                            </span>
+                          )}
+
+                          {/* Room or Revenue summary */}
+                          {(entry.potentialRevenue || 0) > 0 && (
+                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                              ${entry.potentialRevenue?.toLocaleString()}
+                            </span>
+                          )}
+
+                          {entry.roomNumber && (
+                            <span className="text-[10px] text-gray-600 bg-gray-100 px-1.5 py-0.5 rounded">
+                              Room {entry.roomNumber}
+                            </span>
+                          )}
+
+                          {entry.hasReminder && (
+                            <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full inline-flex items-center space-x-1">
+                              <Bell className="w-2.5 h-2.5" />
+                              <span>{entry.reminderTime || 'Reminder'}</span>
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Subline: author & preview */}
+                        <div className="flex items-center space-x-2 text-xs text-gray-400">
+                          <span>{entry.clerkName}</span>
+                          <span>•</span>
+                          <span>{formatRelativeTime(entry.createdAt)}</span>
+                          {responsesCount > 0 && (
+                            <>
+                              <span>•</span>
+                              <span className="text-blue-600 font-medium inline-flex items-center space-x-0.5">
+                                <MessageSquare className="w-3 h-3" />
+                                <span>{responsesCount}</span>
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Expand/Collapse Chevron */}
+                    <div className="flex items-center space-x-2 text-gray-400">
+                      <span className="text-[11px] font-medium hidden sm:inline text-blue-600">
+                        {isExpanded ? 'Collapse' : 'Details & Reply'}
+                      </span>
+                      {isExpanded ? <ChevronDown className="w-4 h-4 text-gray-600" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
+                    </div>
+                  </div>
+
+                  {/* Expanded Detail View */}
+                  {isExpanded && (
+                    <div className="border-t border-gray-100 bg-gray-50/60 p-4 space-y-3.5">
+                      {/* Meta Grid */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                        {entry.phone && (
+                          <div className="bg-white p-2 rounded-lg border border-gray-200">
+                            <span className="text-gray-400 block text-[10px]">Phone</span>
+                            <span className="font-semibold text-gray-800">{entry.phone}</span>
+                          </div>
+                        )}
+                        {entry.email && (
+                          <div className="bg-white p-2 rounded-lg border border-gray-200">
+                            <span className="text-gray-400 block text-[10px]">Email</span>
+                            <span className="font-semibold text-gray-800 truncate block">{entry.email}</span>
+                          </div>
+                        )}
+                        {entry.totalRoomNights && (
+                          <div className="bg-white p-2 rounded-lg border border-gray-200">
+                            <span className="text-gray-400 block text-[10px]">Room Nights</span>
+                            <span className="font-semibold text-gray-800">{entry.totalRoomNights} nights ({entry.roomRequirement || 0} rooms)</span>
+                          </div>
+                        )}
+                        {entry.reservationNumber && (
+                          <div className="bg-white p-2 rounded-lg border border-gray-200">
+                            <span className="text-gray-400 block text-[10px]">Reservation #</span>
+                            <span className="font-semibold text-gray-800">{entry.reservationNumber}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Clerk Notes Callout */}
+                      {entry.clerkNotes && (
+                        <div className="bg-white border-l-2 border-blue-500 rounded-r-lg p-3 text-xs text-gray-700 shadow-2xs">
+                          <p className="font-semibold text-[10px] uppercase tracking-wider text-gray-400 mb-1">Clerk Notes</p>
+                          <p className="whitespace-pre-wrap leading-relaxed">{entry.clerkNotes}</p>
+                        </div>
+                      )}
+
+                      {/* Inline Status Updater & Action Bar */}
+                      <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-gray-200">
+                        {/* Status Updater */}
+                        <div className="flex items-center space-x-2">
+                          <span className="text-xs text-gray-500 font-medium">Update Status:</span>
+                          {entry.category === 'Sales' && (
+                            <select
+                              value={entry.salesStatus || 'New Lead'}
+                              onChange={(e) => handleUpdateSalesStatus(entry, e.target.value as SalesLeadStatus)}
+                              className="text-xs bg-white border border-gray-300 rounded-lg px-2.5 py-1 font-semibold text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            >
+                              <option value="New Lead">1. New Lead</option>
+                              <option value="Processing">2. Processing</option>
+                              <option value="Closed Definite">3. Closed Definite (Won)</option>
+                              <option value="Lost">4. Lost</option>
+                            </select>
+                          )}
+
+                          {entry.category === 'Complaint' && (
+                            <select
+                              value={entry.complaintStatus || 'Open'}
+                              onChange={(e) => handleUpdateComplaintStatus(entry, e.target.value as ComplaintStatus)}
+                              className="text-xs bg-white border border-gray-300 rounded-lg px-2.5 py-1 font-semibold text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            >
+                              <option value="Open">Open</option>
+                              <option value="In Progress">In Progress</option>
+                              <option value="Resolved">Resolved</option>
+                            </select>
+                          )}
+                        </div>
+
+                        {/* View in Dedicated Section Link */}
+                        <div className="flex items-center space-x-2">
+                          {entry.category === 'Sales' && (
+                            <button
+                              onClick={() => setActiveView('sales-kanban')}
+                              className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex items-center space-x-1"
+                            >
+                              <span>Open in Sales Kanban</span>
+                              <ExternalLink className="w-3 h-3" />
+                            </button>
+                          )}
+                          {entry.category === 'Complaint' && (
+                            <button
+                              onClick={() => setActiveView('complaints')}
+                              className="text-xs font-semibold text-rose-600 hover:text-rose-700 flex items-center space-x-1"
+                            >
+                              <span>Open in Complaints View</span>
+                              <ExternalLink className="w-3 h-3" />
+                            </button>
+                          )}
+
+                          <button
+                            onClick={() => onEditLog(entry)}
+                            className="p-1 text-gray-400 hover:text-blue-600 rounded"
+                            title="Edit"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                          {(currentUser.role === 'manager' || currentUser.id === entry.clerkId) && (
+                            <button
+                              onClick={() => {
+                                if (window.confirm('Delete this log entry?')) onDeleteLog(entry.id);
+                              }}
+                              className="p-1 text-gray-400 hover:text-rose-600 rounded"
+                              title="Delete"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Threaded Responses Section */}
+                      <div className="pt-2 border-t border-gray-200 space-y-2">
+                        <p className="text-xs font-bold text-gray-700 flex items-center space-x-1.5">
+                          <MessageSquare className="w-3.5 h-3.5 text-blue-600" />
+                          <span>Staff Responses ({responsesCount})</span>
+                        </p>
+
+                        {responsesCount > 0 ? (
+                          <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                            {entry.responses!.map((r) => (
+                              <div key={r.id} className="flex items-start space-x-2 text-xs bg-white p-2.5 rounded-lg border border-gray-200">
+                                <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold flex-shrink-0 ${
+                                  r.authorRole === 'manager' ? 'bg-slate-800 text-white' : 'bg-blue-600 text-white'
+                                }`}>
+                                  {r.authorName.charAt(0).toUpperCase()}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center justify-between mb-0.5">
+                                    <span className="font-bold text-gray-800">{r.authorName} <span className="text-[10px] text-gray-400 font-normal">({r.authorRole})</span></span>
+                                    <span className="text-[10px] text-gray-400">{formatRelativeTime(r.createdAt)}</span>
+                                  </div>
+                                  <p className="text-gray-700">{r.message}</p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-gray-400 italic">No responses recorded yet.</p>
+                        )}
+
+                        {/* Reply Input Box */}
+                        <div className="flex items-center space-x-2 pt-1">
+                          <input
+                            type="text"
+                            placeholder="Add a quick staff reply or update..."
+                            value={activityReplyText[entry.id] || ''}
+                            onChange={(e) => setActivityReplyText((prev) => ({ ...prev, [entry.id]: e.target.value }))}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleActivityReply(entry);
+                            }}
+                            className="flex-1 px-3 py-1.5 text-xs bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          />
+                          <button
+                            onClick={() => handleActivityReply(entry)}
+                            disabled={!(activityReplyText[entry.id] || '').trim()}
+                            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-semibold rounded-lg transition inline-flex items-center space-x-1"
+                          >
+                            <Send className="w-3 h-3" />
+                            <span>Reply</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
     </div>
   );
 

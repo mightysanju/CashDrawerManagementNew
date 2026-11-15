@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>FrontDesk Pro</title>
+  <style>
+    body {
+      width: 320px;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #f8fafc;
+      color: #0f172a;
+    }
+    .header {
+      background: #0f172a;
+      color: #ffffff;
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .header h1 {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 700;
+    }
+    .content {
+      padding: 16px;
+    }
+    .status-card {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+    .status-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+    .status-row:last-child {
+      margin-bottom: 0;
+    }
+    .badge {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: #ecfdf5;
+      color: #047857;
+      border: 1px solid #a7f3d0;
+    }
+    .btn {
+      display: block;
+      width: 100%;
+      text-align: center;
+      box-sizing: border-box;
+      background: #2563eb;
+      color: #ffffff;
+      text-decoration: none;
+      padding: 10px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      border: none;
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+    .btn:hover {
+      background: #1d4ed8;
+    }
+    .btn-secondary {
+      background: #ffffff;
+      color: #334155;
+      border: 1px solid #cbd5e1;
+      margin-top: 8px;
+    }
+    .btn-secondary:hover {
+      background: #f1f5f9;
+    }
+    .footer {
+      font-size: 11px;
+      color: #94a3b8;
+      text-align: center;
+      margin-top: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <img src="icons/icon-48.png" width="24" height="24" alt="FrontDesk Pro" style="border-radius:4px;">
+    <h1>FrontDesk Pro Extension</h1>
+  </div>
+  <div class="content">
+    <div class="status-card">
+      <div class="status-row">
+        <span style="color:#64748b;">Floating Bubble:</span>
+        <span class="badge" id="bubble-status">Active on All Tabs</span>
+      </div>
+      <div class="status-row">
+        <span style="color:#64748b;">Active Staff:</span>
+        <strong id="staff-name" style="font-size:12px;">Front Desk Clerk</strong>
+      </div>
+      <div class="status-row">
+        <span style="color:#64748b;">Sync Status:</span>
+        <span style="color:#047857; font-weight:600; font-size:11px;">● P2P Broadcast Ready</span>
+      </div>
+    </div>
+
+    <button id="open-app-btn" class="btn">
+      Open FrontDesk Pro Register
+    </button>
+
+    <div class="footer">
+      Click the floating bubble in any browser tab to record sales leads, complaints, and shift logs.
+    </div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
