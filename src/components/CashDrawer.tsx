@@ -299,7 +299,20 @@ export function CashDrawer() {
     loadLogsData();
     loadSettingsData();
 
-    // Auto-discover active databases on local network or launch New Hotel Setup if none available
+    // When app is loaded and cannot find a local database, launch Setup modal with 2 options:
+    // Option 1: Sync from local network (lists available databases)
+    // Option 2: Create account if no sync database is available
+    db.hasUsers().then(async (hasUsers) => {
+      const org = await db.getOrganization();
+      const savedStore = localStorage.getItem('cdm_store_name');
+      const hasValidStore = savedStore && savedStore.trim().toLowerCase() !== 'main store';
+
+      if (!hasUsers || (!org && !hasValidStore)) {
+        setIsNewHotelSetupModalOpen(true);
+        setIsLoginModalOpen(false);
+      }
+    });
+
     p2pSyncManager.scanNetworkAndAutoSync(() => {
       setIsNewHotelSetupModalOpen(true);
       setIsLoginModalOpen(false);
@@ -645,11 +658,17 @@ export function CashDrawer() {
     setIsCloseShiftModalOpen(true);
   };
 
-  const handleSetupComplete = async (manager: UserAccount) => {
+  const handleSetupComplete = async (manager?: UserAccount) => {
     setIsNewHotelSetupModalOpen(false);
     await loadShiftsData();
     await loadLogsData();
-    setWelcomeToast(`Hotel network initialized for ${manager.fullName}`);
+    await loadSettingsData();
+    if (manager) {
+      setWelcomeToast(`Hotel network initialized for ${manager.fullName}`);
+    } else {
+      setWelcomeToast('Connected and synchronized with network register.');
+      setIsLoginModalOpen(true);
+    }
     setTimeout(() => setWelcomeToast(null), 4000);
   };
 

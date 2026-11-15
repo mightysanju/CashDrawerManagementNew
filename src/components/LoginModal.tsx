@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Lock, User, Key, AlertCircle, LogIn } from 'lucide-react';
+import { Lock, User, Key, AlertCircle, LogIn, X } from 'lucide-react';
 import { authManager } from '../utils/authManager';
 import { UserAccount } from '../types';
 
