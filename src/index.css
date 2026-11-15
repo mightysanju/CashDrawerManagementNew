@@ -79,12 +79,15 @@ html:not(.dark) footer .text-emerald-800 span {
   color: #065f46 !important;
 }
 
-/* Ensure all dark/gradient modal headers and text-white elements stay crisp white */
-.text-white,
-[class*="text-white"] {
-  color: #ffffff !important;
+/* In light mode, ensure standard high-contrast text classes stay dark slate */
+html:not(.dark) .text-gray-900,
+html:not(.dark) .text-slate-900,
+html:not(.dark) .text-gray-800,
+html:not(.dark) .text-slate-800 {
+  color: #0f172a !important;
 }
 
+/* Modal dark headers keep pure white headings */
 .bg-gradient-to-r h1,
 .bg-gradient-to-r h2,
 .bg-gradient-to-r h3,

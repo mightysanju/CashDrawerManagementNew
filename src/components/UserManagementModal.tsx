@@ -638,7 +638,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                         </div>
                         <div>
                           <div className="flex items-center space-x-2">
-                            <span className="font-bold text-xs text-gray-900 dark:text-white">
+                            <span className="font-bold text-xs text-slate-900 dark:text-white">
                               {user.fullName}
                             </span>
                             <span className="text-[11px] text-gray-400 font-mono">
