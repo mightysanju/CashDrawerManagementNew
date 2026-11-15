@@ -244,8 +244,6 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
     await db.saveShiftLog(updated);
     p2pSyncManager.broadcastShiftLog(updated);
     setReminderTargetLogId(null);
-    setReminderSuccessLogId(entry.id);
-    setTimeout(() => setReminderSuccessLogId(null), 3000);
     onRefresh();
   };
 
