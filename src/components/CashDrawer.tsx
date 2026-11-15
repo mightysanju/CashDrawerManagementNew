@@ -15,7 +15,7 @@ import {
   Sun,
   Moon,
   Key,
-  Sparkles
+  CheckCircle2
 } from 'lucide-react';
 import { CashEntry, ShiftRecord, ShiftLogEntry, UserAccount, PrimaryCategory } from '../types';
 import { ShiftHistory } from './ShiftHistory';
@@ -463,8 +463,8 @@ export function CashDrawer() {
     setIsNewHotelSetupModalOpen(false);
     await loadShiftsData();
     await loadLogsData();
-    setWelcomeToast(`🎉 Welcome, ${manager.fullName}! Hotel network initialized successfully.`);
-    setTimeout(() => setWelcomeToast(null), 5000);
+    setWelcomeToast(`Hotel network initialized for ${manager.fullName}`);
+    setTimeout(() => setWelcomeToast(null), 4000);
   };
 
   const calculateTotal = () =>
@@ -537,12 +537,12 @@ export function CashDrawer() {
         <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-5">
           <div>
             <div className="flex items-center space-x-2">
-              <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900 dark:text-white tracking-tight">
+              <h1 className="text-xl sm:text-2xl font-semibold text-gray-900 dark:text-white tracking-tight">
                 FrontDesk Operations Platform
               </h1>
               {selectedShift && (
-                <span className="hidden sm:inline-flex items-center space-x-1.5 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-xs font-bold px-2.5 py-0.5 rounded-full">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span className="hidden sm:inline-flex items-center space-x-1.5 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-xs font-medium px-2 py-0.5 rounded-md">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
                   <span>Drawer #{selectedShift.drawerNumber} Active</span>
                 </span>
               )}
@@ -614,15 +614,15 @@ export function CashDrawer() {
             <button
               type="button"
               onClick={() => setIsSyncModalOpen(true)}
-              className={`inline-flex items-center gap-1.5 px-3.5 py-2 border rounded-xl text-xs font-semibold transition shadow-xs ${
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-xs font-medium transition-colors shadow-xs ${
                 syncState.status === 'connected'
-                  ? 'bg-green-50 text-green-700 border-green-300 hover:bg-green-100'
+                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
                   : syncState.status === 'scanning'
-                    ? 'bg-amber-50 text-amber-700 border-amber-300 animate-pulse'
-                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                    ? 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800'
+                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700'
               }`}
             >
-              <Wifi size={15} className={syncState.status === 'connected' ? 'text-green-600 animate-pulse' : ''} />
+              <Wifi size={14} className={syncState.status === 'connected' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'} />
               {syncState.status === 'connected' ? (
                 syncState.role === 'hub' ? (
                   syncState.connectedCount === 0
@@ -668,25 +668,25 @@ export function CashDrawer() {
 
         {/* -------------------- 1. PENDING FLOAT REMINDER BANNER -------------------- */}
         {isBusyRemindPending && !selectedShift && (
-          <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 mb-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs animate-in fade-in">
+          <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-xl p-3.5 mb-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs animate-in fade-in">
             <div className="flex items-center space-x-3">
-              <div className="p-2 bg-amber-100 text-amber-800 rounded-lg">
-                <Bell className="w-5 h-5 animate-bounce" />
+              <div className="p-2 bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-200 rounded-lg">
+                <Bell className="w-4 h-4" />
               </div>
               <div>
-                <h4 className="text-xs font-bold text-amber-900">
-                  Opening Till Float Pending — You selected "Remind me later"
+                <h4 className="text-xs font-semibold text-amber-900 dark:text-amber-200">
+                  Opening Till Float Pending
                 </h4>
-                <p className="text-[11px] text-amber-700">
-                  Clerk on duty: {currentUser?.fullName || 'Staff'}. When free between check-ins, verify your starting till float so your cash records stay accurate.
+                <p className="text-[11px] text-amber-700 dark:text-amber-300">
+                  Clerk on duty: {currentUser?.fullName || 'Staff'}. Verify your starting till float when available to maintain accurate shift records.
                 </p>
               </div>
             </div>
             <button
               onClick={() => setIsOpenShiftModalOpen(true)}
-              className="px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl transition shadow-xs flex-shrink-0"
+              className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-medium text-xs rounded-lg transition-colors flex-shrink-0 cursor-pointer"
             >
-              Count Opening Float Now
+              Count Opening Float
             </button>
           </div>
         )}
@@ -695,8 +695,8 @@ export function CashDrawer() {
         {activeShifts.length > 0 && (
           <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 mb-4 flex flex-wrap items-center justify-between gap-2 shadow-xs">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5 mr-1">
-                <Coins className="w-3.5 h-3.5 text-blue-600" />
+              <span className="text-xs font-medium text-slate-500 dark:text-slate-400 flex items-center gap-1.5 mr-1">
+                <Coins className="w-3.5 h-3.5 text-slate-400" />
                 <span>Active Registers ({activeShifts.length}):</span>
               </span>
               {activeShifts.map((shift) => {
@@ -707,15 +707,15 @@ export function CashDrawer() {
                     key={shift.id}
                     type="button"
                     onClick={() => handleSelectShift(shift)}
-                    className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition border cursor-pointer ${
+                    className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border cursor-pointer ${
                       isSelected
-                        ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                        : 'bg-slate-50 dark:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-600'
+                        ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
+                        : 'bg-slate-50 dark:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-600'
                     }`}
                   >
-                    <span className={`w-2 h-2 rounded-full ${isSelected ? 'bg-emerald-300 animate-pulse' : 'bg-emerald-500'}`} />
+                    <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-emerald-300' : 'bg-emerald-500'}`} />
                     <span>Drawer #{shift.drawerNumber}</span>
-                    <span className={`text-[10px] font-normal ${isSelected ? 'text-blue-100' : 'text-slate-500 dark:text-slate-400'}`}>
+                    <span className={`text-[10px] ${isSelected ? 'text-blue-100' : 'text-slate-500 dark:text-slate-400'}`}>
                       ({shift.cashierName}{isMyShift ? ' • You' : ''})
                     </span>
                   </button>
@@ -741,32 +741,32 @@ export function CashDrawer() {
             <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
               {/* Drawer Info & Metrics */}
               <div className="flex items-start gap-3">
-                <div className="p-2.5 bg-blue-600 text-white rounded-xl shadow-xs">
-                  <Coins size={22} />
+                <div className="p-2 bg-slate-900 text-white rounded-lg">
+                  <Coins size={18} />
                 </div>
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="font-bold text-gray-900 dark:text-white text-base">
+                    <h3 className="font-semibold text-gray-900 dark:text-white text-sm">
                       Active Till: Drawer #{selectedShift.drawerNumber}
                     </h3>
-                    <span className="text-[11px] bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 font-semibold px-2 py-0.5 rounded-full inline-flex items-center space-x-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span className="text-[11px] bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 font-medium px-2 py-0.5 rounded-md inline-flex items-center space-x-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
                       <span>Active Shift</span>
                     </span>
-                    <span className="text-xs bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-medium px-2 py-0.5 rounded">
+                    <span className="text-xs bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-normal px-2 py-0.5 rounded-md">
                       Cashier: {selectedShift.cashierName}
                     </span>
                   </div>
 
                   {/* Financial Metrics Strip */}
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-600 dark:text-gray-400 mt-1.5">
-                    <span>Opening Float: <strong className="text-gray-900 dark:text-white font-bold">${selectedShift.openingBalance.toFixed(2)}</strong></span>
+                    <span>Opening Float: <strong className="text-gray-900 dark:text-white font-mono tabular-nums font-semibold">${selectedShift.openingBalance.toFixed(2)}</strong></span>
                     <span>•</span>
-                    <span>Counted Cash: <strong className="text-blue-700 dark:text-blue-400 font-bold">${currentTotal.toFixed(2)}</strong></span>
+                    <span>Counted Cash: <strong className="text-blue-700 dark:text-blue-400 font-mono tabular-nums font-semibold">${currentTotal.toFixed(2)}</strong></span>
                     <span>•</span>
-                    <span>Safe Drops: <strong className="text-gray-900 dark:text-white font-bold">${(shiftDrop || 0).toFixed(2)}</strong></span>
+                    <span>Safe Drops: <strong className="text-gray-900 dark:text-white font-mono tabular-nums font-semibold">${(shiftDrop || 0).toFixed(2)}</strong></span>
                     <span>•</span>
-                    <span>Variance: <strong className={currentDifference === 0 ? 'text-gray-700 dark:text-gray-300 font-bold' : currentDifference > 0 ? 'text-emerald-700 dark:text-emerald-400 font-bold' : 'text-rose-600 dark:text-rose-400 font-bold'}>
+                    <span>Variance: <strong className={`font-mono tabular-nums font-semibold ${currentDifference === 0 ? 'text-gray-700 dark:text-gray-300' : currentDifference > 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
                       {currentDifference >= 0 ? '+' : ''}${currentDifference.toFixed(2)}
                     </strong></span>
                   </div>
@@ -1223,8 +1223,8 @@ export function CashDrawer() {
 
       {/* Welcome Toast Notification */}
       {welcomeToast && (
-        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 bg-emerald-600 text-white px-5 py-3 rounded-xl shadow-xl flex items-center space-x-2 text-xs font-bold animate-in fade-in slide-in-from-top-4 duration-200">
-          <Sparkles className="w-4 h-4 text-amber-300 flex-shrink-0" />
+        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 bg-slate-900 border border-slate-700 text-slate-100 px-4 py-2.5 rounded-lg shadow-md flex items-center space-x-2 text-xs font-medium animate-in fade-in duration-150">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
           <span>{welcomeToast}</span>
         </div>
       )}

@@ -1285,7 +1285,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                 {/* Browser Inspector Tip */}
                 <div className="mt-3 p-2.5 bg-slate-800/80 rounded-lg text-[11px] text-slate-300 flex items-center justify-between">
                   <span>
-                    💡 <strong>Direct Browser DevTools View:</strong> Press <kbd className="bg-slate-700 px-1.5 py-0.5 rounded text-white text-[10px]">F12</kbd> (or <kbd className="bg-slate-700 px-1.5 py-0.5 rounded text-white text-[10px]">Cmd+Option+I</kbd>) &rarr; <strong>Application</strong> tab &rarr; <strong>IndexedDB</strong> &rarr; <code className="text-blue-300">cash_drawer_db</code>.
+                    <strong>Browser DevTools:</strong> Press <kbd className="bg-slate-700 px-1.5 py-0.5 rounded text-white text-[10px]">F12</kbd> (or <kbd className="bg-slate-700 px-1.5 py-0.5 rounded text-white text-[10px]">Cmd+Option+I</kbd>) &rarr; <strong>Application</strong> tab &rarr; <strong>IndexedDB</strong> &rarr; <code className="text-blue-300">cash_drawer_db</code>.
                   </span>
                 </div>
               </div>
@@ -1551,7 +1551,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
 
             <div className="p-6 space-y-4">
               <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 rounded-xl text-xs text-rose-800 dark:text-rose-200 space-y-1.5 leading-relaxed">
-                <p className="font-bold">⚠️ Warning: All local financial records will be wiped.</p>
+                <p className="font-semibold">Warning: All local financial records will be wiped.</p>
                 <ul className="list-disc pl-4 space-y-0.5 text-[11px] text-rose-700 dark:text-rose-300">
                   <li>All open and closed register shifts will be deleted.</li>
                   <li>All sales leads and guest complaints will be purged.</li>

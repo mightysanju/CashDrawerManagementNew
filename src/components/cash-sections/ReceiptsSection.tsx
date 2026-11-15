@@ -29,28 +29,28 @@ export function ReceiptsSection({ entries, onUpdate, onUpdateEntry }: ReceiptsSe
   };
 
   return (
-    <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4 shadow-xs transition-colors flex flex-col justify-between">
+    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 transition-colors flex flex-col justify-between">
       <div>
         {/* Header */}
-        <div className="flex items-center justify-between pb-3 mb-3 border-b border-gray-100 dark:border-gray-700/80">
+        <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-100 dark:border-slate-800">
           <div className="flex items-center space-x-2.5">
-            <div className="p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300">
-              <Receipt size={18} />
+            <div className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+              <Receipt size={16} />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-gray-900 dark:text-white tracking-tight">
+              <h3 className="text-xs font-semibold text-slate-900 dark:text-white">
                 Paid-Out Receipts
               </h3>
-              <p className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wider font-semibold">
-                Cash Vouchers & Slips
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                Cash vouchers and slips
               </p>
             </div>
           </div>
           <div className="text-right">
-            <span className="text-[10px] text-gray-400 dark:text-gray-400 block uppercase font-semibold">
+            <span className="text-[10px] text-slate-400 dark:text-slate-500 block">
               Total
             </span>
-            <span className="text-sm font-extrabold font-mono text-emerald-600 dark:text-emerald-400">
+            <span className="text-xs font-semibold font-mono tabular-nums text-slate-900 dark:text-white">
               ${totalReceipts.toFixed(2)}
             </span>
           </div>
@@ -59,7 +59,7 @@ export function ReceiptsSection({ entries, onUpdate, onUpdateEntry }: ReceiptsSe
         {/* Input Form */}
         <form onSubmit={handleAddReceipt} className="flex items-center gap-2 mb-3">
           <div className="relative flex-1">
-            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 font-mono text-xs">
+            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 font-mono text-xs">
               $
             </span>
             <input
@@ -69,15 +69,15 @@ export function ReceiptsSection({ entries, onUpdate, onUpdateEntry }: ReceiptsSe
               placeholder="0.00"
               value={newReceiptAmount}
               onChange={(e) => setNewReceiptAmount(e.target.value)}
-              className="w-full pl-6 pr-3 py-1.5 text-xs font-mono font-bold bg-white dark:bg-gray-900 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              className="w-full pl-6 pr-3 py-1 text-xs font-mono tabular-nums bg-white dark:bg-slate-900 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
           </div>
           <button
             type="submit"
             disabled={!newReceiptAmount || parseFloat(newReceiptAmount) <= 0}
-            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg text-xs font-bold transition flex items-center space-x-1 shadow-2xs"
+            className="px-3 py-1 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:opacity-30 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors flex items-center space-x-1"
           >
-            <Plus size={14} />
+            <Plus size={13} />
             <span>Add</span>
           </button>
         </form>
@@ -85,26 +85,26 @@ export function ReceiptsSection({ entries, onUpdate, onUpdateEntry }: ReceiptsSe
         {/* Receipts List */}
         <div className="space-y-1.5 max-h-[160px] overflow-y-auto pr-0.5">
           {receiptEntries.length === 0 ? (
-            <div className="p-3 text-center rounded-lg border border-dashed border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-500 text-[11px]">
-              No paid-out slips or vouchers in this till.
+            <div className="p-3 text-center rounded-lg border border-dashed border-slate-200 dark:border-slate-800 text-slate-400 text-[11px]">
+              No paid-out slips recorded in this till.
             </div>
           ) : (
             receiptEntries.map((entry, index) => (
               <div
                 key={`${entry.denomination}-${index}`}
-                className="flex items-center justify-between p-2 rounded-lg bg-gray-50 dark:bg-gray-750/70 border border-gray-100 dark:border-gray-700/60"
+                className="flex items-center justify-between p-2 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800"
               >
                 <div className="flex items-center space-x-2">
-                  <Receipt className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
-                  <span className="text-xs font-mono font-bold text-gray-900 dark:text-white">
+                  <Receipt className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                  <span className="text-xs font-mono tabular-nums font-medium text-slate-800 dark:text-slate-200">
                     ${entry.denomination.toFixed(2)}
                   </span>
                 </div>
                 <button
                   type="button"
                   onClick={() => handleRemoveReceipt(entry.denomination)}
-                  title="Remove receipt"
-                  className="p-1 text-gray-400 hover:text-rose-600 dark:hover:text-rose-400 transition rounded"
+                  className="text-slate-400 hover:text-red-500 p-1 rounded transition-colors"
+                  title="Remove voucher"
                 >
                   <Trash2 size={13} />
                 </button>

@@ -30,14 +30,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       staffNameEl.textContent = `${res.frontdesk_user.fullName} (${res.frontdesk_user.role})`;
       staffNameEl.style.color = '#0f172a';
     } else {
-      staffNameEl.textContent = 'Not Signed In ⚠️';
-      staffNameEl.style.color = '#dc2626';
+      staffNameEl.textContent = 'Not Signed In';
+      staffNameEl.style.color = '#b45309';
     }
   } else {
     currentUrlEl.textContent = activeUrl;
     appUrlInput.value = activeUrl;
-    staffNameEl.textContent = 'Not Signed In ⚠️';
-    staffNameEl.style.color = '#dc2626';
+    staffNameEl.textContent = 'Not Signed In';
+    staffNameEl.style.color = '#b45309';
   }
 
   // 2. Edit URL Toggle

@@ -179,9 +179,18 @@
       <!-- Form Content (Shown only when user IS logged in) -->
       <div id="fdp-form-container" style="display: none;">
         <div class="fdp-tabs">
-          <button class="fdp-tab active" data-cat="Sales">🏢 Sales Lead</button>
-          <button class="fdp-tab" data-cat="Complaint">⚠️ Complaint</button>
-          <button class="fdp-tab" data-cat="Miscellaneous">📝 Shift Note</button>
+          <button class="fdp-tab active" data-cat="Sales">
+            <span class="fdp-tab-dot fdp-dot-sales"></span>
+            <span>Sales Lead</span>
+          </button>
+          <button class="fdp-tab" data-cat="Complaint">
+            <span class="fdp-tab-dot fdp-dot-complaint"></span>
+            <span>Complaint</span>
+          </button>
+          <button class="fdp-tab" data-cat="Miscellaneous">
+            <span class="fdp-tab-dot fdp-dot-misc"></span>
+            <span>Shift Note</span>
+          </button>
         </div>
 
         <form class="fdp-body" id="fdp-form">
@@ -297,7 +306,7 @@
           </button>
 
           <div class="fdp-success-banner" id="fdp-success" style="display:none; margin-top:8px;">
-            ✓ Log entry saved & synced to FrontDesk Pro!
+            Log entry recorded and synced to register
           </div>
         </form>
       </div>
@@ -344,12 +353,12 @@
       badge.style.background = '#f59e0b';
       badge.title = 'Not Signed In — Click to Sign In';
       staffContainer.innerHTML = `
-        <div class="fdp-staff-bar" style="background:#fffbeb; border-bottom:1px solid #fde68a; color:#b45309; display:flex; align-items:center; justify-content:space-between;">
+        <div class="fdp-staff-bar" style="background:#fef3c7; border-bottom:1px solid #fde68a; color:#92400e; display:flex; align-items:center; justify-content:space-between;">
           <div style="display:flex; align-items:center; gap:6px;">
-            <span>⚠️</span>
-            <strong style="font-size:11px;">Not Signed In to Register</strong>
+            <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#d97706;"></span>
+            <strong style="font-size:11px; font-weight:600;">Not Signed In to Register</strong>
           </div>
-          <span style="font-size:9px; font-weight:700; text-transform:uppercase; background:#fef3c7; padding:1px 6px; border-radius:4px;">Guest</span>
+          <span style="font-size:9px; font-weight:600; text-transform:uppercase; letter-spacing:0.02em; background:#fde68a; color:#78350f; padding:2px 6px; border-radius:4px;">Guest</span>
         </div>
       `;
       loginGate.style.display = 'block';
