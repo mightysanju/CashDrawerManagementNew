@@ -318,6 +318,29 @@ export class DatabaseManager {
   }
 
   /* -------------------------------------------------------------
+   *  App Settings Operations
+   * ------------------------------------------------------------- */
+  async getSettings(): Promise<AppSettings> {
+    const db = await this.dbPromise;
+    const s = await db.get(STORES.SETTINGS, 'default');
+    return s || {
+      id: 'default',
+      salesRateMultiplier: 120,
+      organizationName: 'Grand Hotel & Suites',
+    };
+  }
+
+  async saveSettings(settings: Partial<AppSettings>): Promise<void> {
+    const db = await this.dbPromise;
+    const current = await this.getSettings();
+    await db.put(STORES.SETTINGS, {
+      ...current,
+      ...settings,
+      id: 'default',
+    });
+  }
+
+  /* -------------------------------------------------------------
    *  Database Inspector & Backup Operations
    * ------------------------------------------------------------- */
   async getStoreCounts(): Promise<Record<string, number>> {

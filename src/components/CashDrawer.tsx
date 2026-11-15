@@ -13,7 +13,8 @@ import {
   Puzzle,
   ChevronUp,
   Sun,
-  Moon
+  Moon,
+  Key
 } from 'lucide-react';
 import { CashEntry, ShiftRecord, ShiftLogEntry, UserAccount, PrimaryCategory } from '../types';
 import { ShiftHistory } from './ShiftHistory';
@@ -30,6 +31,7 @@ import { RemindersTab } from './RemindersTab';
 import { UserManagementModal } from './UserManagementModal';
 import { ExtensionModal } from './ExtensionModal';
 import { FloatingExtensionBubble } from './FloatingExtensionBubble';
+import { ChangePasswordModal } from './ChangePasswordModal';
 import { OpenShiftModal } from './OpenShiftModal';
 import { CloseShiftModal } from './CloseShiftModal';
 import { generatePDF, printReceipt } from '../utils/pdfGenerator';
@@ -80,6 +82,7 @@ export function CashDrawer() {
   // Modals
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
   const [isUserMgmtModalOpen, setIsUserMgmtModalOpen] = useState(false);
+  const [isChangePasswordModalOpen, setIsChangePasswordModalOpen] = useState(false);
   const [syncState, setSyncState] = useState<SyncState>(p2pSyncManager.getState());
 
   // Browser Extension & Floating Bubble States
@@ -428,9 +431,17 @@ export function CashDrawer() {
                 </div>
                 <button
                   type="button"
+                  onClick={() => setIsChangePasswordModalOpen(true)}
+                  title="Change My Password"
+                  className="ml-1 p-1 text-gray-400 hover:text-blue-600 rounded-lg transition cursor-pointer"
+                >
+                  <Key className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
                   onClick={handleRequestSignOut}
                   title="Sign Out / Close Shift"
-                  className="ml-1 p-1 text-gray-400 hover:text-rose-600 rounded-lg transition"
+                  className="p-1 text-gray-400 hover:text-rose-600 rounded-lg transition cursor-pointer"
                 >
                   <LogOut className="w-4 h-4" />
                 </button>
@@ -905,6 +916,15 @@ export function CashDrawer() {
         currentBalance={currentTotal}
         onConfirmClose={handleConfirmCloseShift}
       />
+
+      {/* Individual User Change Password Modal */}
+      {currentUser && (
+        <ChangePasswordModal
+          isOpen={isChangePasswordModalOpen}
+          onClose={() => setIsChangePasswordModalOpen(false)}
+          currentUser={currentUser}
+        />
+      )}
 
       {/* Manager Console Modal */}
       {currentUser && currentUser.role === 'manager' && (

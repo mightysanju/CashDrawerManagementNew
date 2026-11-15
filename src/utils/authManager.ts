@@ -89,6 +89,16 @@ class AuthManager {
     }
   }
 
+  public updateCurrentUser(user: UserAccount) {
+    this.currentUser = user;
+    try {
+      localStorage.setItem(SESSION_KEY, JSON.stringify(user));
+    } catch (err) {
+      console.warn('Failed to update session in localStorage:', err);
+    }
+    this.notify();
+  }
+
   public logout() {
     this.currentUser = null;
     try {

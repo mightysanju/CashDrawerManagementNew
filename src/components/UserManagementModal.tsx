@@ -21,10 +21,14 @@ import {
   MessageSquare,
   ChevronDown,
   ChevronRight,
-  Search
+  Search,
+  Key,
+  RotateCcw,
+  Lock
 } from 'lucide-react';
 import { UserAccount, UserRole, LogCategoryConfig, AppSettings, ShiftLogEntry } from '../types';
 import { DatabaseManager } from '../utils/database';
+import { authManager } from '../utils/authManager';
 import { p2pSyncManager } from '../utils/p2pSyncManager';
 import { generateShiftLogAuditPDF, exportShiftLogsToCSV } from '../utils/pdfGenerator';
 import { formatFullTimestamp } from '../utils/dateUtils';
@@ -52,6 +56,9 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
   const [newRole, setNewRole] = useState<UserRole>('clerk');
   const [userError, setUserError] = useState<string | null>(null);
   const [userSuccess, setUserSuccess] = useState<string | null>(null);
+  const [resetPasswordTargetUser, setResetPasswordTargetUser] = useState<UserAccount | null>(null);
+  const [adminNewPassword, setAdminNewPassword] = useState('');
+  const [adminPasswordSuccess, setAdminPasswordSuccess] = useState<string | null>(null);
 
   // Categories state
   const [categories, setCategories] = useState<LogCategoryConfig[]>([]);
@@ -246,6 +253,57 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
       setUsers((prev) => prev.filter((u) => u.id !== userId));
       const counts = await db.getStoreCounts();
       setDbCounts(counts);
+    }
+  };
+
+  const handleResetPasswordToDefault = async (user: UserAccount) => {
+    const defaultPassword = user.role === 'manager' ? 'password123' : 'clerk123';
+    const updated: UserAccount = {
+      ...user,
+      passwordHash: defaultPassword,
+    };
+
+    try {
+      await db.saveUser(updated);
+      if (user.id === currentUser.id) {
+        authManager.updateCurrentUser(updated);
+      }
+      p2pSyncManager.broadcastUser(updated);
+      setUsers((prev) => prev.map((u) => (u.id === user.id ? updated : u)));
+      setResetPasswordTargetUser(updated);
+      setAdminPasswordSuccess(`Password for @${user.username} successfully reset to default: "${defaultPassword}"`);
+    } catch (err) {
+      console.error('Failed to reset password:', err);
+      alert('Failed to reset password in local database.');
+    }
+  };
+
+  const handleSetCustomPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetPasswordTargetUser) return;
+    if (!adminNewPassword || adminNewPassword.length < 4) {
+      alert('Password must be at least 4 characters long.');
+      return;
+    }
+
+    const updated: UserAccount = {
+      ...resetPasswordTargetUser,
+      passwordHash: adminNewPassword,
+    };
+
+    try {
+      await db.saveUser(updated);
+      if (resetPasswordTargetUser.id === currentUser.id) {
+        authManager.updateCurrentUser(updated);
+      }
+      p2pSyncManager.broadcastUser(updated);
+      setUsers((prev) => prev.map((u) => (u.id === resetPasswordTargetUser.id ? updated : u)));
+      setResetPasswordTargetUser(updated);
+      setAdminPasswordSuccess(`Password for @${resetPasswordTargetUser.username} successfully updated to: "${adminNewPassword}"`);
+      setAdminNewPassword('');
+    } catch (err) {
+      console.error('Failed to update password:', err);
+      alert('Failed to update password in local database.');
     }
   };
 
@@ -609,6 +667,18 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
 
                       <div className="flex items-center space-x-2">
                         <button
+                          onClick={() => {
+                            setResetPasswordTargetUser(user);
+                            setAdminNewPassword('');
+                            setAdminPasswordSuccess(null);
+                          }}
+                          className="text-[11px] font-semibold px-2 py-1 rounded-md text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition flex items-center space-x-1 cursor-pointer"
+                          title="Change or Reset User Password"
+                        >
+                          <Key className="w-3.5 h-3.5" />
+                          <span>Password</span>
+                        </button>
+                        <button
                           onClick={() => handleToggleUserActive(user)}
                           className={`text-[11px] font-semibold px-2 py-1 rounded-md transition ${
                             user.isActive
@@ -621,7 +691,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                         {user.id !== currentUser.id && (
                           <button
                             onClick={() => handleDeleteUser(user.id)}
-                            className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition"
+                            className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition cursor-pointer"
                             title="Delete User"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -632,6 +702,105 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                   ))}
                 </div>
               </div>
+
+              {/* Admin Manage User Password Modal */}
+              {resetPasswordTargetUser && (
+                <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in">
+                  <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-gray-100 dark:border-slate-800">
+                    <div className="bg-gradient-to-r from-blue-600 to-indigo-700 px-5 py-3.5 text-white flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <Key className="w-4 h-4 text-blue-200" />
+                        <h4 className="text-sm font-bold">Manage User Password</h4>
+                      </div>
+                      <button
+                        onClick={() => setResetPasswordTargetUser(null)}
+                        className="p-1 text-blue-100 hover:text-white hover:bg-white/10 rounded-lg cursor-pointer"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    <div className="p-5 space-y-4">
+                      <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
+                        <div className="flex items-center space-x-2">
+                          <span className="font-bold text-xs text-slate-900 dark:text-white">
+                            {resetPasswordTargetUser.fullName}
+                          </span>
+                          <span className="text-[11px] text-gray-400 font-mono">
+                            (@{resetPasswordTargetUser.username})
+                          </span>
+                          <span className="text-[10px] font-bold uppercase px-1.5 py-0.2 rounded bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                            {resetPasswordTargetUser.role}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                          Current Stored Password: <code className="text-blue-600 dark:text-blue-400 font-mono font-bold bg-blue-50 dark:bg-slate-750 px-1.5 py-0.5 rounded">{resetPasswordTargetUser.passwordHash}</code>
+                        </p>
+                      </div>
+
+                      {adminPasswordSuccess && (
+                        <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/60 text-emerald-700 dark:text-emerald-300 rounded-xl text-xs flex items-center space-x-2">
+                          <Check className="w-4 h-4 shrink-0" />
+                          <span>{adminPasswordSuccess}</span>
+                        </div>
+                      )}
+
+                      {/* Option 1: 1-Click Reset to Default */}
+                      <div className="p-3.5 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 rounded-xl space-y-2">
+                        <div className="flex items-center space-x-1.5 text-amber-800 dark:text-amber-300 text-xs font-bold">
+                          <RotateCcw className="w-4 h-4" />
+                          <span>Option 1: One-Click Reset to Default Password</span>
+                        </div>
+                        <p className="text-[11px] text-amber-700 dark:text-amber-400 leading-relaxed">
+                          Reset password back to standard system default: 
+                          <strong className="ml-1 font-mono">{resetPasswordTargetUser.role === 'manager' ? 'password123' : 'clerk123'}</strong>
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => handleResetPasswordToDefault(resetPasswordTargetUser)}
+                          className="px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold transition flex items-center space-x-1.5 shadow-xs cursor-pointer"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>Reset to Default ({resetPasswordTargetUser.role === 'manager' ? 'password123' : 'clerk123'})</span>
+                        </button>
+                      </div>
+
+                      {/* Option 2: Set Custom Password */}
+                      <form onSubmit={handleSetCustomPassword} className="space-y-3 pt-1 border-t border-gray-100 dark:border-slate-800">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-800 dark:text-white mb-1">
+                            Option 2: Assign Custom Password
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="Enter new custom password (min 4 chars)"
+                            value={adminNewPassword}
+                            onChange={(e) => setAdminNewPassword(e.target.value)}
+                            className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-700 rounded-lg text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                        <div className="flex justify-end space-x-2">
+                          <button
+                            type="button"
+                            onClick={() => setResetPasswordTargetUser(null)}
+                            className="px-3.5 py-2 border border-gray-300 dark:border-slate-700 hover:bg-gray-100 dark:hover:bg-slate-800 text-gray-700 dark:text-gray-300 rounded-lg text-xs font-semibold cursor-pointer"
+                          >
+                            Done
+                          </button>
+                          <button
+                            type="submit"
+                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-xs transition flex items-center space-x-1.5 cursor-pointer"
+                          >
+                            <Lock className="w-3.5 h-3.5" />
+                            <span>Set Custom Password</span>
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
