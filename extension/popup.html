@@ -5,7 +5,7 @@
   <title>FrontDesk Pro</title>
   <style>
     body {
-      width: 320px;
+      width: 340px;
       margin: 0;
       padding: 0;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -24,6 +24,7 @@
       margin: 0;
       font-size: 14px;
       font-weight: 700;
+      letter-spacing: -0.01em;
     }
     .content {
       padding: 16px;
@@ -34,13 +35,14 @@
       border-radius: 12px;
       padding: 12px;
       margin-bottom: 12px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.04);
     }
     .status-row {
       display: flex;
       justify-content: space-between;
       align-items: center;
       font-size: 12px;
-      margin-bottom: 6px;
+      margin-bottom: 8px;
     }
     .status-row:last-child {
       margin-bottom: 0;
@@ -55,6 +57,94 @@
       color: #047857;
       border: 1px solid #a7f3d0;
     }
+    .url-card {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 12px;
+      margin-bottom: 12px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    }
+    .url-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+    .url-title {
+      font-size: 11px;
+      font-weight: 700;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    .url-display {
+      background: #f1f5f9;
+      padding: 8px 10px;
+      border-radius: 8px;
+      font-size: 11px;
+      color: #1e293b;
+      word-break: break-all;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      border: 1px solid #e2e8f0;
+    }
+    .url-input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 7px 9px;
+      border: 1px solid #94a3b8;
+      border-radius: 6px;
+      font-size: 11px;
+      font-family: inherit;
+      color: #0f172a;
+      background: #ffffff;
+      margin-bottom: 6px;
+    }
+    .url-input:focus {
+      outline: none;
+      border-color: #2563eb;
+      box-shadow: 0 0 0 2px rgba(37,99,235,0.15);
+    }
+    .url-actions {
+      display: flex;
+      gap: 6px;
+      justify-content: flex-end;
+    }
+    .btn-sm {
+      padding: 4px 8px;
+      font-size: 11px;
+      font-weight: 600;
+      border-radius: 6px;
+      border: 1px solid transparent;
+      cursor: pointer;
+    }
+    .btn-primary-sm {
+      background: #2563eb;
+      color: #ffffff;
+    }
+    .btn-primary-sm:hover {
+      background: #1d4ed8;
+    }
+    .btn-secondary-sm {
+      background: #f1f5f9;
+      color: #475569;
+      border-color: #cbd5e1;
+    }
+    .btn-secondary-sm:hover {
+      background: #e2e8f0;
+    }
+    .btn-link {
+      background: none;
+      border: none;
+      color: #2563eb;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      padding: 0;
+    }
+    .btn-link:hover {
+      text-decoration: underline;
+    }
     .btn {
       display: block;
       width: 100%;
@@ -64,30 +154,34 @@
       color: #ffffff;
       text-decoration: none;
       padding: 10px;
-      border-radius: 8px;
+      border-radius: 10px;
       font-size: 13px;
       font-weight: 600;
       border: none;
       cursor: pointer;
       transition: background 0.15s ease;
+      box-shadow: 0 2px 4px rgba(37,99,235,0.2);
     }
     .btn:hover {
       background: #1d4ed8;
-    }
-    .btn-secondary {
-      background: #ffffff;
-      color: #334155;
-      border: 1px solid #cbd5e1;
-      margin-top: 8px;
-    }
-    .btn-secondary:hover {
-      background: #f1f5f9;
     }
     .footer {
       font-size: 11px;
       color: #94a3b8;
       text-align: center;
       margin-top: 14px;
+      line-height: 1.4;
+    }
+    .save-banner {
+      background: #ecfdf5;
+      color: #047857;
+      border: 1px solid #a7f3d0;
+      border-radius: 6px;
+      font-size: 11px;
+      padding: 4px 8px;
+      margin-top: 6px;
+      display: none;
+      text-align: center;
     }
   </style>
 </head>
@@ -97,6 +191,7 @@
     <h1>FrontDesk Pro Extension</h1>
   </div>
   <div class="content">
+    <!-- Status Card -->
     <div class="status-card">
       <div class="status-row">
         <span style="color:#64748b;">Floating Bubble:</span>
@@ -104,20 +199,48 @@
       </div>
       <div class="status-row">
         <span style="color:#64748b;">Active Staff:</span>
-        <strong id="staff-name" style="font-size:12px;">Front Desk Clerk</strong>
+        <strong id="staff-name" style="font-size:12px;">Checking...</strong>
       </div>
       <div class="status-row">
-        <span style="color:#64748b;">Sync Status:</span>
-        <span style="color:#047857; font-weight:600; font-size:11px;">● P2P Broadcast Ready</span>
+        <span style="color:#64748b;">Live DB Sync:</span>
+        <span style="color:#047857; font-weight:600; font-size:11px;">● Connected</span>
       </div>
     </div>
 
-    <button id="open-app-btn" class="btn">
-      Open FrontDesk Pro Register
+    <!-- Connected App URL Card -->
+    <div class="url-card">
+      <div class="url-header">
+        <span class="url-title">Connected Register URL:</span>
+        <button id="edit-url-btn" class="btn-link" type="button">✏️ Change</button>
+      </div>
+
+      <!-- View Mode -->
+      <div id="url-view-container">
+        <div id="current-app-url" class="url-display">https://cashdrawermanagement.netlify.app/app</div>
+      </div>
+
+      <!-- Edit Mode -->
+      <div id="url-edit-container" style="display:none; margin-top:4px;">
+        <input type="url" id="app-url-input" class="url-input" placeholder="https://cashdrawermanagement.netlify.app/app" />
+        <div class="url-actions">
+          <button id="reset-url-btn" class="btn-sm btn-secondary-sm" type="button" title="Reset to official Netlify URL">Default</button>
+          <button id="cancel-url-btn" class="btn-sm btn-secondary-sm" type="button">Cancel</button>
+          <button id="save-url-btn" class="btn-sm btn-primary-sm" type="button">Save URL</button>
+        </div>
+      </div>
+
+      <div id="url-save-banner" class="save-banner">
+        ✓ Register URL updated!
+      </div>
+    </div>
+
+    <!-- Action Button -->
+    <button id="open-app-btn" class="btn" type="button">
+      Open FrontDesk Pro Register &rarr;
     </button>
 
     <div class="footer">
-      Click the floating bubble in any browser tab to record sales leads, complaints, and shift logs.
+      Click the floating bubble on any tab (Google, PMS, Booking) to record leads, complaints, and notes.
     </div>
   </div>
   <script src="popup.js"></script>

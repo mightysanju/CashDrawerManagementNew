@@ -408,4 +408,73 @@ export class DatabaseManager {
       },
     };
   }
+
+  async resetDatabaseToFactoryDefaults(): Promise<void> {
+    const db = await this.dbPromise;
+    const storeNames = [
+      STORES.SHIFTS,
+      STORES.SHIFT_LOGS,
+      STORES.ORGANIZATION,
+      STORES.USERS,
+      STORES.CATEGORIES,
+      STORES.SETTINGS,
+    ];
+    const tx = db.transaction(storeNames, 'readwrite');
+    for (const name of storeNames) {
+      if (db.objectStoreNames.contains(name)) {
+        await tx.objectStore(name).clear();
+      }
+    }
+    await tx.done;
+
+    // Reseed default Manager and Clerk accounts
+    const defaultManager: UserAccount = {
+      id: 'user_manager_default',
+      username: 'manager',
+      passwordHash: 'password123',
+      fullName: 'Property Manager',
+      role: 'manager',
+      createdAt: new Date().toISOString(),
+      isActive: true,
+    };
+    const defaultClerk: UserAccount = {
+      id: 'user_clerk_default',
+      username: 'clerk1',
+      passwordHash: 'clerk123',
+      fullName: 'Front Desk Clerk',
+      role: 'clerk',
+      createdAt: new Date().toISOString(),
+      isActive: true,
+    };
+    await this.saveUser(defaultManager);
+    await this.saveUser(defaultClerk);
+
+    // Reseed default categories
+    const defaultCategories: LogCategoryConfig[] = [
+      {
+        id: 'cat_sales',
+        name: 'Sales',
+        subcategories: ['Group', 'Wedding', 'Sports team', 'Company', 'Bus Tour', 'Family Reunion'],
+        rateMultiplier: 120,
+      },
+      {
+        id: 'cat_complaint',
+        name: 'Complaint',
+        subcategories: ['Room Maintenance', 'Noise / Disturbance', 'Billing & Folio', 'Housekeeping / Cleanliness', 'Staff / Service', 'Other'],
+      },
+      {
+        id: 'cat_misc',
+        name: 'Miscellaneous',
+        subcategories: ['Shift Handover', 'Package Delivery', 'Lost & Found', 'Maintenance Request', 'Manager Note'],
+      },
+    ];
+    await this.bulkSaveCategories(defaultCategories);
+
+    // Reseed default settings
+    await this.saveSettings({
+      id: 'default',
+      salesRateMultiplier: 120,
+      organizationName: 'Grand Hotel & Suites',
+    });
+  }
 }

@@ -24,7 +24,8 @@ import {
   Search,
   Key,
   RotateCcw,
-  Lock
+  Lock,
+  AlertTriangle
 } from 'lucide-react';
 import { UserAccount, UserRole, LogCategoryConfig, AppSettings, ShiftLogEntry } from '../types';
 import { DatabaseManager } from '../utils/database';
@@ -99,33 +100,67 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
   const [copiedPath, setCopiedPath] = useState<boolean>(false);
   const [expandedRecordId, setExpandedRecordId] = useState<string | null>(null);
 
+  // Database Factory Reset & Purge State
+  const [isResetDbModalOpen, setIsResetDbModalOpen] = useState(false);
+  const [resetConfirmationInput, setResetConfirmationInput] = useState('');
+  const [isResettingDb, setIsResettingDb] = useState(false);
+  const [resetDbSuccess, setResetDbSuccess] = useState(false);
+
+  const loadData = useCallback(async () => {
+    try {
+      const [loadedUsers, loadedCats, loadedSettings, loadedLogs, counts] = await Promise.all([
+        db.getUsers(),
+        db.getCategories(),
+        db.getSettings(),
+        db.getShiftLogs(),
+        db.getStoreCounts(),
+      ]);
+      setUsers(loadedUsers);
+      setCategories(loadedCats);
+      setSettings(loadedSettings);
+      setRateMultiplierInput(loadedSettings.salesRateMultiplier || 120);
+      setOrgNameInput(loadedSettings.organizationName || 'Grand Hotel & Suites');
+      setAllShiftLogs(loadedLogs);
+      setDbCounts(counts);
+    } catch (err) {
+      console.error('Error loading manager data:', err);
+    }
+  }, []);
+
+  const handleResetDatabase = async () => {
+    if (resetConfirmationInput.trim() !== 'Deletemydatalog') {
+      alert('Confirmation phrase does not match. Please type Deletemydatalog exactly.');
+      return;
+    }
+
+    try {
+      setIsResettingDb(true);
+      await db.resetDatabaseToFactoryDefaults();
+      p2pSyncManager.broadcastHistoryCleared();
+      localStorage.removeItem('cdm_local_active_shift_id');
+      localStorage.removeItem('frontdesk_external_logs');
+
+      await loadData();
+      setIsResetDbModalOpen(false);
+      setResetConfirmationInput('');
+      setResetDbSuccess(true);
+      setTimeout(() => {
+        setResetDbSuccess(false);
+      }, 5000);
+    } catch (err) {
+      console.error('Failed to reset database:', err);
+      alert('Failed to reset database. Please try again.');
+    } finally {
+      setIsResettingDb(false);
+    }
+  };
+
   useEffect(() => {
     if (!isOpen) return;
-
-    const loadData = async () => {
-      try {
-        const [loadedUsers, loadedCats, loadedSettings, loadedLogs, counts] = await Promise.all([
-          db.getUsers(),
-          db.getCategories(),
-          db.getSettings(),
-          db.getShiftLogs(),
-          db.getStoreCounts(),
-        ]);
-        setUsers(loadedUsers);
-        setCategories(loadedCats);
-        setSettings(loadedSettings);
-        setRateMultiplierInput(loadedSettings.salesRateMultiplier || 120);
-        setOrgNameInput(loadedSettings.organizationName || 'Grand Hotel & Suites');
-        setAllShiftLogs(loadedLogs);
-        setDbCounts(counts);
-      } catch (err) {
-        console.error('Error loading manager data:', err);
-      }
-    };
     loadData();
     setUserError(null);
     setUserSuccess(null);
-  }, [isOpen]);
+  }, [isOpen, loadData]);
 
   // Load store records when selectedStore or isDbExplorerOpen changes
   useEffect(() => {
@@ -1386,6 +1421,42 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                   </div>
                 )}
               </div>
+
+              {/* Danger Zone: Factory Reset Database */}
+              {currentUser.role === 'manager' && (
+                <div className="bg-rose-50/70 dark:bg-rose-950/30 rounded-xl border border-rose-200 dark:border-rose-900/50 p-4 shadow-xs">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-rose-900 dark:text-rose-300 flex items-center space-x-1.5">
+                        <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400" />
+                        <span>Danger Zone: Reset Database & Purge All Logs</span>
+                      </h3>
+                      <p className="text-[11px] text-rose-700 dark:text-rose-400 mt-0.5">
+                        Permanently purge all shift records, safe drops, customer leads, and custom categories. Reseeds default staff accounts.
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setResetConfirmationInput('');
+                        setIsResetDbModalOpen(true);
+                      }}
+                      className="px-4 py-2 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white rounded-xl text-xs font-bold transition flex items-center space-x-1.5 shadow-sm cursor-pointer whitespace-nowrap self-start"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Reset & Delete Database...</span>
+                    </button>
+                  </div>
+
+                  {resetDbSuccess && (
+                    <div className="mt-3 p-3 bg-emerald-100 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 rounded-lg text-xs font-semibold flex items-center space-x-2">
+                      <Check className="w-4 h-4 flex-shrink-0 text-emerald-600" />
+                      <span>Database has been completely purged and reset to clean factory defaults.</span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -1454,6 +1525,81 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
           )}
         </div>
       </div>
+
+      {/* Database Reset Confirmation Modal */}
+      {isResetDbModalOpen && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs animate-fade-in">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full border border-rose-200 dark:border-rose-900/60 overflow-hidden">
+            <div className="bg-rose-600 px-6 py-4 text-white flex items-center justify-between">
+              <div className="flex items-center space-x-2.5">
+                <div className="p-2 bg-white/20 rounded-xl">
+                  <AlertTriangle className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">Reset & Delete Database</h3>
+                  <p className="text-xs text-rose-100">Permanent and irreversible action</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsResetDbModalOpen(false)}
+                className="text-white/80 hover:text-white p-1 rounded-lg transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 rounded-xl text-xs text-rose-800 dark:text-rose-200 space-y-1.5 leading-relaxed">
+                <p className="font-bold">⚠️ Warning: All local financial records will be wiped.</p>
+                <ul className="list-disc pl-4 space-y-0.5 text-[11px] text-rose-700 dark:text-rose-300">
+                  <li>All open and closed register shifts will be deleted.</li>
+                  <li>All sales leads and guest complaints will be purged.</li>
+                  <li>Categories and settings will reset to factory default.</li>
+                  <li>Default manager (password123) and clerk (clerk123) will be restored.</li>
+                </ul>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
+                  To confirm, type <span className="font-mono font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-900/40 px-1.5 py-0.5 rounded border border-rose-200 dark:border-rose-800">Deletemydatalog</span> below:
+                </label>
+                <input
+                  type="text"
+                  autoFocus
+                  placeholder="Type Deletemydatalog"
+                  value={resetConfirmationInput}
+                  onChange={(e) => setResetConfirmationInput(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl text-sm font-mono text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-rose-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-end space-x-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsResetDbModalOpen(false)}
+                  className="px-4 py-2 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={resetConfirmationInput.trim() !== 'Deletemydatalog' || isResettingDb}
+                  onClick={handleResetDatabase}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold text-white transition flex items-center space-x-1.5 shadow-sm ${
+                    resetConfirmationInput.trim() === 'Deletemydatalog' && !isResettingDb
+                      ? 'bg-rose-600 hover:bg-rose-700 active:bg-rose-800 cursor-pointer shadow-rose-500/20'
+                      : 'bg-rose-300 dark:bg-rose-900/40 cursor-not-allowed opacity-60'
+                  }`}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>{isResettingDb ? 'Purging Database...' : 'Permanently Delete Database'}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

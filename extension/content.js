@@ -158,7 +158,7 @@
           <span>Sign In to FrontDesk Pro</span>
           <span>&rarr;</span>
         </button>
-        <p style="font-size: 11px; color: #94a3b8; margin: 12px 0 0;">
+        <p id="fdp-gate-url-note" style="font-size: 11px; color: #94a3b8; margin: 12px 0 0;">
           Opens https://cashdrawermanagement.netlify.app/app
         </p>
       </div>
@@ -341,6 +341,17 @@
       `;
       loginGate.style.display = 'block';
       formContainer.style.display = 'none';
+
+      // Update gate URL note from storage
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+        chrome.storage.local.get(['frontdesk_app_url'], (res) => {
+          const urlNote = document.getElementById('fdp-gate-url-note');
+          if (urlNote) {
+            const u = res && res.frontdesk_app_url ? res.frontdesk_app_url : 'https://cashdrawermanagement.netlify.app/app';
+            urlNote.textContent = `Opens ${u}`;
+          }
+        });
+      }
     }
   }
 
@@ -373,7 +384,15 @@
   // Open App Button
   if (openAppBtn) {
     openAppBtn.addEventListener('click', () => {
-      window.open('https://cashdrawermanagement.netlify.app/app', '_blank');
+      let targetUrl = 'https://cashdrawermanagement.netlify.app/app';
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+        chrome.storage.local.get(['frontdesk_app_url'], (res) => {
+          if (res && res.frontdesk_app_url) targetUrl = res.frontdesk_app_url;
+          window.open(targetUrl, '_blank');
+        });
+      } else {
+        window.open(targetUrl, '_blank');
+      }
     });
   }
 
