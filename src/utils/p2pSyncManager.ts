@@ -42,7 +42,6 @@ export interface SyncState {
 }
 
 const PEER_PREFIX = 'cdm-lan-v3-';
-const BROADCAST_CHANNEL_NAME = 'cdm_lan_broadcast';
 const db = new DatabaseManager();
 
 // Google's public STUN servers for reliable local LAN / Wi-Fi NAT traversal
@@ -78,26 +77,34 @@ class P2PSyncManager {
   private dataListeners: Set<(action: string, data?: unknown) => void> = new Set();
 
   constructor() {
-    this.initBroadcastChannel();
     try {
       const saved = localStorage.getItem('cdm_store_name');
-      if (saved) {
-        this.state.storeName = saved;
-        this.storeSlug = this.sanitizeSlug(saved);
+      if (saved && saved.trim() && saved.trim().toLowerCase() !== 'main store') {
+        this.state.storeName = saved.trim();
+        this.storeSlug = this.sanitizeSlug(saved.trim());
       }
     } catch {
       // ignore
     }
+    this.initBroadcastChannel();
   }
 
   /**
    * Initializes native BroadcastChannel for instant zero-latency sync across
-   * tabs / windows on the same machine
+   * tabs / windows on the same machine, scoped to the current hotel slug
    */
   private initBroadcastChannel() {
     if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
       try {
-        this.broadcastChannel = new BroadcastChannel(BROADCAST_CHANNEL_NAME);
+        if (this.broadcastChannel) {
+          try {
+            this.broadcastChannel.close();
+          } catch {
+            // ignore
+          }
+        }
+        const channelName = `cdm_lan_broadcast_${this.storeSlug}`;
+        this.broadcastChannel = new BroadcastChannel(channelName);
         this.broadcastChannel.onmessage = async (event) => {
           const msg = event.data as SyncMessage;
           if (!msg || !msg.type || msg.senderId === this.myClientId) return;
@@ -107,6 +114,50 @@ class P2PSyncManager {
         console.debug('BroadcastChannel not available:', err);
       }
     }
+  }
+
+  public getKnownSyncGroups(): string[] {
+    try {
+      const raw = localStorage.getItem('cdm_known_sync_groups');
+      const list: string[] = raw ? JSON.parse(raw) : [];
+      if (this.state.storeName && !list.includes(this.state.storeName)) {
+        list.unshift(this.state.storeName);
+      }
+      return Array.from(new Set(list.filter(Boolean)));
+    } catch {
+      return this.state.storeName ? [this.state.storeName] : [];
+    }
+  }
+
+  public rememberSyncGroup(groupName: string) {
+    if (!groupName || !groupName.trim()) return;
+    try {
+      const trimmed = groupName.trim();
+      const current = this.getKnownSyncGroups();
+      if (!current.includes(trimmed)) {
+        current.unshift(trimmed);
+      }
+      localStorage.setItem('cdm_known_sync_groups', JSON.stringify(current));
+    } catch {
+      // ignore
+    }
+  }
+
+  public removeKnownSyncGroup(groupName: string) {
+    try {
+      const current = this.getKnownSyncGroups().filter((g) => g !== groupName);
+      localStorage.setItem('cdm_known_sync_groups', JSON.stringify(current));
+    } catch {
+      // ignore
+    }
+  }
+
+  public async switchSyncGroup(newStoreName: string): Promise<void> {
+    const trimmed = newStoreName.trim();
+    if (!trimmed) return;
+    this.disconnect();
+    this.rememberSyncGroup(trimmed);
+    await this.autoConnect(trimmed);
   }
 
   public getState(): SyncState {
@@ -140,7 +191,7 @@ class P2PSyncManager {
 
   private sanitizeSlug(name: string): string {
     const clean = name.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
-    return clean || 'main-store';
+    return clean || 'hotel-main';
   }
 
   /**
@@ -157,10 +208,31 @@ class P2PSyncManager {
       this.reconnectTimer = null;
     }
 
-    const currentStore = storeName || this.state.storeName || 'Main Store';
+    let currentStore = storeName;
+    if (!currentStore) {
+      try {
+        const saved = localStorage.getItem('cdm_store_name');
+        if (saved && saved.trim() && saved.trim().toLowerCase() !== 'main store') {
+          currentStore = saved.trim();
+        } else {
+          const org = await db.getOrganization();
+          if (org && org.name && org.name.trim()) {
+            currentStore = org.name.trim();
+          } else {
+            currentStore = this.state.storeName || 'Sunset Palms Beach Resort';
+          }
+        }
+      } catch {
+        currentStore = this.state.storeName || 'Sunset Palms Beach Resort';
+      }
+    }
+
     this.storeSlug = this.sanitizeSlug(currentStore);
+    this.initBroadcastChannel();
+
     try {
       localStorage.setItem('cdm_store_name', currentStore);
+      this.rememberSyncGroup(currentStore);
     } catch {
       // ignore
     }
