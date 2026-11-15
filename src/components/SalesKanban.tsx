@@ -18,6 +18,7 @@ import {
 import { ShiftLogEntry, SalesLeadStatus, UserAccount } from '../types';
 import { DatabaseManager } from '../utils/database';
 import { p2pSyncManager } from '../utils/p2pSyncManager';
+import { formatFullTimestamp } from '../utils/dateUtils';
 
 interface SalesKanbanProps {
   leads: ShiftLogEntry[];
@@ -356,21 +357,21 @@ export const SalesKanban: React.FC<SalesKanbanProps> = ({
                           )}
 
                           {/* Author & Date */}
-                          <div className="flex items-center justify-between text-[10px] text-gray-400">
+                          <div className="flex items-center justify-between text-[10px] text-gray-500 dark:text-gray-400">
                             <span className="flex items-center space-x-1">
                               <User className="w-3 h-3" />
                               <span>{lead.clerkName}</span>
                             </span>
-                            <span className="flex items-center space-x-1">
-                              <Clock className="w-3 h-3" />
-                              <span>{new Date(lead.createdAt).toLocaleDateString()}</span>
+                            <span className="flex items-center space-x-1 font-mono">
+                              <Clock className="w-3 h-3 text-blue-500" />
+                              <span>{formatFullTimestamp(lead.createdAt)}</span>
                             </span>
                           </div>
 
                           {/* Threaded Responses */}
                           {(lead.responses?.length || 0) > 0 && (
-                            <div className="border-t border-gray-100 pt-2 space-y-2">
-                              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Responses</p>
+                            <div className="border-t border-gray-100 dark:border-gray-800 pt-2 space-y-2">
+                              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Responses & Actions</p>
                               {lead.responses!.map((r) => (
                                 <div key={r.id} className="flex items-start space-x-2">
                                   <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 ${
@@ -380,14 +381,14 @@ export const SalesKanban: React.FC<SalesKanbanProps> = ({
                                   }`}>
                                     {r.authorName.charAt(0).toUpperCase()}
                                   </div>
-                                  <div className="flex-1 bg-gray-50 border border-gray-100 rounded-lg p-2">
+                                  <div className="flex-1 bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg p-2">
                                     <div className="flex items-center justify-between mb-0.5">
-                                      <span className="text-[10px] font-bold text-gray-700">{r.authorName}</span>
-                                      <span className="text-[9px] text-gray-400">
-                                        {new Date(r.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                      <span className="text-[10px] font-bold text-gray-700 dark:text-gray-200">{r.authorName}</span>
+                                      <span className="text-[9px] font-mono text-gray-500 dark:text-gray-400">
+                                        {formatFullTimestamp(r.createdAt)}
                                       </span>
                                     </div>
-                                    <p className="text-xs text-gray-700">{r.message}</p>
+                                    <p className="text-xs text-gray-700 dark:text-gray-300">{r.message}</p>
                                   </div>
                                 </div>
                               ))}

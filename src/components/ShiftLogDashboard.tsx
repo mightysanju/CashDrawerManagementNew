@@ -34,6 +34,7 @@ import {
 } from '../types';
 import { DatabaseManager } from '../utils/database';
 import { p2pSyncManager } from '../utils/p2pSyncManager';
+import { formatFullTimestamp } from '../utils/dateUtils';
 import { SalesKanban } from './SalesKanban';
 
 interface ShiftLogDashboardProps {
@@ -535,17 +536,21 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
                           )}
                         </div>
 
-                        {/* Subline: author & preview */}
-                        <div className="flex items-center space-x-2 text-xs text-gray-400">
-                          <span>{entry.clerkName}</span>
+                        {/* Subline: author & full timestamp */}
+                        <div className="flex flex-wrap items-center gap-x-2 text-xs text-gray-500 dark:text-gray-400">
+                          <span className="font-medium text-gray-700 dark:text-gray-300">{entry.clerkName}</span>
                           <span>•</span>
-                          <span>{formatRelativeTime(entry.createdAt)}</span>
+                          <span className="inline-flex items-center gap-1 font-mono text-[11px] text-gray-600 dark:text-gray-300">
+                            <Clock className="w-3 h-3 text-blue-500 shrink-0" />
+                            {formatFullTimestamp(entry.createdAt)}
+                          </span>
+                          <span className="text-[11px] text-gray-400">({formatRelativeTime(entry.createdAt)})</span>
                           {responsesCount > 0 && (
                             <>
                               <span>•</span>
-                              <span className="text-blue-600 font-medium inline-flex items-center space-x-0.5">
+                              <span className="text-blue-600 dark:text-blue-400 font-semibold inline-flex items-center space-x-0.5">
                                 <MessageSquare className="w-3 h-3" />
-                                <span>{responsesCount}</span>
+                                <span>{responsesCount} actions</span>
                               </span>
                             </>
                           )}
@@ -692,8 +697,8 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
                                 </div>
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center justify-between mb-0.5">
-                                    <span className="font-bold text-gray-800">{r.authorName} <span className="text-[10px] text-gray-400 font-normal">({r.authorRole})</span></span>
-                                    <span className="text-[10px] text-gray-400">{formatRelativeTime(r.createdAt)}</span>
+                                    <span className="font-bold text-gray-800 dark:text-gray-200">{r.authorName} <span className="text-[10px] text-gray-400 font-normal">({r.authorRole})</span></span>
+                                    <span className="text-[10px] font-mono text-gray-500 dark:text-gray-400">{formatFullTimestamp(r.createdAt)}</span>
                                   </div>
                                   <p className="text-gray-700">{r.message}</p>
                                 </div>
@@ -874,11 +879,11 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
                       {entry.clerkNotes && (
                         <p className="mt-2 text-xs text-gray-600 bg-gray-50 border border-gray-100 rounded-lg px-3 py-2 leading-relaxed">{entry.clerkNotes}</p>
                       )}
-                      <div className="flex items-center space-x-3 mt-2 text-[11px] text-gray-400">
+                      <div className="flex items-center space-x-3 mt-2 text-[11px] text-gray-500 dark:text-gray-400">
                         <span className="flex items-center space-x-1"><User className="w-3 h-3" /><span>{entry.clerkName}</span></span>
-                        <span className="flex items-center space-x-1">
-                          <Clock className="w-3 h-3" />
-                          <span>{new Date(entry.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                        <span className="flex items-center space-x-1 font-mono">
+                          <Clock className="w-3 h-3 text-blue-500" />
+                          <span>{formatFullTimestamp(entry.createdAt)}</span>
                         </span>
                       </div>
                     </div>
@@ -943,9 +948,9 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
                             </div>
                             <div className="flex-1 bg-gray-50 border border-gray-100 rounded-xl p-2.5">
                               <div className="flex items-center justify-between mb-1">
-                                <span className="text-xs font-bold text-gray-700">{r.authorName}</span>
-                                <span className="text-[9px] text-gray-400">
-                                  {new Date(r.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                <span className="text-xs font-bold text-gray-700 dark:text-gray-200">{r.authorName}</span>
+                                <span className="text-[10px] font-mono text-gray-500 dark:text-gray-400">
+                                  {formatFullTimestamp(r.createdAt)}
                                 </span>
                               </div>
                               <p className="text-xs text-gray-700">{r.message}</p>
@@ -1056,11 +1061,11 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
                       {entry.clerkNotes && (
                         <p className="mt-1.5 text-xs text-gray-600 leading-relaxed">{entry.clerkNotes}</p>
                       )}
-                      <div className="flex items-center space-x-3 mt-2 text-[11px] text-gray-400">
+                      <div className="flex items-center space-x-3 mt-2 text-[11px] text-gray-500 dark:text-gray-400">
                         <span className="flex items-center space-x-1"><User className="w-3 h-3" /><span>{entry.clerkName}</span></span>
-                        <span className="flex items-center space-x-1">
-                          <Clock className="w-3 h-3" />
-                          <span>{new Date(entry.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                        <span className="flex items-center space-x-1 font-mono">
+                          <Clock className="w-3 h-3 text-blue-500" />
+                          <span>{formatFullTimestamp(entry.createdAt)}</span>
                         </span>
                       </div>
                     </div>
@@ -1106,9 +1111,9 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
                             </div>
                             <div className="flex-1 bg-gray-50 border border-gray-100 rounded-xl p-2.5">
                               <div className="flex items-center justify-between mb-1">
-                                <span className="text-xs font-bold text-gray-700">{r.authorName}</span>
-                                <span className="text-[9px] text-gray-400">
-                                  {new Date(r.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                                <span className="text-xs font-bold text-gray-700 dark:text-gray-200">{r.authorName}</span>
+                                <span className="text-[10px] font-mono text-gray-500 dark:text-gray-400">
+                                  {formatFullTimestamp(r.createdAt)}
                                 </span>
                               </div>
                               <p className="text-xs text-gray-700">{r.message}</p>

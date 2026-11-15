@@ -4,18 +4,72 @@
 
 /* Smooth theme transition */
 html, body {
-  transition: background-color 0.2s ease, color 0.2s ease;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+/* ==========================================================================
+   LIGHT MODE DEFAULTS (EXPLICIT LIGHT BACKGROUND)
+   Guarantees that Light Mode is ALWAYS crisp light gray (#f8fafc) and never dark.
+   ========================================================================== */
+html:not(.dark),
+html:not(.dark) body {
+  color-scheme: light !important;
+  background-color: #f8fafc !important;
+  color: #0f172a !important;
+}
+
+html:not(.dark) .min-h-screen,
+html:not(.dark) main {
+  background-color: #f8fafc !important;
+  color: #0f172a !important;
+}
+
+html:not(.dark) nav {
+  background-color: rgba(255, 255, 255, 0.95) !important;
+  border-bottom-color: #e2e8f0 !important;
+}
+
+html:not(.dark) footer {
+  background-color: #f1f5f9 !important;
+  color: #334155 !important;
+  border-top-color: #e2e8f0 !important;
+}
+
+html:not(.dark) footer h1,
+html:not(.dark) footer h2,
+html:not(.dark) footer h3,
+html:not(.dark) footer h4,
+html:not(.dark) footer strong,
+html:not(.dark) footer .font-bold {
+  color: #0f172a !important;
+}
+
+html:not(.dark) footer p,
+html:not(.dark) footer span,
+html:not(.dark) footer li,
+html:not(.dark) footer a {
+  color: #475569 !important;
+}
+
+html:not(.dark) footer a:hover {
+  color: #2563eb !important;
+}
+
+html:not(.dark) h1,
+html:not(.dark) h2,
+html:not(.dark) h3 {
+  color: #0f172a !important;
 }
 
 /* ==========================================================================
    COMPREHENSIVE DARK MODE SYSTEM
-   Ensures ALL cards, backgrounds, borders, inputs, modals, and text
-   switch to deep dark slate in Dark Mode and regular in Light Mode.
+   Activates ONLY when html has the .dark class
    ========================================================================== */
 html.dark {
-  color-scheme: dark;
+  color-scheme: dark !important;
 }
 
+html.dark,
 html.dark body {
   background-color: #0b1120 !important;
   color: #f1f5f9 !important;

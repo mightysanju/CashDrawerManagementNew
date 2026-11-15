@@ -4,7 +4,7 @@ export function getInitialTheme(): boolean {
   if (typeof window === 'undefined') return false;
   const stored = localStorage.getItem('frontdesk_theme');
   if (stored) return stored === 'dark';
-  return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  return false; // Default to Light Mode
 }
 
 export function applyTheme(isDark: boolean) {

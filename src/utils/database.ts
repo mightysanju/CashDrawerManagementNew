@@ -258,6 +258,10 @@ export class DatabaseManager {
     );
   }
 
+  async getAllShiftLogs(): Promise<ShiftLogEntry[]> {
+    return this.getShiftLogs();
+  }
+
   async getShiftLogsByShiftId(shiftId: string): Promise<ShiftLogEntry[]> {
     const db = await this.dbPromise;
     const tx = db.transaction(STORES.SHIFT_LOGS, 'readonly');
@@ -314,25 +318,58 @@ export class DatabaseManager {
   }
 
   /* -------------------------------------------------------------
-   *  App Settings Operations
+   *  Database Inspector & Backup Operations
    * ------------------------------------------------------------- */
-  async getSettings(): Promise<AppSettings> {
+  async getStoreCounts(): Promise<Record<string, number>> {
     const db = await this.dbPromise;
-    const s = await db.get(STORES.SETTINGS, 'default');
-    return s || {
-      id: 'default',
-      salesRateMultiplier: 120,
-      organizationName: 'Grand Hotel & Suites',
-    };
+    const counts: Record<string, number> = {};
+    for (const storeName of Object.values(STORES)) {
+      if (db.objectStoreNames.contains(storeName)) {
+        counts[storeName] = await db.count(storeName);
+      }
+    }
+    return counts;
   }
 
-  async saveSettings(settings: Partial<AppSettings>): Promise<void> {
+  async getStoreRecords(storeName: string): Promise<Record<string, unknown>[]> {
     const db = await this.dbPromise;
-    const current = await this.getSettings();
-    await db.put(STORES.SETTINGS, {
-      ...current,
-      ...settings,
-      id: 'default',
-    });
+    type StoreKey = (typeof STORES)[keyof typeof STORES];
+    const validStore = Object.values(STORES).find((s) => s === storeName) as StoreKey | undefined;
+    if (!validStore || !db.objectStoreNames.contains(validStore)) return [];
+    return db.getAll(validStore) as unknown as Promise<Record<string, unknown>[]>;
+  }
+
+  async exportFullDatabaseDump(): Promise<{
+    databaseName: string;
+    version: number;
+    exportedAt: string;
+    stores: {
+      shifts: ShiftRecord[];
+      users: UserAccount[];
+      shift_logs: ShiftLogEntry[];
+      log_categories: LogCategoryConfig[];
+      app_settings: AppSettings;
+    };
+  }> {
+    const [shifts, users, shift_logs, log_categories, app_settings] = await Promise.all([
+      this.getAllShifts(),
+      this.getUsers(),
+      this.getShiftLogs(),
+      this.getCategories(),
+      this.getSettings(),
+    ]);
+
+    return {
+      databaseName: DB_NAME,
+      version: DB_VERSION,
+      exportedAt: new Date().toISOString(),
+      stores: {
+        shifts,
+        users,
+        shift_logs,
+        log_categories,
+        app_settings,
+      },
+    };
   }
 }
