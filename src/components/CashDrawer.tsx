@@ -11,7 +11,9 @@ import {
   LogOut, 
   LogIn, 
   Puzzle,
-  ChevronUp
+  ChevronUp,
+  Sun,
+  Moon
 } from 'lucide-react';
 import { CashEntry, ShiftRecord, ShiftLogEntry, UserAccount, PrimaryCategory } from '../types';
 import { ShiftHistory } from './ShiftHistory';
@@ -33,6 +35,7 @@ import { CloseShiftModal } from './CloseShiftModal';
 import { generatePDF, printReceipt } from '../utils/pdfGenerator';
 import { p2pSyncManager, SyncState } from '../utils/p2pSyncManager';
 import { authManager } from '../utils/authManager';
+import { useTheme } from '../utils/themeManager';
 
 const DENOMINATIONS = {
   bill: [100, 50, 20, 10, 5, 1],
@@ -43,6 +46,8 @@ const DENOMINATIONS = {
 const db = new DatabaseManager();
 
 export function CashDrawer() {
+  const { isDark, toggleTheme } = useTheme();
+
   // Authentication State
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(authManager.getCurrentUser());
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
@@ -371,7 +376,7 @@ export function CashDrawer() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col justify-between pt-16">
+    <div className="min-h-screen bg-gray-50 dark:bg-slate-950 text-gray-900 dark:text-gray-100 flex flex-col justify-between pt-16 transition-colors duration-200">
       <Navbar />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full flex-grow">
@@ -379,17 +384,17 @@ export function CashDrawer() {
         <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-5">
           <div>
             <div className="flex items-center space-x-2">
-              <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight">
+              <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900 dark:text-white tracking-tight">
                 FrontDesk Operations Platform
               </h1>
               {selectedShift && (
-                <span className="hidden sm:inline-flex items-center space-x-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold px-2.5 py-0.5 rounded-full">
+                <span className="hidden sm:inline-flex items-center space-x-1.5 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-xs font-bold px-2.5 py-0.5 rounded-full">
                   <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
                   <span>Drawer #{selectedShift.drawerNumber} Active</span>
                 </span>
               )}
             </div>
-            <p className="text-xs sm:text-sm text-gray-500 mt-0.5">
+            <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-0.5">
               Unified cash register, group sales leads, guest complaints, and live shift handoffs on one page.
             </p>
           </div>
@@ -476,12 +481,26 @@ export function CashDrawer() {
             <button
               type="button"
               onClick={() => setIsExtensionModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-2 bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 rounded-xl text-xs font-semibold transition shadow-xs"
+              className="inline-flex items-center gap-1.5 px-3 py-2 bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700 rounded-xl text-xs font-semibold transition shadow-xs"
               title="Get FrontDesk Pro Browser Extension for floating shift logs"
             >
-              <Puzzle size={15} className="text-blue-600" />
-              <span>Browser Extension</span>
-              <span className="bg-blue-100 text-blue-700 text-[10px] font-bold px-1.5 py-0.2 rounded-full">Extension</span>
+              <Puzzle size={15} className="text-blue-600 dark:text-blue-400" />
+              <span>Extension</span>
+            </button>
+
+            {/* Dark Mode Toggle Button */}
+            <button
+              type="button"
+              onClick={toggleTheme}
+              className="inline-flex items-center gap-1.5 px-3 py-2 bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700 rounded-xl text-xs font-semibold transition shadow-xs cursor-pointer"
+              title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+            >
+              {isDark ? (
+                <Sun size={15} className="text-amber-400" />
+              ) : (
+                <Moon size={15} className="text-slate-600 dark:text-slate-300" />
+              )}
+              <span className="hidden sm:inline">{isDark ? 'Light' : 'Dark'}</span>
             </button>
           </div>
         </div>
