@@ -76,34 +76,7 @@ export class DatabaseManager {
 
   private async seedDefaults(db: IDBPDatabase) {
     try {
-      // 1. Seed Users if empty
-      const userCount = await db.count(STORES.USERS);
-      if (userCount === 0) {
-        const tx = db.transaction(STORES.USERS, 'readwrite');
-        const defaultManager: UserAccount = {
-          id: 'user_manager_default',
-          username: 'manager',
-          passwordHash: 'password123',
-          fullName: 'Property Manager',
-          role: 'manager',
-          createdAt: new Date().toISOString(),
-          isActive: true,
-        };
-        const defaultClerk: UserAccount = {
-          id: 'user_clerk_default',
-          username: 'clerk1',
-          passwordHash: 'clerk123',
-          fullName: 'Front Desk Clerk',
-          role: 'clerk',
-          createdAt: new Date().toISOString(),
-          isActive: true,
-        };
-        await tx.store.put(defaultManager);
-        await tx.store.put(defaultClerk);
-        await tx.done;
-      }
-
-      // 2. Seed Categories if empty
+      // 1. Seed Categories if empty
       const catCount = await db.count(STORES.CATEGORIES);
       if (catCount === 0) {
         const tx = db.transaction(STORES.CATEGORIES, 'readwrite');
@@ -211,6 +184,12 @@ export class DatabaseManager {
   /* -------------------------------------------------------------
    *  User Accounts (Managers & Clerks)
    * ------------------------------------------------------------- */
+  async hasUsers(): Promise<boolean> {
+    const db = await this.dbPromise;
+    const count = await db.count(STORES.USERS);
+    return count > 0;
+  }
+
   async getUsers(): Promise<UserAccount[]> {
     const db = await this.dbPromise;
     const users = await db.getAll(STORES.USERS);
@@ -426,28 +405,6 @@ export class DatabaseManager {
       }
     }
     await tx.done;
-
-    // Reseed default Manager and Clerk accounts
-    const defaultManager: UserAccount = {
-      id: 'user_manager_default',
-      username: 'manager',
-      passwordHash: 'password123',
-      fullName: 'Property Manager',
-      role: 'manager',
-      createdAt: new Date().toISOString(),
-      isActive: true,
-    };
-    const defaultClerk: UserAccount = {
-      id: 'user_clerk_default',
-      username: 'clerk1',
-      passwordHash: 'clerk123',
-      fullName: 'Front Desk Clerk',
-      role: 'clerk',
-      createdAt: new Date().toISOString(),
-      isActive: true,
-    };
-    await this.saveUser(defaultManager);
-    await this.saveUser(defaultClerk);
 
     // Reseed default categories
     const defaultCategories: LogCategoryConfig[] = [

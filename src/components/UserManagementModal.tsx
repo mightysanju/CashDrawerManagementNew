@@ -139,14 +139,14 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
       p2pSyncManager.broadcastHistoryCleared();
       localStorage.removeItem('cdm_local_active_shift_id');
       localStorage.removeItem('frontdesk_external_logs');
+      authManager.logout();
 
-      await loadData();
       setIsResetDbModalOpen(false);
       setResetConfirmationInput('');
       setResetDbSuccess(true);
       setTimeout(() => {
-        setResetDbSuccess(false);
-      }, 5000);
+        window.location.reload();
+      }, 1000);
     } catch (err) {
       console.error('Failed to reset database:', err);
       alert('Failed to reset database. Please try again.');

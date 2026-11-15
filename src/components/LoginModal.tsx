@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Lock, User, Key, AlertCircle, LogIn, CheckCircle2 } from 'lucide-react';
+import { Lock, User, Key, AlertCircle, LogIn } from 'lucide-react';
 import { authManager } from '../utils/authManager';
 import { UserAccount } from '../types';
 
@@ -47,12 +47,6 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleQuickLogin = (demoUser: string, demoPass: string) => {
-    setUsername(demoUser);
-    setPassword(demoPass);
-    setError(null);
   };
 
   return (
@@ -137,31 +131,6 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-gray-700/50 border border-gray-300 dark:border-gray-600 rounded-xl text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm transition"
                 />
-              </div>
-            </div>
-
-            {/* Quick Demo Credentials for Fast Testing */}
-            <div className="pt-2 pb-1 border-t border-gray-100 dark:border-gray-700">
-              <span className="text-xs text-gray-500 dark:text-gray-400 font-medium block mb-2">
-                Quick Sign-In Presets:
-              </span>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleQuickLogin('manager', 'password123')}
-                  className="flex items-center justify-center space-x-1 px-3 py-2 text-xs font-medium bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-300 rounded-lg border border-blue-200 dark:border-blue-800 transition"
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>Manager</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleQuickLogin('clerk1', 'clerk123')}
-                  className="flex items-center justify-center space-x-1 px-3 py-2 text-xs font-medium bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg border border-gray-200 dark:border-gray-600 transition"
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>Clerk 1</span>
-                </button>
               </div>
             </div>
 

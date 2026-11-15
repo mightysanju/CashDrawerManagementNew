@@ -14,7 +14,8 @@ import {
   ChevronUp,
   Sun,
   Moon,
-  Key
+  Key,
+  Sparkles
 } from 'lucide-react';
 import { CashEntry, ShiftRecord, ShiftLogEntry, UserAccount, PrimaryCategory } from '../types';
 import { ShiftHistory } from './ShiftHistory';
@@ -34,6 +35,7 @@ import { FloatingExtensionBubble } from './FloatingExtensionBubble';
 import { ChangePasswordModal } from './ChangePasswordModal';
 import { OpenShiftModal } from './OpenShiftModal';
 import { CloseShiftModal } from './CloseShiftModal';
+import { NewHotelSetupModal } from './NewHotelSetupModal';
 import { generatePDF, printReceipt } from '../utils/pdfGenerator';
 import { p2pSyncManager, SyncState } from '../utils/p2pSyncManager';
 import { authManager } from '../utils/authManager';
@@ -82,6 +84,9 @@ export function CashDrawer() {
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
   const [isUserMgmtModalOpen, setIsUserMgmtModalOpen] = useState(false);
   const [isChangePasswordModalOpen, setIsChangePasswordModalOpen] = useState(false);
+  const [isNewHotelSetupModalOpen, setIsNewHotelSetupModalOpen] = useState(false);
+  const [isSignOutModalOpen, setIsSignOutModalOpen] = useState(false);
+  const [welcomeToast, setWelcomeToast] = useState<string | null>(null);
   const [syncState, setSyncState] = useState<SyncState>(p2pSyncManager.getState());
 
   // Browser Extension & Floating Bubble States
@@ -175,6 +180,14 @@ export function CashDrawer() {
   useEffect(() => {
     loadShiftsData();
     loadLogsData();
+
+    // Check if database exists (if not, launch New Hotel Network Setup)
+    db.hasUsers().then((hasUsers) => {
+      if (!hasUsers) {
+        setIsNewHotelSetupModalOpen(true);
+        setIsLoginModalOpen(false);
+      }
+    });
 
     p2pSyncManager.autoConnect();
 
@@ -412,16 +425,46 @@ export function CashDrawer() {
     setIsCloseShiftModalOpen(false);
     await loadShiftsData();
     await loadLogsData();
+
+    // Seamless logout after shift close
+    authManager.logout();
+    setIsLoginModalOpen(true);
   };
 
   const handleRequestSignOut = () => {
     if (selectedShift) {
-      // Auto-popup close drawer modal!
-      setIsCloseShiftModalOpen(true);
+      setIsSignOutModalOpen(true);
     } else {
       localStorage.removeItem('cdm_local_active_shift_id');
       authManager.logout();
+      setSelectedShift(null);
+      setEntries([]);
+      setShiftDrop(0);
+      setIsLoginModalOpen(true);
     }
+  };
+
+  const handleSignOutKeepDrawer = () => {
+    localStorage.removeItem('cdm_local_active_shift_id');
+    authManager.logout();
+    setSelectedShift(null);
+    setEntries([]);
+    setShiftDrop(0);
+    setIsSignOutModalOpen(false);
+    setIsLoginModalOpen(true);
+  };
+
+  const handleSignOutCloseShift = () => {
+    setIsSignOutModalOpen(false);
+    setIsCloseShiftModalOpen(true);
+  };
+
+  const handleSetupComplete = async (manager: UserAccount) => {
+    setIsNewHotelSetupModalOpen(false);
+    await loadShiftsData();
+    await loadLogsData();
+    setWelcomeToast(`🎉 Welcome to ${manager.fullName}! Hotel network initialized successfully.`);
+    setTimeout(() => setWelcomeToast(null), 5000);
   };
 
   const calculateTotal = () =>
@@ -1118,6 +1161,72 @@ export function CashDrawer() {
           onToggle={() => setIsFloatingBubbleOpen(!isFloatingBubbleOpen)}
           onRequireLogin={() => setIsLoginModalOpen(true)}
         />
+      )}
+
+      {/* Seamless Sign-Out Prompt Modal */}
+      {isSignOutModalOpen && selectedShift && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-gray-100 dark:border-gray-700 p-6 space-y-4">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 flex items-center justify-center flex-shrink-0">
+                <LogOut className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-gray-900 dark:text-white">
+                  Staff Sign Out
+                </h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  Drawer #{selectedShift.drawerNumber} is currently open
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-xl p-3.5 text-xs text-amber-900 dark:text-amber-200 leading-relaxed">
+              You are currently signed in with an active drawer (<strong>${currentTotal.toFixed(2)}</strong> counted cash). Would you like to close and balance this drawer now, or keep it open for your break / relief clerk?
+            </div>
+
+            <div className="space-y-2 pt-1">
+              <button
+                type="button"
+                onClick={handleSignOutCloseShift}
+                className="w-full py-2.5 px-4 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center justify-center space-x-1.5"
+              >
+                <span>Close Shift & Balance Drawer</span>
+                <span>&rarr;</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSignOutKeepDrawer}
+                className="w-full py-2.5 px-4 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-650 text-gray-800 dark:text-gray-200 font-semibold text-xs rounded-xl transition"
+              >
+                Sign Out Only (Keep Drawer Open)
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsSignOutModalOpen(false)}
+                className="w-full py-2 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 font-medium"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* New Hotel Network Setup Modal (When no database exists) */}
+      <NewHotelSetupModal
+        isOpen={isNewHotelSetupModalOpen}
+        onSetupComplete={handleSetupComplete}
+      />
+
+      {/* Welcome Toast Notification */}
+      {welcomeToast && (
+        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 bg-emerald-600 text-white px-5 py-3 rounded-xl shadow-xl flex items-center space-x-2 text-xs font-bold animate-in fade-in slide-in-from-top-4 duration-200">
+          <Sparkles className="w-4 h-4 text-amber-300 flex-shrink-0" />
+          <span>{welcomeToast}</span>
+        </div>
       )}
 
       <Footer />
