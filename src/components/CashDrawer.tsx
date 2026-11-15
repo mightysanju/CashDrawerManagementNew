@@ -66,6 +66,7 @@ export function CashDrawer() {
   const [showHistory, setShowHistory] = useState(false);
   const [entries, setEntries] = useState<CashEntry[]>([]);
   const [shiftDrop, setShiftDrop] = useState<number>(0);
+  const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
 
   // Auto-popups & Unified View States
   const [isOpenShiftModalOpen, setIsOpenShiftModalOpen] = useState(false);
@@ -177,9 +178,84 @@ export function CashDrawer() {
     }
   }, []);
 
+  const handleSelectShift = useCallback((shift: ShiftRecord) => {
+    setSelectedShift(shift);
+    setEntries(shift.entries);
+    setShiftDrop(shift.shiftDrop || 0);
+    setOrganizationName(shift.organizationName || '');
+    setDrawerNumber(shift.drawerNumber);
+    localStorage.setItem('cdm_local_active_shift_id', shift.id);
+  }, []);
+
+  const loadSettingsData = useCallback(async () => {
+    try {
+      const s = await db.getSettings();
+      setAppSettings(s);
+    } catch (e) {
+      console.error('Error loading settings:', e);
+    }
+  }, []);
+
+  const checkPromptDrawerOpen = useCallback(async (user: UserAccount) => {
+    try {
+      const [allShifts, currentSettings] = await Promise.all([
+        db.getAllShifts(),
+        db.getSettings(),
+      ]);
+      setAppSettings(currentSettings);
+      const openShifts = allShifts.filter((s) => s.status === 'open');
+      const maxAllowed = currentSettings.maxOpenDrawers || 1;
+
+      // 1. If this user already has an active open drawer, select it and do not prompt
+      const myActive = openShifts.find((s) => s.cashierId === user.id);
+      if (myActive) {
+        handleSelectShift(myActive);
+        return;
+      }
+
+      // 2. If the count of open drawers has already reached maxAllowed,
+      // DO NOT ask other person logging in to open one!
+      // Select the first active drawer so they can work with it immediately.
+      if (openShifts.length >= maxAllowed) {
+        if (openShifts.length > 0) {
+          handleSelectShift(openShifts[0]);
+        }
+        return;
+      }
+
+      // 3. Otherwise (fewer than maxAllowed open and user has no drawer), prompt to open
+      setIsOpenShiftModalOpen(true);
+    } catch (err) {
+      console.error('Failed to check active drawers count:', err);
+    }
+  }, [handleSelectShift]);
+
+  const handleUserRequestOpenShift = async () => {
+    if (!currentUser) {
+      setLoginRequiredAction('open-drawer');
+      setIsLoginModalOpen(true);
+      return;
+    }
+    const [allShifts, currentSettings] = await Promise.all([
+      db.getAllShifts(),
+      db.getSettings(),
+    ]);
+    setAppSettings(currentSettings);
+    const openShifts = allShifts.filter((s) => s.status === 'open');
+    const maxAllowed = currentSettings.maxOpenDrawers || 1;
+    if (openShifts.length >= maxAllowed) {
+      alert(
+        `Maximum open drawer limit (${maxAllowed}) reached.\n\nThere ${openShifts.length === 1 ? 'is already 1 drawer' : `are already ${openShifts.length} drawers`} active. Please close an active drawer before opening a new one, or have a manager increase the "Max Simultaneous Open Drawers" in Manager Console Settings.`
+      );
+      return;
+    }
+    setIsOpenShiftModalOpen(true);
+  };
+
   useEffect(() => {
     loadShiftsData();
     loadLogsData();
+    loadSettingsData();
 
     // Check if database exists (if not, launch New Hotel Network Setup)
     db.hasUsers().then((hasUsers) => {
@@ -198,13 +274,7 @@ export function CashDrawer() {
         if (hasSnoozed) {
           setIsBusyRemindPending(true);
         } else {
-          // Auto-prompt to open drawer if THIS user does not have an active drawer
-          db.getAllShifts().then((shifts) => {
-            const myActive = shifts.some((s) => s.status === 'open' && s.cashierId === user.id);
-            if (!myActive) {
-              setIsOpenShiftModalOpen(true);
-            }
-          });
+          checkPromptDrawerOpen(user);
         }
       }
     });
@@ -268,6 +338,7 @@ export function CashDrawer() {
     const unsubData = p2pSyncManager.subscribeData(() => {
       loadShiftsData();
       loadLogsData();
+      loadSettingsData();
     });
 
     return () => {
@@ -281,7 +352,7 @@ export function CashDrawer() {
       document.removeEventListener('FDP_EXTENSION_LOG_RECEIVED', handleExtensionLog);
       document.removeEventListener('FDP_EXTENSION_LOGS_SYNC', handleExtensionLogsSync);
     };
-  }, [loadShiftsData, loadLogsData]);
+  }, [loadShiftsData, loadLogsData, loadSettingsData, checkPromptDrawerOpen]);
 
   // Initial check for open drawer on mount
   useEffect(() => {
@@ -290,28 +361,14 @@ export function CashDrawer() {
       if (hasSnoozed) {
         setIsBusyRemindPending(true);
       } else {
-        db.getAllShifts().then((shifts) => {
-          const myActive = shifts.some((s) => s.status === 'open' && s.cashierId === currentUser.id);
-          if (!myActive) {
-            setIsOpenShiftModalOpen(true);
-          }
-        });
+        checkPromptDrawerOpen(currentUser);
       }
     }
-  }, [currentUser, selectedShift]);
+  }, [currentUser, selectedShift, checkPromptDrawerOpen]);
 
   const pendingRemindersCount = shiftLogs.filter(
     (l) => l.hasReminder && !l.isReminderCompleted
   ).length;
-
-  const handleSelectShift = (shift: ShiftRecord) => {
-    setSelectedShift(shift);
-    setEntries(shift.entries);
-    setShiftDrop(shift.shiftDrop || 0);
-    setOrganizationName(shift.organizationName || '');
-    setDrawerNumber(shift.drawerNumber);
-    localStorage.setItem('cdm_local_active_shift_id', shift.id);
-  };
 
   const handleModalStartShift = async (
     drawerNum: string,
@@ -683,7 +740,7 @@ export function CashDrawer() {
               </div>
             </div>
             <button
-              onClick={() => setIsOpenShiftModalOpen(true)}
+              onClick={handleUserRequestOpenShift}
               className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-medium text-xs rounded-lg transition-colors flex-shrink-0 cursor-pointer"
             >
               Count Opening Float
@@ -725,9 +782,13 @@ export function CashDrawer() {
             {currentUser && (
               <button
                 type="button"
-                onClick={() => setIsOpenShiftModalOpen(true)}
+                onClick={handleUserRequestOpenShift}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 rounded-lg text-xs font-semibold transition cursor-pointer"
-                title="Open another register drawer on this machine"
+                title={
+                  activeShifts.length >= (appSettings?.maxOpenDrawers || 1)
+                    ? `Maximum open drawers limit (${appSettings?.maxOpenDrawers || 1}) reached`
+                    : "Open another register drawer on this machine"
+                }
               >
                 <span>+ Open Drawer #{nextSuggestedDrawerNumber}</span>
               </button>
@@ -927,7 +988,7 @@ export function CashDrawer() {
             <div className="flex items-center space-x-2">
               {currentUser ? (
                 <button
-                  onClick={() => setIsOpenShiftModalOpen(true)}
+                  onClick={handleUserRequestOpenShift}
                   className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-xs transition inline-flex items-center space-x-1.5"
                 >
                   <Coins size={15} />

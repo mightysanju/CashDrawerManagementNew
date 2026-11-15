@@ -457,6 +457,109 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
   }, [logs, searchQuery]);
 
   /* ================================================================
+     RECENT ACTIVITY & UPDATES CARD (Stream of changes, replies & status)
+  ================================================================ */
+  const renderRecentActivityCard = () => (
+    <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4 sm:p-5 shadow-xs space-y-4">
+      <div className="border-b border-gray-100 dark:border-gray-700 pb-3 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-2.5">
+            <div className="p-2 bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 rounded-lg border border-blue-200 dark:border-blue-900">
+              <Activity className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="flex items-center space-x-2">
+                <h3 className="text-sm font-bold text-gray-900 dark:text-white">Recent Activity & Updates</h3>
+                <span className="text-[11px] font-semibold bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 py-0.5 rounded-full font-mono tabular-nums">
+                  {recentActivityFeed.length}
+                </span>
+              </div>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Live stream across shift logs</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Filter Pills */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          {(['All', 'Replies', 'Status', 'Reminders', 'Created'] as const).map((filterType) => (
+            <button
+              key={filterType}
+              type="button"
+              onClick={() => setActivityFeedFilter(filterType)}
+              className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition cursor-pointer ${
+                activityFeedFilter === filterType
+                  ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 shadow-xs'
+                  : 'bg-gray-100 dark:bg-gray-700/60 text-gray-600 dark:text-gray-300 hover:bg-gray-200/70'
+              }`}
+            >
+              {filterType === 'All' ? 'All' :
+               filterType === 'Replies' ? 'Replies' :
+               filterType === 'Status' ? 'Status' :
+               filterType === 'Reminders' ? 'Reminders' : 'New Logs'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Activity Stream Feed */}
+      <div className="space-y-2 max-h-[620px] overflow-y-auto pr-1">
+        {recentActivityFeed.length === 0 ? (
+          <div className="py-6 text-center text-gray-400 text-xs">
+            No recent changes recorded yet. When staff reply, update statuses, or set reminders, they will appear here.
+          </div>
+        ) : (
+          recentActivityFeed.slice(0, 20).map((act) => (
+            <div
+              key={act.id}
+              onClick={() => {
+                setExpandedActivityId(act.logId);
+              }}
+              className="p-3 bg-gray-50 dark:bg-gray-700/40 hover:bg-blue-50/50 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded-xl transition cursor-pointer space-y-1.5"
+            >
+              <div className="flex items-start space-x-2.5 min-w-0">
+                <div className="p-1 rounded-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 shrink-0 mt-0.5">
+                  {act.type === 'reply' ? (
+                    <MessageSquare className="w-3 h-3 text-blue-600" />
+                  ) : act.type === 'status' ? (
+                    <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                  ) : act.type === 'reminder' ? (
+                    <Bell className="w-3 h-3 text-amber-600" />
+                  ) : (
+                    <FileText className="w-3 h-3 text-slate-600" />
+                  )}
+                </div>
+                <div className="min-w-0 flex-1 text-xs">
+                  <div className="flex flex-wrap items-center gap-1.5 mb-0.5">
+                    <span className="font-bold text-gray-900 dark:text-white">
+                      {act.actor}
+                    </span>
+                    <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.2 rounded border ${act.badgeColor}`}>
+                      {act.badgeText}
+                    </span>
+                  </div>
+                  <p className="text-gray-600 dark:text-gray-300 font-medium">
+                    {act.summary}
+                  </p>
+                  {act.detail && (
+                    <p className="text-gray-500 dark:text-gray-400 italic text-[11px] truncate mt-0.5">
+                      "{act.detail}"
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end space-x-1 text-[10px] text-gray-400 font-mono tabular-nums pt-1 border-t border-gray-100 dark:border-gray-700/50">
+                <Clock className="w-2.5 h-2.5 text-gray-400" />
+                <span>{formatRelativeTime(act.timestamp)}</span>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+
+  /* ================================================================
      OVERVIEW — 3 Summary Cards
   ================================================================ */
   const renderOverview = () => (
@@ -578,115 +681,16 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
         </button>
       </div>
 
-      {/* -------------------- RECENT ACTIVITY STREAM (CHANGES, REPLIES, STATUS & LOGS) -------------------- */}
-      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5 shadow-xs space-y-4">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-gray-100 dark:border-gray-700 pb-3">
-          <div className="flex items-center space-x-2.5">
-            <div className="p-2 bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 rounded-lg border border-blue-200 dark:border-blue-900">
-              <Activity className="w-4 h-4" />
-            </div>
-            <div>
-              <div className="flex items-center space-x-2">
-                <h3 className="text-sm font-bold text-gray-900 dark:text-white">Recent Activity & Updates</h3>
-                <span className="text-[11px] font-semibold bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 py-0.5 rounded-full font-mono tabular-nums">
-                  {recentActivityFeed.length} updates
-                </span>
-              </div>
-              <p className="text-xs text-gray-500 dark:text-gray-400">Live stream of replies, status updates, reminders, and shift notes</p>
-            </div>
+      {/* -------------------- SIDE-BY-SIDE: SHIFT LOGS FEED (LEFT) & RECENT ACTIVITY (RIGHT) -------------------- */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* LEFT COLUMN: MAIN SHIFT LOG CARDS STREAM (7 cols on desktop) */}
+        <div className="lg:col-span-7 xl:col-span-7 space-y-3">
+          <div className="flex items-center justify-between pb-1">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300">
+              Shift Logs Feed (<span className="font-mono tabular-nums">{filteredRecentLogs.length}</span>)
+            </h4>
+            <span className="text-[11px] text-gray-400">Click any card to inspect full details or reply</span>
           </div>
-
-          {/* Filter Pills */}
-          <div className="flex flex-wrap items-center gap-1.5">
-            {(['All', 'Replies', 'Status', 'Reminders', 'Created'] as const).map((filterType) => (
-              <button
-                key={filterType}
-                type="button"
-                onClick={() => setActivityFeedFilter(filterType)}
-                className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition cursor-pointer ${
-                  activityFeedFilter === filterType
-                    ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 shadow-xs'
-                    : 'bg-gray-100 dark:bg-gray-700/60 text-gray-600 dark:text-gray-300 hover:bg-gray-200/70'
-                }`}
-              >
-                {filterType === 'All' ? 'All Updates' :
-                 filterType === 'Replies' ? 'Staff Replies' :
-                 filterType === 'Status' ? 'Status Changes' :
-                 filterType === 'Reminders' ? 'Reminders' : 'New Logs'}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Activity Stream Feed */}
-        <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-          {recentActivityFeed.length === 0 ? (
-            <div className="py-6 text-center text-gray-400 text-xs">
-              No recent changes recorded yet. When staff reply, update statuses, or set reminders, they will appear here.
-            </div>
-          ) : (
-            recentActivityFeed.slice(0, 15).map((act) => (
-              <div
-                key={act.id}
-                onClick={() => {
-                  setExpandedActivityId(act.logId);
-                }}
-                className="p-3 bg-gray-50 dark:bg-gray-700/40 hover:bg-blue-50/50 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded-xl transition cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-2"
-              >
-                <div className="flex items-start space-x-3 min-w-0 flex-1">
-                  <div className="p-1.5 rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 shrink-0 mt-0.5">
-                    {act.type === 'reply' ? (
-                      <MessageSquare className="w-3.5 h-3.5 text-blue-600" />
-                    ) : act.type === 'status' ? (
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                    ) : act.type === 'reminder' ? (
-                      <Bell className="w-3.5 h-3.5 text-amber-600" />
-                    ) : (
-                      <FileText className="w-3.5 h-3.5 text-slate-600" />
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1 text-xs">
-                    <div className="flex flex-wrap items-center gap-1.5 mb-0.5">
-                      <span className="font-bold text-gray-900 dark:text-white">
-                        {act.actor}
-                      </span>
-                      {act.actorRole && (
-                        <span className="text-[10px] text-gray-500 font-mono">({act.actorRole})</span>
-                      )}
-                      <span className="text-gray-400">&bull;</span>
-                      <span className="text-gray-600 dark:text-gray-300 font-medium">
-                        {act.summary}
-                      </span>
-                      <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.2 rounded border ${act.badgeColor}`}>
-                        {act.badgeText}
-                      </span>
-                    </div>
-                    {act.detail && (
-                      <p className="text-gray-600 dark:text-gray-300 italic truncate max-w-xl">
-                        "{act.detail}"
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex items-center space-x-2 shrink-0 text-[11px] text-gray-500 font-mono tabular-nums">
-                  <Clock className="w-3 h-3 text-gray-400" />
-                  <span>{formatRelativeTime(act.timestamp)}</span>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-
-      {/* -------------------- MAIN SHIFT LOG CARDS STREAM -------------------- */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between pb-1">
-          <h4 className="text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300">
-            Shift Logs Feed (<span className="font-mono tabular-nums">{filteredRecentLogs.length}</span>)
-          </h4>
-          <span className="text-[11px] text-gray-400">Click any card to inspect full details or reply</span>
-        </div>
 
         {/* Activity Items List */}
         <div className="space-y-2 pt-1">
@@ -1108,6 +1112,12 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
               );
             })
           )}
+        </div>
+        </div>
+
+        {/* RIGHT COLUMN: RECENT ACTIVITY STREAM (5 cols on desktop, sticky on scroll) */}
+        <div className="lg:col-span-5 xl:col-span-5 lg:sticky lg:top-4 space-y-3">
+          {renderRecentActivityCard()}
         </div>
       </div>
     </div>

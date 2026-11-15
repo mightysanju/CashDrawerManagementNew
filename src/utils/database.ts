@@ -334,10 +334,17 @@ export class DatabaseManager {
   async getSettings(): Promise<AppSettings> {
     const db = await this.dbPromise;
     const s = await db.get(STORES.SETTINGS, 'default');
-    return s || {
+    if (s) {
+      return {
+        ...s,
+        maxOpenDrawers: typeof s.maxOpenDrawers === 'number' && s.maxOpenDrawers > 0 ? s.maxOpenDrawers : 1,
+      };
+    }
+    return {
       id: 'default',
       salesRateMultiplier: 120,
       organizationName: 'Grand Hotel & Suites',
+      maxOpenDrawers: 1,
     };
   }
 

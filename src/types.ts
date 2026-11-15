@@ -128,6 +128,7 @@ export interface AppSettings {
   id: string;
   salesRateMultiplier: number; // Default multiplier for potential revenue (e.g. $120.00)
   organizationName: string;
+  maxOpenDrawers?: number; // Maximum simultaneous open cash drawers allowed across the property (Default: 1)
 }
 
 /* -------------------------------------------------------------

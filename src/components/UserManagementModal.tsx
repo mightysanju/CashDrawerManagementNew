@@ -74,9 +74,11 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
     id: 'default',
     salesRateMultiplier: 120,
     organizationName: 'Grand Hotel & Suites',
+    maxOpenDrawers: 1,
   });
   const [rateMultiplierInput, setRateMultiplierInput] = useState<number>(120);
   const [orgNameInput, setOrgNameInput] = useState('');
+  const [maxOpenDrawersInput, setMaxOpenDrawersInput] = useState<number>(1);
   const [settingsSuccess, setSettingsSuccess] = useState(false);
 
   // Reports state
@@ -125,6 +127,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
       setSettings(loadedSettings);
       setRateMultiplierInput(loadedSettings.salesRateMultiplier || 120);
       setOrgNameInput(loadedSettings.organizationName || 'Grand Hotel & Suites');
+      setMaxOpenDrawersInput(loadedSettings.maxOpenDrawers || 1);
       setAllShiftLogs(loadedLogs);
       setDbCounts(counts);
       setArchives(db.getDatabaseArchives());
@@ -455,11 +458,13 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
     e.preventDefault();
     const rate = Math.max(1, Number(rateMultiplierInput) || 120);
     const org = orgNameInput.trim() || 'Grand Hotel & Suites';
+    const maxDrawers = Math.max(1, parseInt(String(maxOpenDrawersInput), 10) || 1);
 
     const updated: AppSettings = {
       ...settings,
       salesRateMultiplier: rate,
       organizationName: org,
+      maxOpenDrawers: maxDrawers,
     };
 
     await db.saveSettings(updated);
@@ -1642,6 +1647,25 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                       onChange={(e) => setOrgNameInput(e.target.value)}
                       className="w-full px-3.5 py-2.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1.5 flex items-center justify-between">
+                      <span>Max Simultaneous Open Drawers</span>
+                      <span className="text-[11px] font-normal text-gray-400">Default: 1 drawer</span>
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={20}
+                      required
+                      value={maxOpenDrawersInput}
+                      onChange={(e) => setMaxOpenDrawersInput(Math.max(1, parseInt(e.target.value) || 1))}
+                      className="w-full px-3.5 py-2.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl text-sm font-semibold text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 tabular-nums"
+                    />
+                    <span className="text-[11px] text-gray-400 mt-1 block">
+                      Maximum number of cash drawers that can be open simultaneously across the property. When 1 drawer is open and the limit is 1, additional staff logging in will not be prompted to open a new drawer.
+                    </span>
                   </div>
 
                   <div>
