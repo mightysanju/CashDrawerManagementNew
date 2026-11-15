@@ -80,15 +80,25 @@ class AuthManager {
     }
 
     try {
-      let user = await db.getUserByUsername(cleanUser);
-      if (!user) {
-        // Quick 300ms retry in case an incoming P2P user sync is currently writing
-        await new Promise((r) => setTimeout(r, 300));
-        user = await db.getUserByUsername(cleanUser);
-      }
+      const user = await Promise.race([
+        (async () => {
+          let u = await db.getUserByUsername(cleanUser);
+          if (!u) {
+            await new Promise((r) => setTimeout(r, 400));
+            u = await db.getUserByUsername(cleanUser);
+          }
+          return u;
+        })(),
+        new Promise<undefined>((_, reject) =>
+          setTimeout(() => reject(new Error('Authentication timeout. Please check database connection.')), 4500)
+        ),
+      ]);
 
       if (!user) {
-        return { success: false, error: 'Invalid username or password.' };
+        return { 
+          success: false, 
+          error: `User "${username}" not found on this register. Please verify your Network Sync group or check username.` 
+        };
       }
 
       if (!user.isActive) {
@@ -97,7 +107,7 @@ class AuthManager {
 
       // Check password (supports plain or hashed)
       if (user.passwordHash !== passwordPlain) {
-        return { success: false, error: 'Invalid username or password.' };
+        return { success: false, error: 'Invalid password. Please verify credentials.' };
       }
 
       this.currentUser = user;
@@ -108,9 +118,10 @@ class AuthManager {
       }
       this.notify();
       return { success: true, user };
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Login error:', err);
-      return { success: false, error: 'An error occurred during authentication.' };
+      const msg = err instanceof Error ? err.message : String(err);
+      return { success: false, error: msg || 'An error occurred during authentication.' };
     }
   }
 

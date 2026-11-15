@@ -21,15 +21,11 @@ const STORES = {
 
 const DB_VERSION = 4;
 
-export class DatabaseManager {
-  private dbPromise;
+let globalDbPromise: Promise<IDBPDatabase> | null = null;
 
-  constructor() {
-    this.dbPromise = this.initDatabase();
-  }
-
-  private async initDatabase() {
-    const db = await openDB(DB_NAME, DB_VERSION, {
+function getGlobalDb(): Promise<IDBPDatabase> {
+  if (!globalDbPromise) {
+    globalDbPromise = openDB(DB_NAME, DB_VERSION, {
       upgrade(db) {
         // Shifts store
         if (!db.objectStoreNames.contains(STORES.SHIFTS)) {
@@ -68,56 +64,76 @@ export class DatabaseManager {
         if (!db.objectStoreNames.contains(STORES.SETTINGS)) {
           db.createObjectStore(STORES.SETTINGS, { keyPath: 'id' });
         }
+      },
+      blocked() {
+        console.warn('[IndexedDB] Database connection blocked by an older connection.');
+      },
+      blocking() {
+        console.warn('[IndexedDB] Database is blocking a version upgrade.');
+      },
+      terminated() {
+        console.warn('[IndexedDB] Database connection terminated abnormally. Resetting.');
+        globalDbPromise = null;
+      },
+    }).then(async (db) => {
+      try {
+        await seedDatabaseDefaults(db);
+      } catch (err) {
+        console.warn('Seed defaults notice:', err);
       }
+      return db;
     });
-
-    // Seed defaults if first time
-    await this.seedDefaults(db);
-    return db;
   }
+  return globalDbPromise;
+}
 
-  private async seedDefaults(db: IDBPDatabase) {
-    try {
-      // 1. Seed Categories if empty
-      const catCount = await db.count(STORES.CATEGORIES);
-      if (catCount === 0) {
-        const tx = db.transaction(STORES.CATEGORIES, 'readwrite');
-        const defaultCategories: LogCategoryConfig[] = [
-          {
-            id: 'cat_sales',
-            name: 'Sales',
-            subcategories: ['Group', 'Wedding', 'Sports team', 'Company', 'Bus Tour', 'Family Reunion'],
-            rateMultiplier: 120,
-          },
-          {
-            id: 'cat_complaint',
-            name: 'Complaint',
-            subcategories: ['Room Maintenance', 'Noise / Disturbance', 'Billing & Folio', 'Housekeeping / Cleanliness', 'Staff / Service', 'Other'],
-          },
-          {
-            id: 'cat_misc',
-            name: 'Miscellaneous',
-            subcategories: ['Shift Handover', 'Package Delivery', 'Lost & Found', 'Maintenance Request', 'Manager Note'],
-          },
-        ];
-        for (const cat of defaultCategories) {
-          await tx.store.put(cat);
-        }
-        await tx.done;
+async function seedDatabaseDefaults(db: IDBPDatabase) {
+  try {
+    // 1. Seed Categories if empty
+    const catCount = await db.count(STORES.CATEGORIES);
+    if (catCount === 0) {
+      const tx = db.transaction(STORES.CATEGORIES, 'readwrite');
+      const defaultCategories: LogCategoryConfig[] = [
+        {
+          id: 'cat_sales',
+          name: 'Sales',
+          subcategories: ['Group', 'Wedding', 'Sports team', 'Company', 'Bus Tour', 'Family Reunion'],
+          rateMultiplier: 120,
+        },
+        {
+          id: 'cat_complaint',
+          name: 'Complaint',
+          subcategories: ['Room Maintenance', 'Noise / Disturbance', 'Billing & Folio', 'Housekeeping / Cleanliness', 'Staff / Service', 'Other'],
+        },
+        {
+          id: 'cat_misc',
+          name: 'Miscellaneous',
+          subcategories: ['Shift Handover', 'Package Delivery', 'Lost & Found', 'Maintenance Request', 'Manager Note'],
+        },
+      ];
+      for (const cat of defaultCategories) {
+        await tx.store.put(cat);
       }
-
-      // 3. Seed Settings if empty
-      const settings = await db.get(STORES.SETTINGS, 'default');
-      if (!settings) {
-        await db.put(STORES.SETTINGS, {
-          id: 'default',
-          salesRateMultiplier: 120,
-          organizationName: 'Grand Hotel & Suites',
-        });
-      }
-    } catch (err) {
-      console.warn('Seeding defaults notice:', err);
+      await tx.done;
     }
+
+    // 2. Seed Settings if empty
+    const settings = await db.get(STORES.SETTINGS, 'default');
+    if (!settings) {
+      await db.put(STORES.SETTINGS, {
+        id: 'default',
+        salesRateMultiplier: 120,
+        organizationName: 'Grand Hotel & Suites',
+      });
+    }
+  } catch (err) {
+    console.warn('Seeding defaults notice:', err);
+  }
+}
+
+export class DatabaseManager {
+  private get dbPromise(): Promise<IDBPDatabase> {
+    return getGlobalDb();
   }
 
   /* -------------------------------------------------------------

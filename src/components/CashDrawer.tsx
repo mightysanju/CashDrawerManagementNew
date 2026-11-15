@@ -819,6 +819,7 @@ export function CashDrawer() {
             <button
               type="button"
               onClick={() => setIsSyncModalOpen(true)}
+              title={`Network Sync: ${syncState.storeName} (${syncState.role === 'hub' ? 'Primary Hub' : 'Connected Register'})`}
               className={`inline-flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-xs font-medium transition-colors shadow-xs ${
                 syncState.status === 'connected'
                   ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
@@ -830,16 +831,22 @@ export function CashDrawer() {
               <Wifi size={14} className={syncState.status === 'connected' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'} />
               {syncState.status === 'connected' ? (
                 syncState.role === 'hub' ? (
-                  syncState.connectedCount === 0
-                    ? 'Sync: Hub'
-                    : `Sync: Hub (${syncState.connectedCount})`
+                  <span className="truncate max-w-[210px]">
+                    Sync: <strong>{syncState.storeName}</strong> {syncState.connectedCount > 0 ? `(${syncState.connectedCount + 1} online)` : '(Hub)'}
+                  </span>
                 ) : (
-                  'Sync: Connected'
+                  <span className="truncate max-w-[210px]">
+                    Sync: <strong>{syncState.storeName}</strong> (Synced)
+                  </span>
                 )
               ) : syncState.status === 'scanning' ? (
-                'Syncing...'
+                <span className="truncate max-w-[210px]">
+                  Syncing {syncState.storeName}...
+                </span>
               ) : (
-                'Connect Registers'
+                <span className="truncate max-w-[210px]">
+                  Sync: {syncState.storeName} (Offline)
+                </span>
               )}
             </button>
 

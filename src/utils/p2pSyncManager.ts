@@ -435,10 +435,20 @@ class P2PSyncManager {
       }
 
       this.notifyData('AVAILABLE_DATABASES_UPDATED', this.getAvailableNetworkDatabases());
+
+      // Auto-adopt network database if this station has no users or is unconfigured ('Main Store')
+      db.hasUsers().then((hasUsers) => {
+        const savedStore = localStorage.getItem('cdm_store_name');
+        const isUnconfigured = !savedStore || savedStore.trim().toLowerCase() === 'main store';
+        if ((!hasUsers || isUnconfigured) && dbName.toLowerCase() !== 'main store' && dbName !== this.state.storeName) {
+          console.warn(`[P2P Sync] Station is unconfigured. Auto-joining discovered network database: "${dbName}"`);
+          this.switchSyncGroup(dbName);
+        }
+      });
     } else if (msg.type === 'DISCOVERY_REGISTRY_SYNC' && Array.isArray(msg.databases)) {
       for (const d of msg.databases) {
         if (d && d.name) {
-          this.rememberSyncGroup(d.name);
+          this.rememberSyncGroup(d.name, { createdBy: d.createdBy, createdAt: d.createdAt });
           const isRemote = d.peerId !== this.myClientId;
           this.discoveredDatabases.set(d.name, {
             ...d,
@@ -448,6 +458,19 @@ class P2PSyncManager {
         }
       }
       this.notifyData('AVAILABLE_DATABASES_UPDATED', this.getAvailableNetworkDatabases());
+
+      // Auto-adopt network database if this station has no users or is unconfigured ('Main Store')
+      db.hasUsers().then((hasUsers) => {
+        const savedStore = localStorage.getItem('cdm_store_name');
+        const isUnconfigured = !savedStore || savedStore.trim().toLowerCase() === 'main store';
+        if (!hasUsers || isUnconfigured) {
+          const validDbs = msg.databases.filter((d) => d && d.name && d.name.toLowerCase() !== 'main store');
+          if (validDbs.length > 0 && validDbs[0].name !== this.state.storeName) {
+            console.warn(`[P2P Sync] Station is unconfigured. Auto-joining network database from registry: "${validDbs[0].name}"`);
+            this.switchSyncGroup(validDbs[0].name);
+          }
+        }
+      });
     } else if (msg.type === 'NETWORK_SWITCH_DATABASE') {
       if (this.isDiscoveryHub) {
         this.discoveryConnections.forEach((conn) => {

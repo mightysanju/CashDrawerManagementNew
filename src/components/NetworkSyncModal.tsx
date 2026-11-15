@@ -189,26 +189,32 @@ export function NetworkSyncModal({ isOpen, onClose, onSyncTriggered }: NetworkSy
               </button>
             </div>
 
-            <div className="space-y-0.5">
-              <h4 className="text-xs font-semibold text-gray-900 dark:text-white">
+            <div className="space-y-1">
+              <div className="flex items-center space-x-1.5 flex-wrap">
+                <span className="text-[11px] text-gray-500 dark:text-gray-400">Current Database:</span>
+                <span className="text-xs font-bold text-gray-900 dark:text-white bg-blue-100 dark:bg-blue-900/60 text-blue-800 dark:text-blue-200 px-2 py-0.5 rounded-md">
+                  {syncState.storeName}
+                </span>
+              </div>
+              <h4 className="text-xs font-semibold text-gray-800 dark:text-gray-200 pt-0.5">
                 {syncState.status === 'connected' ? (
                   syncState.role === 'hub' ? (
                     syncState.connectedCount === 0
-                      ? 'Active as Primary Hotel Hub'
+                      ? 'Active as Primary Hotel Hub for this database'
                       : `Syncing with ${syncState.connectedCount} other register${syncState.connectedCount > 1 ? 's' : ''}`
                   ) : (
                     'Synchronized with Primary Register'
                   )
                 ) : syncState.status === 'scanning' ? (
-                  'Searching for existing hotel registers'
+                  'Searching for existing hotel registers on network...'
                 ) : (
-                  'Offline Mode'
+                  'Offline Mode / Sync Paused'
                 )}
               </h4>
-              <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
+              <p className="text-[11px] text-gray-600 dark:text-gray-300 leading-relaxed">
                 {syncState.status === 'connected'
-                  ? 'All shifts, till balances, notes, and complaints sync instantly across computers in this hotel group.'
-                  : 'Launching the app on any device on this local network automatically connects.'}
+                  ? 'All shifts, till balances, notes, and staff accounts sync instantly across computers in this hotel group.'
+                  : 'Click on any discovered hotel database below to connect and sync with it.'}
               </p>
             </div>
           </div>
