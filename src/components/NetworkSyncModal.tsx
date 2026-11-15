@@ -10,9 +10,10 @@ import {
   Check,
   Plus,
   Trash2,
-  ArrowRightLeft
+  ArrowRightLeft,
+  Radio
 } from 'lucide-react';
-import { p2pSyncManager, SyncState } from '../utils/p2pSyncManager';
+import { p2pSyncManager, SyncState, AvailableNetworkDatabase } from '../utils/p2pSyncManager';
 
 interface NetworkSyncModalProps {
   isOpen: boolean;
@@ -22,20 +23,32 @@ interface NetworkSyncModalProps {
 
 export function NetworkSyncModal({ isOpen, onClose, onSyncTriggered }: NetworkSyncModalProps) {
   const [syncState, setSyncState] = useState<SyncState>(p2pSyncManager.getState());
-  const [knownGroups, setKnownGroups] = useState<string[]>(p2pSyncManager.getKnownSyncGroups());
+  const [availableDbs, setAvailableDbs] = useState<AvailableNetworkDatabase[]>(
+    p2pSyncManager.getAvailableNetworkDatabases()
+  );
   const [newGroupName, setNewGroupName] = useState('');
   const [isAddingNew, setIsAddingNew] = useState(false);
   const [isSwitching, setIsSwitching] = useState(false);
 
   useEffect(() => {
-    const unsubscribe = p2pSyncManager.subscribeState((newState) => {
+    const unsubState = p2pSyncManager.subscribeState((newState) => {
       setSyncState(newState);
-      setKnownGroups(p2pSyncManager.getKnownSyncGroups());
+      setAvailableDbs(p2pSyncManager.getAvailableNetworkDatabases());
       if (newState.status === 'connected' && onSyncTriggered) {
         onSyncTriggered();
       }
     });
-    return () => unsubscribe();
+
+    const unsubData = p2pSyncManager.subscribeData((action) => {
+      if (action === 'AVAILABLE_DATABASES_UPDATED' || action === 'NETWORK_SWITCH_FOLLOWED') {
+        setAvailableDbs(p2pSyncManager.getAvailableNetworkDatabases());
+      }
+    });
+
+    return () => {
+      unsubState();
+      unsubData();
+    };
   }, [onSyncTriggered]);
 
   if (!isOpen) return null;
@@ -43,7 +56,7 @@ export function NetworkSyncModal({ isOpen, onClose, onSyncTriggered }: NetworkSy
   const handleSelectGroup = async (group: string) => {
     if (group === syncState.storeName) return;
     setIsSwitching(true);
-    await p2pSyncManager.switchSyncGroup(group);
+    await p2pSyncManager.switchNetworkSyncGroup(group, true);
     setIsSwitching(false);
   };
 
@@ -54,17 +67,22 @@ export function NetworkSyncModal({ isOpen, onClose, onSyncTriggered }: NetworkSy
     setIsAddingNew(false);
     setNewGroupName('');
     setIsSwitching(true);
-    await p2pSyncManager.switchSyncGroup(clean);
+    await p2pSyncManager.switchNetworkSyncGroup(clean, true);
     setIsSwitching(false);
   };
 
   const handleRemoveGroup = (e: React.MouseEvent, group: string) => {
     e.stopPropagation();
-    p2pSyncManager.removeKnownSyncGroup(group);
-    setKnownGroups(p2pSyncManager.getKnownSyncGroups());
+    const confirmDelete = window.confirm(
+      `Delete and remove "${group}" from this and all other synced computers on the network?`
+    );
+    if (!confirmDelete) return;
+    p2pSyncManager.broadcastNetworkDatabaseDeleted(group);
+    setAvailableDbs(p2pSyncManager.getAvailableNetworkDatabases());
   };
 
   const handleRescan = () => {
+    p2pSyncManager.announceCurrentDatabase();
     p2pSyncManager.autoConnect(syncState.storeName);
   };
 
@@ -184,18 +202,18 @@ export function NetworkSyncModal({ isOpen, onClose, onSyncTriggered }: NetworkSy
                 <span>Hotel Database Sync Group</span>
               </div>
               <span className="text-[11px] text-gray-500 dark:text-gray-400">
-                Auto-syncs & remembers selection
+                Network Auto-Discovery Active
               </span>
             </div>
 
-            {/* List of Known Hotel Databases */}
+            {/* List of Available Hotel Databases on Network */}
             <div className="space-y-2">
-              {knownGroups.map((group) => {
-                const isActive = group === syncState.storeName;
+              {availableDbs.map((dbItem) => {
+                const isActive = dbItem.isActive || dbItem.name === syncState.storeName;
                 return (
                   <div
-                    key={group}
-                    onClick={() => handleSelectGroup(group)}
+                    key={dbItem.name}
+                    onClick={() => handleSelectGroup(dbItem.name)}
                     className={`w-full flex items-center justify-between p-3 rounded-xl border text-left cursor-pointer transition-all ${
                       isActive
                         ? 'bg-blue-50/90 dark:bg-blue-950/40 border-blue-300 dark:border-blue-700 shadow-xs'
@@ -211,20 +229,30 @@ export function NetworkSyncModal({ isOpen, onClose, onSyncTriggered }: NetworkSy
                         <Building2 size={16} />
                       </div>
                       <div className="truncate">
-                        <div className="flex items-center space-x-2">
+                        <div className="flex items-center space-x-2 flex-wrap">
                           <span className={`text-xs font-bold truncate ${
                             isActive ? 'text-blue-900 dark:text-blue-100' : 'text-gray-800 dark:text-gray-200'
                           }`}>
-                            {group}
+                            {dbItem.name}
                           </span>
                           {isActive && (
                             <span className="px-1.5 py-0.5 bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 text-[10px] font-bold rounded">
                               Active
                             </span>
                           )}
+                          {dbItem.isHostedOnPeer && !isActive && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 text-[10px] font-medium rounded space-x-1">
+                              <Radio size={10} className="mr-0.5 text-emerald-600 animate-pulse" />
+                              <span>Online on LAN</span>
+                            </span>
+                          )}
                         </div>
                         <p className="text-[10px] text-gray-500 dark:text-gray-400 truncate">
-                          {isActive ? 'Currently connected & syncing' : 'Click to switch & auto-sync'}
+                          {isActive 
+                            ? 'Currently connected & syncing with all registers' 
+                            : dbItem.isHostedOnPeer 
+                              ? 'Hosted on network register · Click to switch entire network' 
+                              : 'Click to switch & auto-sync all devices'}
                         </p>
                       </div>
                     </div>
@@ -240,18 +268,18 @@ export function NetworkSyncModal({ isOpen, onClose, onSyncTriggered }: NetworkSy
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleSelectGroup(group);
+                              handleSelectGroup(dbItem.name);
                             }}
                             className="px-2 py-1 bg-white dark:bg-gray-600 border border-gray-200 dark:border-gray-500 hover:bg-blue-50 text-[11px] font-semibold text-gray-700 dark:text-gray-200 rounded-md flex items-center space-x-1"
                           >
                             <ArrowRightLeft size={11} />
-                            <span>Switch</span>
+                            <span>Switch All</span>
                           </button>
-                          {knownGroups.length > 1 && (
+                          {availableDbs.length > 1 && (
                             <button
                               type="button"
-                              onClick={(e) => handleRemoveGroup(e, group)}
-                              title="Forget this hotel group"
+                              onClick={(e) => handleRemoveGroup(e, dbItem.name)}
+                              title="Delete/Forget this database from network"
                               className="p-1 text-gray-400 hover:text-red-500 rounded hover:bg-gray-100 dark:hover:bg-gray-600 transition"
                             >
                               <Trash2 size={13} />
@@ -285,7 +313,7 @@ export function NetworkSyncModal({ isOpen, onClose, onSyncTriggered }: NetworkSy
                     disabled={!newGroupName.trim()}
                     className="px-3 py-1.5 bg-blue-600 disabled:opacity-50 text-white rounded-lg text-xs font-semibold hover:bg-blue-700 transition"
                   >
-                    Connect
+                    Connect All
                   </button>
                   <button
                     type="button"
@@ -303,7 +331,7 @@ export function NetworkSyncModal({ isOpen, onClose, onSyncTriggered }: NetworkSy
               <button
                 type="button"
                 onClick={() => setIsAddingNew(true)}
-                className="w-full py-2 px-3 border border-dashed border-gray-300 dark:border-gray-600 rounded-xl text-xs font-semibold text-blue-600 dark:text-blue-400 hover:bg-blue-50/50 dark:hover:bg-blue-950/30 flex items-center justify-center space-x-1.5 transition"
+                className="w-full py-2 border-2 border-dashed border-gray-200 dark:border-gray-700 hover:border-blue-400 dark:hover:border-blue-500 rounded-xl text-xs font-semibold text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition flex items-center justify-center space-x-1.5"
               >
                 <Plus size={14} />
                 <span>Add / Connect Another Hotel Database</span>
@@ -311,52 +339,46 @@ export function NetworkSyncModal({ isOpen, onClose, onSyncTriggered }: NetworkSy
             )}
           </div>
 
-          {/* Auto-Discovery Explanation Card */}
-          <div className="bg-blue-50/60 dark:bg-blue-950/20 border border-blue-200/80 dark:border-blue-800/40 rounded-xl p-3.5 text-xs text-blue-900 dark:text-blue-200 space-y-1.5">
-            <div className="font-bold flex items-center">
-              <CheckCircle2 size={15} className="text-blue-600 dark:text-blue-400 mr-1.5" />
-              <span>How Hotel Auto-Discovery Works:</span>
+          {/* Educational Auto-Discovery Note */}
+          <div className="p-3 bg-blue-50/50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/50 rounded-xl space-y-1.5 text-xs text-gray-600 dark:text-gray-300">
+            <div className="flex items-center space-x-1.5 font-bold text-blue-900 dark:text-blue-200">
+              <CheckCircle2 size={14} className="text-blue-600 dark:text-blue-400" />
+              <span>How Hotel Network Auto-Discovery Works:</span>
             </div>
-            <ul className="space-y-1 text-blue-800/90 dark:text-blue-300/80 pl-4 list-disc text-[11px] leading-relaxed">
-              <li><strong>Zero Configuration:</strong> All devices sharing this Hotel Name automatically discover each other over your local Wi-Fi or LAN.</li>
-              <li><strong>Channel Isolation:</strong> Registers with different hotel names are securely isolated and will never mix records.</li>
-              <li><strong>Offline Resilient:</strong> Works even when external internet is down using local peer routing.</li>
+            <ul className="list-disc list-inside space-y-1 pl-1 text-[11px] text-gray-600 dark:text-gray-400">
+              <li>
+                <strong className="text-gray-800 dark:text-gray-200">Automatic Sync:</strong> All computers on the network automatically discover available databases and stay synchronized.
+              </li>
+              <li>
+                <strong className="text-gray-800 dark:text-gray-200">Network-Wide Switching:</strong> Switching or creating a database moves every register on the network together.
+              </li>
+              <li>
+                <strong className="text-gray-800 dark:text-gray-200">Shared Purge:</strong> When a database is deleted, it is deleted from all synced devices.
+              </li>
             </ul>
           </div>
+        </div>
 
-          {/* Footer Actions */}
-          <div className="flex justify-between items-center pt-2 border-t border-gray-100 dark:border-gray-700">
-            {syncState.status === 'connected' ? (
-              <button
-                type="button"
-                onClick={handleDisconnect}
-                className="inline-flex items-center text-xs font-semibold text-red-600 dark:text-red-400 hover:text-red-700 p-1.5 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg transition"
-              >
-                <WifiOff size={14} className="mr-1.5" />
-                Pause Sync
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={handleRescan}
-                className="inline-flex items-center text-xs font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-700 p-1.5 hover:bg-blue-50 dark:hover:bg-blue-950/40 rounded-lg transition"
-              >
-                <RefreshCw size={14} className="mr-1.5" />
-                Auto-Connect Now
-              </button>
-            )}
+        {/* Modal Footer */}
+        <div className="p-4 border-t border-gray-100 dark:border-gray-700 bg-gray-50/70 dark:bg-gray-800/80 flex items-center justify-between">
+          <button
+            onClick={handleDisconnect}
+            className="text-xs text-rose-600 dark:text-rose-400 hover:underline flex items-center space-x-1"
+          >
+            <WifiOff size={13} />
+            <span>Pause Sync</span>
+          </button>
 
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-5 py-2 bg-blue-600 text-white font-semibold text-xs rounded-xl hover:bg-blue-700 transition shadow-xs"
-            >
-              Done
-            </button>
-          </div>
+          <button
+            onClick={onClose}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold shadow-sm transition"
+          >
+            Done
+          </button>
         </div>
       </div>
     </div>
   );
 }
+
 export default NetworkSyncModal;

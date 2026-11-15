@@ -299,15 +299,11 @@ export function CashDrawer() {
     loadLogsData();
     loadSettingsData();
 
-    // Check if database exists (if not, launch New Hotel Network Setup)
-    db.hasUsers().then((hasUsers) => {
-      if (!hasUsers) {
-        setIsNewHotelSetupModalOpen(true);
-        setIsLoginModalOpen(false);
-      }
+    // Auto-discover active databases on local network or launch New Hotel Setup if none available
+    p2pSyncManager.scanNetworkAndAutoSync(() => {
+      setIsNewHotelSetupModalOpen(true);
+      setIsLoginModalOpen(false);
     });
-
-    p2pSyncManager.autoConnect();
 
     const unsubAuth = authManager.subscribe((user) => {
       setCurrentUser(user);
@@ -442,6 +438,30 @@ export function CashDrawer() {
         const hotelName = (data as { hotelName?: string })?.hotelName || 'Hotel';
         setWelcomeToast(`Connected and synced to new clean hotel database: ${hotelName}`);
         setTimeout(() => setWelcomeToast(null), 4000);
+        return;
+      }
+
+      if (action === 'NETWORK_SWITCH_FOLLOWED') {
+        const newDb = (data as string) || 'Active Hotel';
+        setWelcomeToast(`Followed network sync: Switched to ${newDb}`);
+        setTimeout(() => setWelcomeToast(null), 4000);
+        await loadShiftsData();
+        await loadLogsData();
+        await loadSettingsData();
+        return;
+      }
+
+      if (action === 'NO_DATABASE_AVAILABLE') {
+        setSelectedShift(null);
+        setActiveShifts([]);
+        setShiftHistory([]);
+        setShiftLogs([]);
+        setEntries([]);
+        setShiftDrop(0);
+        setCurrentUser(null);
+        authManager.logout();
+        setIsLoginModalOpen(false);
+        setIsNewHotelSetupModalOpen(true);
         return;
       }
 

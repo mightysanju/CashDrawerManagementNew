@@ -150,8 +150,9 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
       // 1. Snapshot database into archive
       const archive = await db.createDatabaseArchive(currentUser?.fullName || 'Manager', currentSyncGroup);
 
-      // 2. Broadcast HARD PURGE to all connected peers across LAN/Wi-Fi
+      // 2. Broadcast HARD PURGE to all connected peers across LAN/Wi-Fi and global network beacon
       p2pSyncManager.broadcastHardPurge(archive, currentSyncGroup, purgedEpoch);
+      p2pSyncManager.broadcastNetworkDatabaseDeleted(currentSyncGroup, purgedEpoch);
 
       // 3. Mark last purged epoch locally so obsolete incoming syncs are rejected
       localStorage.setItem('cdm_last_purged_epoch', String(purgedEpoch));

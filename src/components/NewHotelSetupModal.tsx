@@ -98,8 +98,9 @@ export const NewHotelSetupModal: React.FC<NewHotelSetupModalProps> = ({
       await db.saveUser(managerUser);
 
       // 4. Switch sync group to new hotel name and broadcast new database to all devices on network
-      await p2pSyncManager.switchSyncGroup(cleanProp);
+      await p2pSyncManager.switchNetworkSyncGroup(cleanProp, true);
       p2pSyncManager.broadcastNewDatabaseCreated(updatedSettings, managerUser, cleanProp);
+      await p2pSyncManager.announceCurrentDatabase();
 
       // 5. Immediately log in the manager
       authManager.updateCurrentUser(managerUser);

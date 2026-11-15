@@ -9,6 +9,18 @@ import {
 } from '../types';
 import { DatabaseManager } from './database';
 
+export interface AvailableNetworkDatabase {
+  name: string;
+  epoch: number;
+  databaseId?: string;
+  peerId?: string;
+  shiftsCount?: number;
+  usersCount?: number;
+  lastSeen: number;
+  isHostedOnPeer: boolean;
+  isActive: boolean;
+}
+
 export type SyncMessage =
   | { 
       type: 'FULL_SYNC'; 
@@ -61,6 +73,38 @@ export type SyncMessage =
       managerUser?: UserAccount;
       settings: AppSettings;
       senderId?: string;
+    }
+  | {
+      type: 'NETWORK_SWITCH_DATABASE';
+      targetDatabase: string;
+      targetDatabaseEpoch?: number;
+      targetDatabaseId?: string;
+      senderId?: string;
+    }
+  | {
+      type: 'NETWORK_DATABASE_DELETED';
+      databaseName: string;
+      purgedEpoch: number;
+      senderId?: string;
+    }
+  | {
+      type: 'DISCOVERY_ANNOUNCE';
+      databaseName: string;
+      epoch: number;
+      databaseId?: string;
+      shiftsCount?: number;
+      usersCount?: number;
+      peerId: string;
+      senderId?: string;
+    }
+  | {
+      type: 'DISCOVERY_REGISTRY_SYNC';
+      databases: AvailableNetworkDatabase[];
+      senderId?: string;
+    }
+  | {
+      type: 'DISCOVERY_PROBE';
+      senderId?: string;
     };
 
 export type SyncRole = 'hub' | 'client' | 'standalone';
@@ -76,6 +120,10 @@ export interface SyncState {
 }
 
 const PEER_PREFIX = 'cdm-lan-v3-';
+const GLOBAL_BEACON_CHANNEL = 'cdm_lan_global_beacon';
+const DISCOVERY_HUB_PEER_ID = 'cdm-lan-v3-beacon-hub';
+const DISCOVERY_CLIENT_PREFIX = 'cdm-lan-v3-beacon-node-';
+
 const db = new DatabaseManager();
 
 // Google's public STUN servers for reliable local LAN / Wi-Fi NAT traversal
@@ -93,10 +141,20 @@ class P2PSyncManager {
   private connections: Map<string, DataConnection> = new Map();
   private broadcastChannel: BroadcastChannel | null = null;
   private storeSlug: string = 'main-store';
-  private reconnectTimer: NodeJS.Timeout | null = null;
-  private heartbeatTimer: NodeJS.Timeout | null = null;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private isConnecting: boolean = false;
   private myClientId: string = '';
+
+  // Network Discovery Beacon fields
+  private globalBroadcastChannel: BroadcastChannel | null = null;
+  private discoveryPeer: Peer | null = null;
+  private discoveryConnections: Map<string, DataConnection> = new Map();
+  private isDiscoveryHub: boolean = false;
+  private discoveredDatabases: Map<string, AvailableNetworkDatabase> = new Map();
+  private discoveryHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private discoveryReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private discoveryClientId: string = '';
 
   private state: SyncState = {
     status: 'disconnected',
@@ -121,6 +179,590 @@ class P2PSyncManager {
       // ignore
     }
     this.initBroadcastChannel();
+    this.initGlobalDiscovery();
+  }
+
+  /**
+   * Initializes global discovery beacon across all tabs and network peers
+   */
+  private initGlobalDiscovery() {
+    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+      try {
+        if (this.globalBroadcastChannel) {
+          try {
+            this.globalBroadcastChannel.close();
+          } catch {
+            // ignore
+          }
+        }
+        this.globalBroadcastChannel = new BroadcastChannel(GLOBAL_BEACON_CHANNEL);
+        this.globalBroadcastChannel.onmessage = async (event) => {
+          const msg = event.data as SyncMessage;
+          if (!msg || !msg.type || msg.senderId === this.myClientId) return;
+          await this.handleDiscoveryMessage(msg);
+        };
+      } catch (err) {
+        console.debug('Global broadcast channel not available:', err);
+      }
+    }
+    this.startDiscoveryPeer();
+  }
+
+  /**
+   * Starts discovery peer to find all databases on the LAN
+   */
+  private async startDiscoveryPeer() {
+    if (this.discoveryPeer) return;
+
+    try {
+      await this.tryHostDiscoveryHub();
+    } catch {
+      try {
+        await this.connectAsDiscoveryClient();
+      } catch (err) {
+        console.debug('Discovery client connection notice:', err);
+        this.scheduleDiscoveryReconnect();
+      }
+    }
+
+    if (this.discoveryHeartbeatTimer) clearInterval(this.discoveryHeartbeatTimer);
+    this.discoveryHeartbeatTimer = setInterval(() => {
+      this.announceCurrentDatabase();
+      this.pruneOldDiscoveredDatabases();
+    }, 10000);
+  }
+
+  private tryHostDiscoveryHub(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      let peer: Peer;
+      try {
+        peer = new Peer(DISCOVERY_HUB_PEER_ID, {
+          config: STUN_CONFIG,
+          debug: 1,
+        });
+      } catch (e) {
+        reject(e);
+        return;
+      }
+
+      let settled = false;
+      peer.on('open', (id) => {
+        settled = true;
+        this.discoveryPeer = peer;
+        this.discoveryClientId = id;
+        this.isDiscoveryHub = true;
+
+        peer.on('connection', (conn) => {
+          this.discoveryConnections.set(conn.peer, conn);
+          conn.on('data', async (raw) => {
+            const msg = raw as SyncMessage;
+            await this.handleDiscoveryMessage(msg, conn.peer);
+          });
+          conn.on('close', () => {
+            this.discoveryConnections.delete(conn.peer);
+          });
+          conn.on('error', () => {
+            this.discoveryConnections.delete(conn.peer);
+          });
+
+          // Deliver current database registry to connecting peer
+          if (conn.open) {
+            conn.send({
+              type: 'DISCOVERY_REGISTRY_SYNC',
+              databases: this.getAvailableNetworkDatabases(),
+              senderId: this.myClientId,
+            });
+          }
+        });
+
+        this.announceCurrentDatabase();
+        resolve();
+      });
+
+      peer.on('error', (err) => {
+        if (!settled) {
+          settled = true;
+          try {
+            peer.destroy();
+          } catch {
+            // ignore
+          }
+          reject(err);
+        }
+      });
+    });
+  }
+
+  private connectAsDiscoveryClient(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const clientId = `${DISCOVERY_CLIENT_PREFIX}${Math.floor(1000 + Math.random() * 9000)}`;
+      let peer: Peer;
+      try {
+        peer = new Peer(clientId, {
+          config: STUN_CONFIG,
+          debug: 1,
+        });
+      } catch (e) {
+        reject(e);
+        return;
+      }
+
+      let settled = false;
+      const timeout = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          try {
+            peer.destroy();
+          } catch {
+            // ignore
+          }
+          reject(new Error('Discovery hub connection timed out'));
+        }
+      }, 5000);
+
+      peer.on('open', (myId) => {
+        this.discoveryPeer = peer;
+        this.discoveryClientId = myId;
+        this.isDiscoveryHub = false;
+
+        const conn = peer.connect(DISCOVERY_HUB_PEER_ID, { reliable: true });
+
+        const setupClient = () => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timeout);
+          this.discoveryConnections.set(conn.peer, conn);
+
+          conn.on('data', async (raw) => {
+            const msg = raw as SyncMessage;
+            await this.handleDiscoveryMessage(msg);
+          });
+
+          conn.on('close', () => {
+            this.discoveryConnections.delete(conn.peer);
+            this.scheduleDiscoveryReconnect();
+          });
+
+          conn.on('error', () => {
+            this.discoveryConnections.delete(conn.peer);
+            this.scheduleDiscoveryReconnect();
+          });
+
+          this.announceCurrentDatabase();
+          resolve();
+        };
+
+        if (conn.open) {
+          setupClient();
+        } else {
+          conn.on('open', setupClient);
+        }
+      });
+
+      peer.on('error', (err) => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timeout);
+          try {
+            peer.destroy();
+          } catch {
+            // ignore
+          }
+          reject(err);
+        }
+      });
+    });
+  }
+
+  private scheduleDiscoveryReconnect() {
+    if (this.discoveryReconnectTimer) return;
+    this.discoveryReconnectTimer = setTimeout(() => {
+      this.discoveryReconnectTimer = null;
+      if (this.discoveryPeer) {
+        try {
+          this.discoveryPeer.destroy();
+        } catch {
+          // ignore
+        }
+        this.discoveryPeer = null;
+      }
+      this.startDiscoveryPeer();
+    }, 3000 + Math.random() * 2000);
+  }
+
+  private async handleDiscoveryMessage(msg: SyncMessage, relayFromPeerId?: string) {
+    if (!msg || !msg.type) return;
+
+    if (msg.type === 'DISCOVERY_ANNOUNCE') {
+      const dbName = msg.databaseName?.trim();
+      if (!dbName) return;
+
+      this.rememberSyncGroup(dbName);
+      const isRemote = msg.senderId !== this.myClientId;
+      const existing = this.discoveredDatabases.get(dbName);
+
+      this.discoveredDatabases.set(dbName, {
+        name: dbName,
+        epoch: msg.epoch || 0,
+        databaseId: msg.databaseId,
+        peerId: msg.peerId,
+        shiftsCount: typeof msg.shiftsCount === 'number' ? msg.shiftsCount : existing?.shiftsCount,
+        usersCount: typeof msg.usersCount === 'number' ? msg.usersCount : existing?.usersCount,
+        lastSeen: Date.now(),
+        isHostedOnPeer: isRemote,
+        isActive: dbName === this.state.storeName,
+      });
+
+      // Relay to other discovery peers if we are Discovery Hub
+      if (this.isDiscoveryHub) {
+        this.discoveryConnections.forEach((conn) => {
+          if (conn.peer !== relayFromPeerId && conn.open) {
+            try {
+              conn.send(msg);
+            } catch {
+              // ignore
+            }
+          }
+        });
+      }
+
+      this.notifyData('AVAILABLE_DATABASES_UPDATED', this.getAvailableNetworkDatabases());
+    } else if (msg.type === 'DISCOVERY_REGISTRY_SYNC' && Array.isArray(msg.databases)) {
+      for (const d of msg.databases) {
+        if (d && d.name) {
+          this.rememberSyncGroup(d.name);
+          const isRemote = d.peerId !== this.myClientId;
+          this.discoveredDatabases.set(d.name, {
+            ...d,
+            isHostedOnPeer: isRemote,
+            isActive: d.name === this.state.storeName,
+          });
+        }
+      }
+      this.notifyData('AVAILABLE_DATABASES_UPDATED', this.getAvailableNetworkDatabases());
+    } else if (msg.type === 'NETWORK_SWITCH_DATABASE') {
+      if (this.isDiscoveryHub) {
+        this.discoveryConnections.forEach((conn) => {
+          if (conn.peer !== relayFromPeerId && conn.open) {
+            try {
+              conn.send(msg);
+            } catch {
+              // ignore
+            }
+          }
+        });
+      }
+
+      if (msg.targetDatabase && msg.targetDatabase !== this.state.storeName) {
+        console.warn(`[P2P Sync] Network command received to switch database to: "${msg.targetDatabase}". Following sync...`);
+        await this.switchSyncGroup(msg.targetDatabase);
+        this.notifyData('NETWORK_SWITCH_FOLLOWED', msg.targetDatabase);
+      }
+    } else if (msg.type === 'NETWORK_DATABASE_DELETED') {
+      if (this.isDiscoveryHub) {
+        this.discoveryConnections.forEach((conn) => {
+          if (conn.peer !== relayFromPeerId && conn.open) {
+            try {
+              conn.send(msg);
+            } catch {
+              // ignore
+            }
+          }
+        });
+      }
+
+      this.discoveredDatabases.delete(msg.databaseName);
+      this.removeKnownSyncGroup(msg.databaseName);
+
+      if (this.state.storeName === msg.databaseName) {
+        console.warn(`[P2P Sync] Active database "${msg.databaseName}" was deleted across the network. Purging local copy.`);
+        await db.resetDatabaseToFactoryDefaults();
+        localStorage.removeItem('cdm_store_name');
+        localStorage.removeItem('cdm_local_active_shift_id');
+        localStorage.removeItem('frontdesk_external_logs');
+        localStorage.removeItem('cdm_session_user');
+        localStorage.removeItem('frontdesk_auth_session');
+        try {
+          sessionStorage.clear();
+        } catch {
+          // ignore
+        }
+        if (typeof window !== 'undefined') {
+          window.postMessage({ type: 'FDP_PURGE_EXTENSION_STORAGE' }, '*');
+        }
+        authManager.logout();
+
+        // Check if any other database is available to switch to
+        const remaining = this.getAvailableNetworkDatabases().filter((d) => d.name !== msg.databaseName);
+        if (remaining.length > 0) {
+          const next = remaining[0];
+          console.warn(`[P2P Sync] Switching to remaining database: "${next.name}"`);
+          await this.switchSyncGroup(next.name);
+          this.notifyData('NETWORK_SWITCH_FOLLOWED', next.name);
+        } else {
+          this.notifyData('NO_DATABASE_AVAILABLE');
+        }
+      }
+
+      this.notifyData('AVAILABLE_DATABASES_UPDATED', this.getAvailableNetworkDatabases());
+    } else if (msg.type === 'DISCOVERY_PROBE') {
+      this.announceCurrentDatabase();
+    }
+  }
+
+  public async announceCurrentDatabase() {
+    try {
+      const currentName = this.state.storeName;
+      if (!currentName || currentName.trim().toLowerCase() === 'main store') {
+        const org = await db.getOrganization();
+        if (!org) return;
+      }
+
+      const [settings, shifts, users] = await Promise.all([
+        db.getSettings(),
+        db.getAllShifts(),
+        db.getUsers(),
+      ]);
+
+      const name = currentName || settings.organizationName || 'Grand Hotel & Suites';
+      const epoch = settings.databaseEpoch || 0;
+      const databaseId = settings.databaseId || 'default';
+
+      const entry: AvailableNetworkDatabase = {
+        name,
+        epoch,
+        databaseId,
+        peerId: this.myClientId,
+        shiftsCount: shifts.length,
+        usersCount: users.length,
+        lastSeen: Date.now(),
+        isHostedOnPeer: false,
+        isActive: true,
+      };
+
+      this.discoveredDatabases.set(name, entry);
+      this.rememberSyncGroup(name);
+
+      const packet: SyncMessage = {
+        type: 'DISCOVERY_ANNOUNCE',
+        databaseName: name,
+        epoch,
+        databaseId,
+        shiftsCount: shifts.length,
+        usersCount: users.length,
+        peerId: this.myClientId,
+        senderId: this.myClientId,
+      };
+
+      if (this.globalBroadcastChannel) {
+        try {
+          this.globalBroadcastChannel.postMessage(packet);
+        } catch {
+          // ignore
+        }
+      }
+
+      this.discoveryConnections.forEach((conn) => {
+        if (conn.open) {
+          try {
+            conn.send(packet);
+          } catch {
+            // ignore
+          }
+        }
+      });
+
+      this.sendToAll(packet);
+      this.notifyData('AVAILABLE_DATABASES_UPDATED', this.getAvailableNetworkDatabases());
+    } catch (e) {
+      console.debug('Failed to announce database:', e);
+    }
+  }
+
+  private pruneOldDiscoveredDatabases() {
+    const now = Date.now();
+    let changed = false;
+    this.discoveredDatabases.forEach((entry, name) => {
+      if (name !== this.state.storeName && now - entry.lastSeen > 90000) {
+        this.discoveredDatabases.delete(name);
+        changed = true;
+      }
+    });
+    if (changed) {
+      this.notifyData('AVAILABLE_DATABASES_UPDATED', this.getAvailableNetworkDatabases());
+    }
+  }
+
+  public getAvailableNetworkDatabases(): AvailableNetworkDatabase[] {
+    const list: AvailableNetworkDatabase[] = [];
+    const now = Date.now();
+    const seenNames = new Set<string>();
+
+    this.discoveredDatabases.forEach((entry, name) => {
+      if (entry.isActive || now - entry.lastSeen < 90000) {
+        seenNames.add(name);
+        list.push({
+          ...entry,
+          isActive: name === this.state.storeName,
+        });
+      }
+    });
+
+    const known = this.getKnownSyncGroups();
+    for (const group of known) {
+      if (!seenNames.has(group) && group.toLowerCase() !== 'main store') {
+        seenNames.add(group);
+        list.push({
+          name: group,
+          epoch: 0,
+          lastSeen: 0,
+          isHostedOnPeer: false,
+          isActive: group === this.state.storeName,
+        });
+      }
+    }
+
+    return list.sort((a, b) => {
+      if (a.isActive) return -1;
+      if (b.isActive) return 1;
+      if (a.isHostedOnPeer && !b.isHostedOnPeer) return -1;
+      if (!a.isHostedOnPeer && b.isHostedOnPeer) return 1;
+      return a.name.localeCompare(b.name);
+    });
+  }
+
+  public async switchNetworkSyncGroup(targetDatabase: string, broadcastToAll: boolean = true): Promise<void> {
+    const clean = targetDatabase.trim();
+    if (!clean) return;
+
+    await this.switchSyncGroup(clean);
+    await this.announceCurrentDatabase();
+
+    if (broadcastToAll) {
+      const msg: SyncMessage = {
+        type: 'NETWORK_SWITCH_DATABASE',
+        targetDatabase: clean,
+        senderId: this.myClientId,
+      };
+
+      if (this.globalBroadcastChannel) {
+        try {
+          this.globalBroadcastChannel.postMessage(msg);
+        } catch {
+          // ignore
+        }
+      }
+
+      this.discoveryConnections.forEach((conn) => {
+        if (conn.open) {
+          try {
+            conn.send(msg);
+          } catch {
+            // ignore
+          }
+        }
+      });
+
+      this.sendToAll(msg);
+    }
+  }
+
+  public broadcastNetworkDatabaseDeleted(databaseName: string, purgedEpoch: number = Date.now()) {
+    const clean = databaseName.trim();
+    if (!clean) return;
+
+    this.discoveredDatabases.delete(clean);
+    this.removeKnownSyncGroup(clean);
+
+    const msg: SyncMessage = {
+      type: 'NETWORK_DATABASE_DELETED',
+      databaseName: clean,
+      purgedEpoch,
+      senderId: this.myClientId,
+    };
+
+    if (this.globalBroadcastChannel) {
+      try {
+        this.globalBroadcastChannel.postMessage(msg);
+      } catch {
+        // ignore
+      }
+    }
+
+    this.discoveryConnections.forEach((conn) => {
+      if (conn.open) {
+        try {
+          conn.send(msg);
+        } catch {
+          // ignore
+        }
+      }
+    });
+
+    this.sendToAll(msg);
+    this.notifyData('AVAILABLE_DATABASES_UPDATED', this.getAvailableNetworkDatabases());
+  }
+
+  public async scanNetworkAndAutoSync(onNoDatabaseFound?: () => void) {
+    // 1. Probe the discovery network
+    const probe: SyncMessage = {
+      type: 'DISCOVERY_PROBE',
+      senderId: this.myClientId,
+    };
+
+    if (this.globalBroadcastChannel) {
+      try {
+        this.globalBroadcastChannel.postMessage(probe);
+      } catch {
+        // ignore
+      }
+    }
+
+    this.discoveryConnections.forEach((conn) => {
+      if (conn.open) {
+        try {
+          conn.send(probe);
+        } catch {
+          // ignore
+        }
+      }
+    });
+
+    // 2. Short wait (800ms) to receive discovery announcements from peers on LAN
+    await new Promise((r) => setTimeout(r, 800));
+
+    // 3. Find any active database hosted on the network
+    const onlineDatabases = Array.from(this.discoveredDatabases.values()).filter(
+      (d) => d.lastSeen > Date.now() - 60000 && d.name.toLowerCase() !== 'main store'
+    );
+
+    const hasLocalUsers = await db.hasUsers();
+
+    if (onlineDatabases.length > 0) {
+      onlineDatabases.sort((a, b) => (b.epoch || 0) - (a.epoch || 0));
+      const targetDb = onlineDatabases[0];
+
+      if (this.state.storeName !== targetDb.name || !hasLocalUsers) {
+        console.warn(`[P2P Sync] Auto-connecting to active network database: "${targetDb.name}"`);
+        await this.switchSyncGroup(targetDb.name);
+        return;
+      }
+    }
+
+    // 4. If no online database found on network:
+    if (!hasLocalUsers) {
+      const known = this.getKnownSyncGroups().filter((g) => g.toLowerCase() !== 'main store');
+      if (known.length === 0) {
+        console.warn('[P2P Sync] No database available on network or locally. Triggering welcome setup.');
+        onNoDatabaseFound?.();
+        this.notifyData('NO_DATABASE_AVAILABLE');
+        return;
+      }
+    }
+
+    // 5. Connect to current or local store
+    await this.autoConnect();
+    await this.announceCurrentDatabase();
   }
 
   /**
@@ -803,6 +1445,43 @@ class P2PSyncManager {
       authManager.logout();
 
       this.notifyData('DATABASE_INITIALIZED', msg);
+      this.relayIfHub(msg, relayFromPeerId);
+    } else if (msg.type === 'NETWORK_SWITCH_DATABASE') {
+      if (msg.targetDatabase && msg.targetDatabase !== this.state.storeName) {
+        console.warn(`[P2P Sync] Network command to switch to "${msg.targetDatabase}". Following sync...`);
+        await this.switchSyncGroup(msg.targetDatabase);
+        this.notifyData('NETWORK_SWITCH_FOLLOWED', msg.targetDatabase);
+      }
+      this.relayIfHub(msg, relayFromPeerId);
+    } else if (msg.type === 'NETWORK_DATABASE_DELETED') {
+      this.discoveredDatabases.delete(msg.databaseName);
+      this.removeKnownSyncGroup(msg.databaseName);
+      if (this.state.storeName === msg.databaseName) {
+        console.warn(`[P2P Sync] Active database "${msg.databaseName}" was deleted across network.`);
+        await db.resetDatabaseToFactoryDefaults();
+        localStorage.removeItem('cdm_store_name');
+        localStorage.removeItem('cdm_local_active_shift_id');
+        localStorage.removeItem('frontdesk_external_logs');
+        localStorage.removeItem('cdm_session_user');
+        localStorage.removeItem('frontdesk_auth_session');
+        try {
+          sessionStorage.clear();
+        } catch {
+          // ignore
+        }
+        if (typeof window !== 'undefined') {
+          window.postMessage({ type: 'FDP_PURGE_EXTENSION_STORAGE' }, '*');
+        }
+        authManager.logout();
+
+        const remaining = this.getAvailableNetworkDatabases().filter((d) => d.name !== msg.databaseName);
+        if (remaining.length > 0) {
+          await this.switchSyncGroup(remaining[0].name);
+          this.notifyData('NETWORK_SWITCH_FOLLOWED', remaining[0].name);
+        } else {
+          this.notifyData('NO_DATABASE_AVAILABLE');
+        }
+      }
       this.relayIfHub(msg, relayFromPeerId);
     } else if (msg.type === 'DATABASE_RESTORED_FROM_ARCHIVE' && msg.archive) {
       db.saveDatabaseArchive(msg.archive);
