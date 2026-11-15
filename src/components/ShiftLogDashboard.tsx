@@ -460,33 +460,31 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
      RECENT ACTIVITY & UPDATES CARD (Stream of changes, replies & status)
   ================================================================ */
   const renderRecentActivityCard = () => (
-    <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-4 sm:p-5 shadow-xs space-y-4">
-      <div className="border-b border-gray-100 dark:border-gray-700 pb-3 space-y-3">
+    <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-3.5 sm:p-4 shadow-xs space-y-3">
+      <div className="border-b border-gray-100 dark:border-gray-700 pb-2.5 space-y-2">
         <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2.5">
-            <div className="p-2 bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 rounded-lg border border-blue-200 dark:border-blue-900">
-              <Activity className="w-4 h-4" />
+          <div className="flex items-center space-x-2">
+            <div className="p-1.5 bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 rounded-md border border-blue-200 dark:border-blue-900">
+              <Activity className="w-3.5 h-3.5" />
             </div>
-            <div>
-              <div className="flex items-center space-x-2">
-                <h3 className="text-sm font-bold text-gray-900 dark:text-white">Recent Activity & Updates</h3>
-                <span className="text-[11px] font-semibold bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-2 py-0.5 rounded-full font-mono tabular-nums">
-                  {recentActivityFeed.length}
-                </span>
-              </div>
-              <p className="text-xs text-gray-500 dark:text-gray-400">Live stream across shift logs</p>
+            <div className="flex items-center space-x-1.5">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-gray-900 dark:text-white">Recent Activity</h3>
+              <span className="text-[10px] font-semibold bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-1.5 py-0.2 rounded-full font-mono tabular-nums">
+                {recentActivityFeed.length}
+              </span>
             </div>
           </div>
+          <span className="text-[10px] text-gray-400 dark:text-gray-400">Live stream</span>
         </div>
 
         {/* Filter Pills */}
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1">
           {(['All', 'Replies', 'Status', 'Reminders', 'Created'] as const).map((filterType) => (
             <button
               key={filterType}
               type="button"
               onClick={() => setActivityFeedFilter(filterType)}
-              className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition cursor-pointer ${
+              className={`px-2 py-0.5 text-[11px] font-semibold rounded-md transition cursor-pointer ${
                 activityFeedFilter === filterType
                   ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 shadow-xs'
                   : 'bg-gray-100 dark:bg-gray-700/60 text-gray-600 dark:text-gray-300 hover:bg-gray-200/70'
@@ -495,62 +493,63 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
               {filterType === 'All' ? 'All' :
                filterType === 'Replies' ? 'Replies' :
                filterType === 'Status' ? 'Status' :
-               filterType === 'Reminders' ? 'Reminders' : 'New Logs'}
+               filterType === 'Reminders' ? 'Reminders' : 'New'}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Activity Stream Feed */}
-      <div className="space-y-2 max-h-[620px] overflow-y-auto pr-1">
+      {/* Activity Stream Feed - Compact and Sleek */}
+      <div className="space-y-1.5 max-h-[640px] overflow-y-auto pr-0.5">
         {recentActivityFeed.length === 0 ? (
           <div className="py-6 text-center text-gray-400 text-xs">
             No recent changes recorded yet. When staff reply, update statuses, or set reminders, they will appear here.
           </div>
         ) : (
-          recentActivityFeed.slice(0, 20).map((act) => (
+          recentActivityFeed.slice(0, 30).map((act) => (
             <div
               key={act.id}
               onClick={() => {
                 setExpandedActivityId(act.logId);
               }}
-              className="p-3 bg-gray-50 dark:bg-gray-700/40 hover:bg-blue-50/50 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded-xl transition cursor-pointer space-y-1.5"
+              className="p-2 sm:p-2.5 bg-gray-50/80 dark:bg-gray-700/30 hover:bg-blue-50/50 dark:hover:bg-gray-700/70 border border-gray-200/80 dark:border-gray-700 rounded-lg transition-colors cursor-pointer group"
             >
-              <div className="flex items-start space-x-2.5 min-w-0">
-                <div className="p-1 rounded-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 shrink-0 mt-0.5">
-                  {act.type === 'reply' ? (
-                    <MessageSquare className="w-3 h-3 text-blue-600" />
-                  ) : act.type === 'status' ? (
-                    <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                  ) : act.type === 'reminder' ? (
-                    <Bell className="w-3 h-3 text-amber-600" />
-                  ) : (
-                    <FileText className="w-3 h-3 text-slate-600" />
-                  )}
-                </div>
-                <div className="min-w-0 flex-1 text-xs">
-                  <div className="flex flex-wrap items-center gap-1.5 mb-0.5">
-                    <span className="font-bold text-gray-900 dark:text-white">
-                      {act.actor}
-                    </span>
-                    <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.2 rounded border ${act.badgeColor}`}>
-                      {act.badgeText}
-                    </span>
+              {/* Row 1: Icon + Actor + Badge + Timestamp */}
+              <div className="flex items-center justify-between gap-1.5 mb-1">
+                <div className="flex items-center space-x-1.5 min-w-0">
+                  <div className="p-0.5 rounded bg-white dark:bg-gray-800 border border-gray-200/80 dark:border-gray-600 text-gray-700 dark:text-gray-300 shrink-0">
+                    {act.type === 'reply' ? (
+                      <MessageSquare className="w-3 h-3 text-blue-600" />
+                    ) : act.type === 'status' ? (
+                      <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                    ) : act.type === 'reminder' ? (
+                      <Bell className="w-3 h-3 text-amber-600" />
+                    ) : (
+                      <FileText className="w-3 h-3 text-slate-600" />
+                    )}
                   </div>
-                  <p className="text-gray-600 dark:text-gray-300 font-medium">
-                    {act.summary}
-                  </p>
-                  {act.detail && (
-                    <p className="text-gray-500 dark:text-gray-400 italic text-[11px] truncate mt-0.5">
-                      "{act.detail}"
-                    </p>
-                  )}
+                  <span className="font-bold text-xs text-gray-900 dark:text-white truncate">
+                    {act.actor}
+                  </span>
+                  <span className={`text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.2 rounded border ${act.badgeColor} shrink-0`}>
+                    {act.badgeText}
+                  </span>
                 </div>
+
+                <span className="text-[10px] text-gray-400 dark:text-gray-400 font-mono tabular-nums shrink-0 flex items-center gap-0.5">
+                  <Clock className="w-2.5 h-2.5 text-gray-400" />
+                  {formatRelativeTime(act.timestamp)}
+                </span>
               </div>
 
-              <div className="flex items-center justify-end space-x-1 text-[10px] text-gray-400 font-mono tabular-nums pt-1 border-t border-gray-100 dark:border-gray-700/50">
-                <Clock className="w-2.5 h-2.5 text-gray-400" />
-                <span>{formatRelativeTime(act.timestamp)}</span>
+              {/* Row 2: Summary & Detail (Inline & compact) */}
+              <div className="text-[11px] text-gray-600 dark:text-gray-300 pl-4.5 truncate">
+                <span className="font-medium text-gray-800 dark:text-gray-200">{act.summary}</span>
+                {act.detail && (
+                  <span className="text-gray-500 dark:text-gray-400 italic ml-1">
+                    "{act.detail}"
+                  </span>
+                )}
               </div>
             </div>
           ))
