@@ -18,9 +18,9 @@ export function Footer() {
             <p className="text-sm text-slate-600 dark:text-gray-400 mb-4">
               The all-in-one hospitality front desk platform — register management, sales lead tracking, complaint logs, and shift handoffs. Built for hotel front desks.
             </p>
-            <div className="flex items-center text-xs text-emerald-700 dark:text-green-400 bg-emerald-50 dark:bg-green-950/60 border border-emerald-200 dark:border-green-800/80 px-2.5 py-1.5 rounded">
-              <Shield size={14} className="mr-1.5 shrink-0 text-emerald-600 dark:text-green-400" />
-              <span>100% Client-Side. No financial data leaves your device.</span>
+            <div className="inline-flex items-center text-xs font-semibold px-3 py-1.5 rounded-lg border bg-emerald-50 text-emerald-800 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800/80 shadow-xs">
+              <Shield size={14} className="mr-1.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+              <span className="font-medium text-emerald-800 dark:text-emerald-300">100% Client-Side. No financial data leaves your device.</span>
             </div>
           </div>
 

@@ -17,7 +17,7 @@ export function Navbar() {
           <div className="flex items-center">
             <Link to="/" className="flex items-center space-x-2.5">
               <img src="/favicon.png" alt="FrontDesk Pro" className="h-8 w-8 rounded-lg object-cover" />
-              <span className="text-xl font-bold text-gray-900 dark:text-white">
+              <span className="text-xl font-extrabold text-slate-900 dark:text-white">
                 FrontDesk <span className="text-blue-600 dark:text-blue-400">Pro</span>
               </span>
             </Link>
@@ -27,10 +27,10 @@ export function Navbar() {
           <div className="hidden md:flex md:items-center md:space-x-1 lg:space-x-3">
             <Link
               to="/guide"
-              className={`px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center ${
+              className={`px-3 py-2 rounded-md text-sm font-semibold transition-colors flex items-center ${
                 isActive('/guide')
                   ? 'text-blue-600 bg-blue-50 dark:bg-slate-800 dark:text-blue-400'
-                  : 'text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-50 dark:hover:bg-slate-800'
+                  : 'text-slate-700 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-100 dark:hover:bg-slate-800'
               }`}
             >
               <BookOpen size={16} className="mr-1.5" />
@@ -38,30 +38,30 @@ export function Navbar() {
             </Link>
             <Link
               to="/about"
-              className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+              className={`px-3 py-2 rounded-md text-sm font-semibold transition-colors ${
                 isActive('/about')
                   ? 'text-blue-600 bg-blue-50 dark:bg-slate-800 dark:text-blue-400'
-                  : 'text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-50 dark:hover:bg-slate-800'
+                  : 'text-slate-700 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-100 dark:hover:bg-slate-800'
               }`}
             >
               About
             </Link>
             <Link
               to="/contacts"
-              className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+              className={`px-3 py-2 rounded-md text-sm font-semibold transition-colors ${
                 isActive('/contacts')
                   ? 'text-blue-600 bg-blue-50 dark:bg-slate-800 dark:text-blue-400'
-                  : 'text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-50 dark:hover:bg-slate-800'
+                  : 'text-slate-700 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-100 dark:hover:bg-slate-800'
               }`}
             >
               Contact
             </Link>
             <Link
               to="/privacy"
-              className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+              className={`px-3 py-2 rounded-md text-sm font-semibold transition-colors ${
                 isActive('/privacy')
                   ? 'text-blue-600 bg-blue-50 dark:bg-slate-800 dark:text-blue-400'
-                  : 'text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-50 dark:hover:bg-slate-800'
+                  : 'text-slate-700 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-100 dark:hover:bg-slate-800'
               }`}
             >
               Privacy
@@ -90,13 +90,17 @@ export function Navbar() {
               type="button"
               onClick={toggleTheme}
               title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-              className="ml-2 p-2 rounded-xl border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-700 transition shadow-xs flex items-center justify-center cursor-pointer"
+              className={`ml-2 p-2 rounded-xl border transition shadow-xs flex items-center justify-center cursor-pointer ${
+                isDark
+                  ? 'border-slate-700 bg-slate-800 text-amber-400 hover:bg-slate-700'
+                  : 'border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-200'
+              }`}
               aria-label="Toggle dark mode"
             >
               {isDark ? (
                 <Sun size={17} className="text-amber-400" />
               ) : (
-                <Moon size={17} className="text-slate-600 dark:text-slate-300" />
+                <Moon size={17} className="text-slate-700" />
               )}
             </button>
           </div>

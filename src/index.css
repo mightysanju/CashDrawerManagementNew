@@ -29,6 +29,20 @@ html:not(.dark) nav {
   border-bottom-color: #e2e8f0 !important;
 }
 
+/* Navbar Brand & Link Contrast in Light Mode */
+html:not(.dark) nav .text-slate-900,
+html:not(.dark) nav .text-gray-900 {
+  color: #0f172a !important;
+}
+
+html:not(.dark) nav a:not(.bg-gradient-to-r) {
+  color: #334155 !important;
+}
+
+html:not(.dark) nav a:not(.bg-gradient-to-r):hover {
+  color: #2563eb !important;
+}
+
 html:not(.dark) footer {
   background-color: #f1f5f9 !important;
   color: #334155 !important;
@@ -45,7 +59,6 @@ html:not(.dark) footer .font-bold {
 }
 
 html:not(.dark) footer p,
-html:not(.dark) footer span,
 html:not(.dark) footer li,
 html:not(.dark) footer a {
   color: #475569 !important;
@@ -53,6 +66,17 @@ html:not(.dark) footer a {
 
 html:not(.dark) footer a:hover {
   color: #2563eb !important;
+}
+
+/* Footer security badge contrast */
+html:not(.dark) footer .bg-emerald-50 {
+  background-color: #ecfdf5 !important;
+  border-color: #a7f3d0 !important;
+}
+
+html:not(.dark) footer .text-emerald-800,
+html:not(.dark) footer .text-emerald-800 span {
+  color: #065f46 !important;
 }
 
 html:not(.dark) h1,
