@@ -1,7 +1,9 @@
 // FrontDesk Pro — Floating Shift Log Extension Content Script
 (function () {
   const hostname = window.location.hostname;
+  const hasAppMeta = !!document.querySelector('meta[name="frontdesk-pro-app"]');
   const isFrontDeskApp =
+    hasAppMeta ||
     hostname.includes('cashdrawermanagement') ||
     (hostname.endsWith('netlify.app') && (window.location.pathname.startsWith('/app') || document.title.includes('Cash Drawer') || document.title.includes('FrontDesk'))) ||
     hostname === 'localhost' ||
@@ -11,9 +13,19 @@
   // 1. FRONTDESK PRO WEB APP BRIDGE (Runs on cashdrawermanagement.netlify.app & localhost)
   // =========================================================================
   if (isFrontDeskApp) {
+    // Automatically register active hosted URL in extension storage so floating bubbles on other tabs link here
+    const detectedAppUrl = window.location.origin + (window.location.pathname.startsWith('/app') ? '/app' : '/app');
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+      chrome.storage.local.set({ frontdesk_app_url: detectedAppUrl });
+    }
+
     function getLocalSessionUser() {
       try {
-        const raw = localStorage.getItem('cdm_session_user') || localStorage.getItem('frontdesk_auth_session');
+        const raw =
+          localStorage.getItem('cdm_session_user') ||
+          sessionStorage.getItem('cdm_session_user') ||
+          localStorage.getItem('frontdesk_auth_session') ||
+          sessionStorage.getItem('frontdesk_auth_session');
         if (!raw) return null;
         const parsed = JSON.parse(raw);
         return parsed && parsed.fullName ? parsed : (parsed.user || null);
@@ -79,9 +91,8 @@
       chrome.storage.onChanged.addListener((changes, area) => {
         if (area === 'local' && changes.frontdesk_logs) {
           const newLogs = changes.frontdesk_logs.newValue || [];
-          const oldLogs = changes.frontdesk_logs.oldValue || [];
-          if (newLogs.length > 0 && (!oldLogs.length || newLogs[0]?.id !== oldLogs[0]?.id)) {
-            window.postMessage({ type: 'FDP_EXTENSION_LOG_RECEIVED', log: newLogs[0] }, '*');
+          if (Array.isArray(newLogs) && newLogs.length > 0) {
+            window.postMessage({ type: 'FDP_EXTENSION_LOGS_SYNC', logs: newLogs }, '*');
           }
         }
       });
@@ -108,7 +119,9 @@
 
   const root = document.createElement('div');
   root.id = 'fdp-bubble-root';
-  document.body.appendChild(root);
+  const mountTarget = document.body || document.documentElement;
+  if (!mountTarget) return;
+  mountTarget.appendChild(root);
 
   // Active staff state: NULL by default until authenticated
   let currentStaff = null;
@@ -475,7 +488,14 @@
 
     if (!currentStaff) {
       alert('Please sign in to FrontDesk Pro first.');
-      window.open('https://cashdrawermanagement.netlify.app/app', '_blank');
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+        chrome.storage.local.get(['frontdesk_app_url'], (res) => {
+          const target = (res && res.frontdesk_app_url) || 'https://cashdrawermanagement.netlify.app/app';
+          window.open(target, '_blank');
+        });
+      } else {
+        window.open('https://cashdrawermanagement.netlify.app/app', '_blank');
+      }
       return;
     }
 
@@ -487,8 +507,8 @@
     let entry = {
       id,
       category: activeCat,
-      clerkId: currentStaff.id,
-      clerkName: currentStaff.fullName,
+      clerkId: (currentStaff && currentStaff.id) || 'usr_staff',
+      clerkName: (currentStaff && currentStaff.fullName) || 'Front Desk Staff',
       clerkNotes: notes,
       hasReminder,
       createdAt: timestamp,

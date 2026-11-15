@@ -7,6 +7,7 @@ import {
   Laptop,
   Layers,
   Sparkles,
+  Globe,
 } from 'lucide-react';
 
 interface ExtensionModalProps {
@@ -93,9 +94,29 @@ export const ExtensionModal: React.FC<ExtensionModalProps> = ({
 
           {/* Download & Install Section */}
           <div className="space-y-3">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-gray-400">
-              Install Chrome / Edge / Brave Extension
-            </h4>
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500">
+                Install Chrome / Edge / Brave Extension
+              </h4>
+              <span className="inline-flex items-center space-x-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                <Globe className="w-3 h-3 text-emerald-600" />
+                <span>Production Pack</span>
+              </span>
+            </div>
+
+            {/* Target Domain Callout */}
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-center justify-between text-xs">
+              <div className="flex items-center space-x-2">
+                <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                <span className="text-slate-600 font-medium">Default App Domain:</span>
+                <code className="text-[11px] font-mono font-bold text-slate-800 bg-white px-1.5 py-0.5 rounded border border-slate-200">
+                  https://cashdrawermanagement.netlify.app/app
+                </code>
+              </div>
+              <span className="text-[10px] text-slate-400 font-medium hidden sm:inline">
+                (Editable via Extension Popup)
+              </span>
+            </div>
 
             {/* Download Button */}
             <a
@@ -135,7 +156,7 @@ export const ExtensionModal: React.FC<ExtensionModalProps> = ({
                 </span>
                 <div>
                   <strong className="text-gray-900 block font-semibold">Load unpacked</strong>
-                  <span className="text-gray-500">Click <strong className="text-gray-800">Load unpacked</strong> and select the unzipped <code className="bg-gray-200 px-1 py-0.5 rounded text-[10px]">extension/</code> folder. The floating bubble will appear on all browser tabs!</span>
+                  <span className="text-gray-500">Click <strong className="text-gray-800">Load unpacked</strong> and select the extracted folder (which contains <code className="bg-gray-200 px-1 py-0.5 rounded text-[10px]">manifest.json</code>). The floating bubble will appear on all browser tabs!</span>
                 </div>
               </div>
             </div>
