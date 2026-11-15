@@ -1,12 +1,23 @@
-import { openDB } from 'idb';
-import { ShiftRecord } from '../types';
+import { openDB, IDBPDatabase } from 'idb';
+import { 
+  ShiftRecord, 
+  UserAccount, 
+  ShiftLogEntry, 
+  LogCategoryConfig, 
+  AppSettings 
+} from '../types';
 
 const DB_NAME = 'cash_drawer_db';
 const STORES = {
   SHIFTS: 'shifts',
-  ORGANIZATION: 'organization'
+  ORGANIZATION: 'organization',
+  USERS: 'users',
+  SHIFT_LOGS: 'shift_logs',
+  CATEGORIES: 'log_categories',
+  SETTINGS: 'app_settings',
 } as const;
-const DB_VERSION = 3;
+
+const DB_VERSION = 4;
 
 export class DatabaseManager {
   private dbPromise;
@@ -16,23 +27,127 @@ export class DatabaseManager {
   }
 
   private async initDatabase() {
-    return openDB(DB_NAME, DB_VERSION, {
+    const db = await openDB(DB_NAME, DB_VERSION, {
       upgrade(db) {
-        // Create or update shifts store
+        // Shifts store
         if (!db.objectStoreNames.contains(STORES.SHIFTS)) {
           const shiftStore = db.createObjectStore(STORES.SHIFTS, { keyPath: 'id' });
           shiftStore.createIndex('status', 'status');
           shiftStore.createIndex('openTime', 'openTime');
         }
 
-        // Create or update organization store
+        // Organization store
         if (!db.objectStoreNames.contains(STORES.ORGANIZATION)) {
           db.createObjectStore(STORES.ORGANIZATION, { keyPath: 'id' });
         }
+
+        // Users store
+        if (!db.objectStoreNames.contains(STORES.USERS)) {
+          const userStore = db.createObjectStore(STORES.USERS, { keyPath: 'id' });
+          userStore.createIndex('username', 'username', { unique: true });
+        }
+
+        // Shift Logs store
+        if (!db.objectStoreNames.contains(STORES.SHIFT_LOGS)) {
+          const logStore = db.createObjectStore(STORES.SHIFT_LOGS, { keyPath: 'id' });
+          logStore.createIndex('category', 'category');
+          logStore.createIndex('shiftId', 'shiftId');
+          logStore.createIndex('salesStatus', 'salesStatus');
+          logStore.createIndex('hasReminder', 'hasReminder');
+          logStore.createIndex('createdAt', 'createdAt');
+        }
+
+        // Categories store
+        if (!db.objectStoreNames.contains(STORES.CATEGORIES)) {
+          db.createObjectStore(STORES.CATEGORIES, { keyPath: 'id' });
+        }
+
+        // Settings store
+        if (!db.objectStoreNames.contains(STORES.SETTINGS)) {
+          db.createObjectStore(STORES.SETTINGS, { keyPath: 'id' });
+        }
       }
     });
+
+    // Seed defaults if first time
+    await this.seedDefaults(db);
+    return db;
   }
 
+  private async seedDefaults(db: IDBPDatabase) {
+    try {
+      // 1. Seed Users if empty
+      const userCount = await db.count(STORES.USERS);
+      if (userCount === 0) {
+        const tx = db.transaction(STORES.USERS, 'readwrite');
+        const defaultManager: UserAccount = {
+          id: 'user_manager_default',
+          username: 'manager',
+          passwordHash: 'password123',
+          fullName: 'Property Manager',
+          role: 'manager',
+          createdAt: new Date().toISOString(),
+          isActive: true,
+        };
+        const defaultClerk: UserAccount = {
+          id: 'user_clerk_default',
+          username: 'clerk1',
+          passwordHash: 'clerk123',
+          fullName: 'Front Desk Clerk',
+          role: 'clerk',
+          createdAt: new Date().toISOString(),
+          isActive: true,
+        };
+        await tx.store.put(defaultManager);
+        await tx.store.put(defaultClerk);
+        await tx.done;
+      }
+
+      // 2. Seed Categories if empty
+      const catCount = await db.count(STORES.CATEGORIES);
+      if (catCount === 0) {
+        const tx = db.transaction(STORES.CATEGORIES, 'readwrite');
+        const defaultCategories: LogCategoryConfig[] = [
+          {
+            id: 'cat_sales',
+            name: 'Sales',
+            subcategories: ['Group', 'Wedding', 'Sports team', 'Company', 'Bus Tour', 'Family Reunion'],
+            rateMultiplier: 120,
+          },
+          {
+            id: 'cat_complaint',
+            name: 'Complaint',
+            subcategories: ['Room Maintenance', 'Noise / Disturbance', 'Billing & Folio', 'Housekeeping / Cleanliness', 'Staff / Service', 'Other'],
+          },
+          {
+            id: 'cat_misc',
+            name: 'Miscellaneous',
+            subcategories: ['Shift Handover', 'Package Delivery', 'Lost & Found', 'Maintenance Request', 'Manager Note'],
+          },
+        ];
+        for (const cat of defaultCategories) {
+          await tx.store.put(cat);
+        }
+        await tx.done;
+      }
+
+      // 3. Seed Settings if empty
+      const settings = await db.get(STORES.SETTINGS, 'default');
+      if (!settings) {
+        await db.put(STORES.SETTINGS, {
+          id: 'default',
+          salesRateMultiplier: 120,
+          organizationName: 'Grand Hotel & Suites',
+        });
+      }
+    } catch (err) {
+      console.warn('Seeding defaults notice:', err);
+    }
+  }
+
+  /* -------------------------------------------------------------
+   *  Shifts Operations
+   * ------------------------------------------------------------- */
   async saveShift(shift: ShiftRecord): Promise<void> {
     const db = await this.dbPromise;
     await db.put(STORES.SHIFTS, shift);
@@ -91,5 +206,133 @@ export class DatabaseManager {
     const db = await this.dbPromise;
     const org = await db.get(STORES.ORGANIZATION, 'default');
     return org?.name || '';
+  }
+
+  /* -------------------------------------------------------------
+   *  User Accounts (Managers & Clerks)
+   * ------------------------------------------------------------- */
+  async getUsers(): Promise<UserAccount[]> {
+    const db = await this.dbPromise;
+    const users = await db.getAll(STORES.USERS);
+    return users.sort((a, b) => a.username.localeCompare(b.username));
+  }
+
+  async getUserByUsername(username: string): Promise<UserAccount | undefined> {
+    const db = await this.dbPromise;
+    const tx = db.transaction(STORES.USERS, 'readonly');
+    const index = tx.store.index('username');
+    return index.get(username.trim().toLowerCase());
+  }
+
+  async saveUser(user: UserAccount): Promise<void> {
+    const db = await this.dbPromise;
+    await db.put(STORES.USERS, {
+      ...user,
+      username: user.username.trim().toLowerCase(),
+    });
+  }
+
+  async deleteUser(userId: string): Promise<void> {
+    const db = await this.dbPromise;
+    await db.delete(STORES.USERS, userId);
+  }
+
+  async bulkSaveUsers(users: UserAccount[]): Promise<void> {
+    if (!users || users.length === 0) return;
+    const db = await this.dbPromise;
+    const tx = db.transaction(STORES.USERS, 'readwrite');
+    for (const u of users) {
+      await tx.store.put(u);
+    }
+    await tx.done;
+  }
+
+  /* -------------------------------------------------------------
+   *  Shift Logs & Leads Operations
+   * ------------------------------------------------------------- */
+  async getShiftLogs(): Promise<ShiftLogEntry[]> {
+    const db = await this.dbPromise;
+    const logs = await db.getAll(STORES.SHIFT_LOGS);
+    return logs.sort((a, b) => 
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+  }
+
+  async getShiftLogsByShiftId(shiftId: string): Promise<ShiftLogEntry[]> {
+    const db = await this.dbPromise;
+    const tx = db.transaction(STORES.SHIFT_LOGS, 'readonly');
+    const index = tx.store.index('shiftId');
+    return index.getAll(shiftId);
+  }
+
+  async saveShiftLog(log: ShiftLogEntry): Promise<void> {
+    const db = await this.dbPromise;
+    await db.put(STORES.SHIFT_LOGS, log);
+  }
+
+  async deleteShiftLog(logId: string): Promise<void> {
+    const db = await this.dbPromise;
+    await db.delete(STORES.SHIFT_LOGS, logId);
+  }
+
+  async bulkSaveShiftLogs(logs: ShiftLogEntry[]): Promise<void> {
+    if (!logs || logs.length === 0) return;
+    const db = await this.dbPromise;
+    const tx = db.transaction(STORES.SHIFT_LOGS, 'readwrite');
+    for (const log of logs) {
+      await tx.store.put(log);
+    }
+    await tx.done;
+  }
+
+  /* -------------------------------------------------------------
+   *  Categories Operations
+   * ------------------------------------------------------------- */
+  async getCategories(): Promise<LogCategoryConfig[]> {
+    const db = await this.dbPromise;
+    return db.getAll(STORES.CATEGORIES);
+  }
+
+  async saveCategory(cat: LogCategoryConfig): Promise<void> {
+    const db = await this.dbPromise;
+    await db.put(STORES.CATEGORIES, cat);
+  }
+
+  async deleteCategory(catId: string): Promise<void> {
+    const db = await this.dbPromise;
+    await db.delete(STORES.CATEGORIES, catId);
+  }
+
+  async bulkSaveCategories(cats: LogCategoryConfig[]): Promise<void> {
+    if (!cats || cats.length === 0) return;
+    const db = await this.dbPromise;
+    const tx = db.transaction(STORES.CATEGORIES, 'readwrite');
+    for (const c of cats) {
+      await tx.store.put(c);
+    }
+    await tx.done;
+  }
+
+  /* -------------------------------------------------------------
+   *  App Settings Operations
+   * ------------------------------------------------------------- */
+  async getSettings(): Promise<AppSettings> {
+    const db = await this.dbPromise;
+    const s = await db.get(STORES.SETTINGS, 'default');
+    return s || {
+      id: 'default',
+      salesRateMultiplier: 120,
+      organizationName: 'Grand Hotel & Suites',
+    };
+  }
+
+  async saveSettings(settings: Partial<AppSettings>): Promise<void> {
+    const db = await this.dbPromise;
+    const current = await this.getSettings();
+    await db.put(STORES.SETTINGS, {
+      ...current,
+      ...settings,
+      id: 'default',
+    });
   }
 }

@@ -1,10 +1,31 @@
 import Peer, { DataConnection } from 'peerjs';
-import { ShiftRecord } from '../types';
+import { 
+  ShiftRecord, 
+  ShiftLogEntry, 
+  LogCategoryConfig, 
+  UserAccount, 
+  AppSettings 
+} from '../types';
 import { DatabaseManager } from './database';
 
 export type SyncMessage =
-  | { type: 'FULL_SYNC'; shifts: ShiftRecord[]; senderId?: string }
+  | { 
+      type: 'FULL_SYNC'; 
+      shifts: ShiftRecord[]; 
+      shiftLogs?: ShiftLogEntry[];
+      categories?: LogCategoryConfig[];
+      users?: UserAccount[];
+      settings?: AppSettings;
+      senderId?: string 
+    }
   | { type: 'SHIFT_UPSERT'; shift: ShiftRecord; senderId?: string }
+  | { type: 'SHIFT_LOG_UPSERT'; log: ShiftLogEntry; senderId?: string }
+  | { type: 'SHIFT_LOG_DELETE'; logId: string; senderId?: string }
+  | { type: 'CATEGORY_UPSERT'; category: LogCategoryConfig; senderId?: string }
+  | { type: 'CATEGORY_DELETE'; categoryId: string; senderId?: string }
+  | { type: 'USER_UPSERT'; user: UserAccount; senderId?: string }
+  | { type: 'USER_DELETE'; userId: string; senderId?: string }
+  | { type: 'SETTINGS_UPDATE'; settings: AppSettings; senderId?: string }
   | { type: 'HISTORY_CLEARED'; senderId?: string }
   | { type: 'HEARTBEAT'; senderId?: string };
 
@@ -58,7 +79,6 @@ class P2PSyncManager {
 
   constructor() {
     this.initBroadcastChannel();
-    // Load store name from localStorage if previously configured
     try {
       const saved = localStorage.getItem('cdm_store_name');
       if (saved) {
@@ -81,17 +101,7 @@ class P2PSyncManager {
         this.broadcastChannel.onmessage = async (event) => {
           const msg = event.data as SyncMessage;
           if (!msg || !msg.type || msg.senderId === this.myClientId) return;
-
-          if (msg.type === 'FULL_SYNC' && Array.isArray(msg.shifts)) {
-            await db.bulkSaveShifts(msg.shifts);
-            this.notifyData('SYNC_COMPLETED', msg.shifts);
-          } else if (msg.type === 'SHIFT_UPSERT' && msg.shift) {
-            await db.saveShift(msg.shift);
-            this.notifyData('SHIFT_UPDATED', msg.shift);
-          } else if (msg.type === 'HISTORY_CLEARED') {
-            await db.clearHistory();
-            this.notifyData('HISTORY_CLEARED');
-          }
+          await this.processIncomingMessage(msg);
         };
       } catch (err) {
         console.debug('BroadcastChannel not available:', err);
@@ -295,16 +305,27 @@ class P2PSyncManager {
 
           // Send local database to Hub for two-way merge
           try {
-            const localShifts = await db.getAllShifts();
+            const [localShifts, localLogs, localCats, localUsers, localSettings] = await Promise.all([
+              db.getAllShifts(),
+              db.getShiftLogs(),
+              db.getCategories(),
+              db.getUsers(),
+              db.getSettings(),
+            ]);
+
             if (conn.open) {
               conn.send({
                 type: 'FULL_SYNC',
                 shifts: localShifts,
+                shiftLogs: localLogs,
+                categories: localCats,
+                users: localUsers,
+                settings: localSettings,
                 senderId: myId,
               });
             }
           } catch (e) {
-            console.error('Error sending local shifts on connect:', e);
+            console.error('Error sending local data on connect:', e);
           }
 
           resolve();
@@ -356,7 +377,6 @@ class P2PSyncManager {
 
   /**
    * Handles incoming peer connections on the Hub
-   * Checks both conn.open AND conn.on('open') to prevent missed events!
    */
   private handleIncomingConnection(conn: DataConnection) {
     const setupHubConn = async () => {
@@ -364,13 +384,24 @@ class P2PSyncManager {
       this.setupConnectionHandlers(conn);
       this.updateState({ connectedCount: this.connections.size });
 
-      // Automatically send the Hub's full shift history and open drawers to the joining register
+      // Automatically send the Hub's full state (shifts, logs, categories, users, settings) to joining node
       try {
-        const allShifts = await db.getAllShifts();
+        const [allShifts, allLogs, allCats, allUsers, allSettings] = await Promise.all([
+          db.getAllShifts(),
+          db.getShiftLogs(),
+          db.getCategories(),
+          db.getUsers(),
+          db.getSettings(),
+        ]);
+
         if (conn.open) {
           conn.send({
             type: 'FULL_SYNC',
             shifts: allShifts,
+            shiftLogs: allLogs,
+            categories: allCats,
+            users: allUsers,
+            settings: allSettings,
             senderId: this.myClientId,
           });
         }
@@ -386,44 +417,79 @@ class P2PSyncManager {
     }
   }
 
+  private async processIncomingMessage(msg: SyncMessage, relayFromPeerId?: string) {
+    if (!msg || !msg.type) return;
+
+    if (msg.type === 'FULL_SYNC') {
+      if (msg.shifts && Array.isArray(msg.shifts)) {
+        await db.bulkSaveShifts(msg.shifts);
+      }
+      if (msg.shiftLogs && Array.isArray(msg.shiftLogs)) {
+        await db.bulkSaveShiftLogs(msg.shiftLogs);
+      }
+      if (msg.categories && Array.isArray(msg.categories)) {
+        await db.bulkSaveCategories(msg.categories);
+      }
+      if (msg.users && Array.isArray(msg.users)) {
+        await db.bulkSaveUsers(msg.users);
+      }
+      if (msg.settings) {
+        await db.saveSettings(msg.settings);
+      }
+      this.notifyData('SYNC_COMPLETED', msg);
+    } else if (msg.type === 'SHIFT_UPSERT' && msg.shift) {
+      await db.saveShift(msg.shift);
+      this.notifyData('SHIFT_UPDATED', msg.shift);
+      this.relayIfHub(msg, relayFromPeerId);
+    } else if (msg.type === 'SHIFT_LOG_UPSERT' && msg.log) {
+      await db.saveShiftLog(msg.log);
+      this.notifyData('SHIFT_LOG_UPDATED', msg.log);
+      this.relayIfHub(msg, relayFromPeerId);
+    } else if (msg.type === 'SHIFT_LOG_DELETE' && msg.logId) {
+      await db.deleteShiftLog(msg.logId);
+      this.notifyData('SHIFT_LOG_DELETED', msg.logId);
+      this.relayIfHub(msg, relayFromPeerId);
+    } else if (msg.type === 'CATEGORY_UPSERT' && msg.category) {
+      await db.saveCategory(msg.category);
+      this.notifyData('CATEGORY_UPDATED', msg.category);
+      this.relayIfHub(msg, relayFromPeerId);
+    } else if (msg.type === 'CATEGORY_DELETE' && msg.categoryId) {
+      await db.deleteCategory(msg.categoryId);
+      this.notifyData('CATEGORY_DELETED', msg.categoryId);
+      this.relayIfHub(msg, relayFromPeerId);
+    } else if (msg.type === 'USER_UPSERT' && msg.user) {
+      await db.saveUser(msg.user);
+      this.notifyData('USER_UPDATED', msg.user);
+      this.relayIfHub(msg, relayFromPeerId);
+    } else if (msg.type === 'USER_DELETE' && msg.userId) {
+      await db.deleteUser(msg.userId);
+      this.notifyData('USER_DELETED', msg.userId);
+      this.relayIfHub(msg, relayFromPeerId);
+    } else if (msg.type === 'SETTINGS_UPDATE' && msg.settings) {
+      await db.saveSettings(msg.settings);
+      this.notifyData('SETTINGS_UPDATED', msg.settings);
+      this.relayIfHub(msg, relayFromPeerId);
+    } else if (msg.type === 'HISTORY_CLEARED') {
+      await db.clearHistory();
+      this.notifyData('HISTORY_CLEARED');
+      this.relayIfHub(msg, relayFromPeerId);
+    }
+  }
+
+  private relayIfHub(msg: SyncMessage, excludePeerId?: string) {
+    if (this.state.role === 'hub') {
+      this.connections.forEach((otherConn) => {
+        if (otherConn.peer !== excludePeerId && otherConn.open) {
+          otherConn.send(msg);
+        }
+      });
+    }
+  }
+
   private setupConnectionHandlers(conn: DataConnection) {
     conn.on('data', async (raw) => {
       const msg = raw as SyncMessage;
-      if (!msg || !msg.type) return;
-
-      if (msg.type === 'FULL_SYNC') {
-        if (msg.shifts && Array.isArray(msg.shifts)) {
-          await db.bulkSaveShifts(msg.shifts);
-          this.notifyData('SYNC_COMPLETED', msg.shifts);
-        }
-      } else if (msg.type === 'SHIFT_UPSERT') {
-        if (msg.shift) {
-          await db.saveShift(msg.shift);
-          this.notifyData('SHIFT_UPDATED', msg.shift);
-
-          // If this machine is the Hub, relay the update to all OTHER connected registers
-          if (this.state.role === 'hub') {
-            this.connections.forEach((otherConn) => {
-              if (otherConn.peer !== conn.peer && otherConn.open) {
-                otherConn.send(msg);
-              }
-            });
-          }
-        }
-      } else if (msg.type === 'HISTORY_CLEARED') {
-        await db.clearHistory();
-        this.notifyData('HISTORY_CLEARED');
-
-        if (this.state.role === 'hub') {
-          this.connections.forEach((otherConn) => {
-            if (otherConn.peer !== conn.peer && otherConn.open) {
-              otherConn.send(msg);
-            }
-          });
-        }
-      } else if (msg.type === 'HEARTBEAT') {
-        // Keep-alive received
-      }
+      await this.processIncomingMessage(msg, conn.peer);
     });
 
     conn.on('close', () => {
@@ -464,71 +530,111 @@ class P2PSyncManager {
   }
 
   private notifyData(action: string, data?: unknown) {
-    this.dataListeners.forEach((listener) => listener(action, data));
+    this.dataListeners.forEach((listener) => {
+      try {
+        listener(action, data);
+      } catch (e) {
+        console.error('Error in data listener:', e);
+      }
+    });
   }
 
-  /**
-   * Broadcasts a shift upsert to both BroadcastChannel (local windows)
-   * and WebRTC DataChannels (remote computers on LAN)
-   */
+  private sendToAll(msg: SyncMessage) {
+    // 1. BroadcastChannel (local tabs/windows)
+    if (this.broadcastChannel) {
+      try {
+        this.broadcastChannel.postMessage(msg);
+      } catch {
+        // ignore
+      }
+    }
+
+    // 2. WebRTC DataChannels (LAN peers)
+    if (this.connections.size > 0) {
+      this.connections.forEach((conn) => {
+        if (conn.open) {
+          try {
+            conn.send(msg);
+          } catch {
+            // ignore
+          }
+        }
+      });
+    }
+  }
+
+  /* -------------------------------------------------------------
+   *  Public Broadcast Methods
+   * ------------------------------------------------------------- */
   public broadcastShift(shift: ShiftRecord) {
-    const msg: SyncMessage = {
+    this.sendToAll({
       type: 'SHIFT_UPSERT',
       shift,
       senderId: this.myClientId,
-    };
-
-    // 1. Send via local BroadcastChannel (instant for other tabs/windows)
-    if (this.broadcastChannel) {
-      try {
-        this.broadcastChannel.postMessage(msg);
-      } catch {
-        // ignore
-      }
-    }
-
-    // 2. Send via WebRTC DataChannels to other physical machines
-    if (this.connections.size > 0) {
-      this.connections.forEach((conn) => {
-        if (conn.open) {
-          try {
-            conn.send(msg);
-          } catch {
-            // ignore
-          }
-        }
-      });
-    }
+    });
   }
 
-  /**
-   * Broadcasts history cleared across all channels
-   */
+  public broadcastShiftLog(log: ShiftLogEntry) {
+    this.sendToAll({
+      type: 'SHIFT_LOG_UPSERT',
+      log,
+      senderId: this.myClientId,
+    });
+  }
+
+  public broadcastShiftLogDelete(logId: string) {
+    this.sendToAll({
+      type: 'SHIFT_LOG_DELETE',
+      logId,
+      senderId: this.myClientId,
+    });
+  }
+
+  public broadcastCategory(category: LogCategoryConfig) {
+    this.sendToAll({
+      type: 'CATEGORY_UPSERT',
+      category,
+      senderId: this.myClientId,
+    });
+  }
+
+  public broadcastCategoryDelete(categoryId: string) {
+    this.sendToAll({
+      type: 'CATEGORY_DELETE',
+      categoryId,
+      senderId: this.myClientId,
+    });
+  }
+
+  public broadcastUser(user: UserAccount) {
+    this.sendToAll({
+      type: 'USER_UPSERT',
+      user,
+      senderId: this.myClientId,
+    });
+  }
+
+  public broadcastUserDelete(userId: string) {
+    this.sendToAll({
+      type: 'USER_DELETE',
+      userId,
+      senderId: this.myClientId,
+    });
+  }
+
+  public broadcastSettings(settings: AppSettings) {
+    this.sendToAll({
+      type: 'SETTINGS_UPDATE',
+      settings,
+      senderId: this.myClientId,
+    });
+  }
+
   public broadcastHistoryCleared() {
-    const msg: SyncMessage = {
+    this.sendToAll({
       type: 'HISTORY_CLEARED',
       senderId: this.myClientId,
-    };
-
-    if (this.broadcastChannel) {
-      try {
-        this.broadcastChannel.postMessage(msg);
-      } catch {
-        // ignore
-      }
-    }
-
-    if (this.connections.size > 0) {
-      this.connections.forEach((conn) => {
-        if (conn.open) {
-          try {
-            conn.send(msg);
-          } catch {
-            // ignore
-          }
-        }
-      });
-    }
+    });
   }
 
   private cleanupPeer() {
