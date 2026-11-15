@@ -4,7 +4,8 @@ import {
   ShiftLogEntry, 
   LogCategoryConfig, 
   UserAccount, 
-  AppSettings 
+  AppSettings,
+  DatabaseArchive
 } from '../types';
 import { DatabaseManager } from './database';
 
@@ -27,7 +28,19 @@ export type SyncMessage =
   | { type: 'USER_DELETE'; userId: string; senderId?: string }
   | { type: 'SETTINGS_UPDATE'; settings: AppSettings; senderId?: string }
   | { type: 'HISTORY_CLEARED'; senderId?: string }
-  | { type: 'HEARTBEAT'; senderId?: string };
+  | { type: 'HEARTBEAT'; senderId?: string }
+  | { 
+      type: 'DATABASE_ARCHIVED_AND_PURGED'; 
+      archive: DatabaseArchive; 
+      syncGroupToDelete: string; 
+      senderId?: string;
+    }
+  | { 
+      type: 'DATABASE_RESTORED_FROM_ARCHIVE'; 
+      archive: DatabaseArchive; 
+      syncGroupName: string; 
+      senderId?: string;
+    };
 
 export type SyncRole = 'hub' | 'client' | 'standalone';
 export type SyncStatus = 'disconnected' | 'scanning' | 'connected' | 'error';
@@ -545,6 +558,30 @@ class P2PSyncManager {
       await db.clearHistory();
       this.notifyData('HISTORY_CLEARED');
       this.relayIfHub(msg, relayFromPeerId);
+    } else if (msg.type === 'DATABASE_ARCHIVED_AND_PURGED' && msg.archive) {
+      db.saveDatabaseArchive(msg.archive);
+      await db.resetDatabaseToFactoryDefaults();
+      if (msg.syncGroupToDelete) {
+        this.removeKnownSyncGroup(msg.syncGroupToDelete);
+        const currentSaved = localStorage.getItem('cdm_store_name');
+        if (currentSaved === msg.syncGroupToDelete) {
+          localStorage.removeItem('cdm_store_name');
+        }
+      }
+      localStorage.removeItem('cdm_local_active_shift_id');
+      localStorage.removeItem('frontdesk_external_logs');
+      this.disconnect();
+      this.notifyData('DATABASE_PURGED', msg);
+      this.relayIfHub(msg, relayFromPeerId);
+    } else if (msg.type === 'DATABASE_RESTORED_FROM_ARCHIVE' && msg.archive) {
+      db.saveDatabaseArchive(msg.archive);
+      await db.restoreDatabaseFromArchive(msg.archive.id);
+      if (msg.syncGroupName) {
+        this.rememberSyncGroup(msg.syncGroupName);
+        localStorage.setItem('cdm_store_name', msg.syncGroupName);
+      }
+      this.notifyData('DATABASE_RESTORED', msg);
+      this.relayIfHub(msg, relayFromPeerId);
     }
   }
 
@@ -705,6 +742,24 @@ class P2PSyncManager {
   public broadcastHistoryCleared() {
     this.sendToAll({
       type: 'HISTORY_CLEARED',
+      senderId: this.myClientId,
+    });
+  }
+
+  public broadcastDatabaseArchivedAndPurged(archive: DatabaseArchive, syncGroupToDelete: string) {
+    this.sendToAll({
+      type: 'DATABASE_ARCHIVED_AND_PURGED',
+      archive,
+      syncGroupToDelete,
+      senderId: this.myClientId,
+    });
+  }
+
+  public broadcastDatabaseRestored(archive: DatabaseArchive, syncGroupName: string) {
+    this.sendToAll({
+      type: 'DATABASE_RESTORED_FROM_ARCHIVE',
+      archive,
+      syncGroupName,
       senderId: this.myClientId,
     });
   }

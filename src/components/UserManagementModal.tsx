@@ -25,9 +25,10 @@ import {
   Key,
   RotateCcw,
   Lock,
-  AlertTriangle
+  AlertTriangle,
+  Archive
 } from 'lucide-react';
-import { UserAccount, UserRole, LogCategoryConfig, AppSettings, ShiftLogEntry } from '../types';
+import { UserAccount, UserRole, LogCategoryConfig, AppSettings, ShiftLogEntry, DatabaseArchive } from '../types';
 import { DatabaseManager } from '../utils/database';
 import { authManager } from '../utils/authManager';
 import { p2pSyncManager } from '../utils/p2pSyncManager';
@@ -106,6 +107,10 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
   const [isResettingDb, setIsResettingDb] = useState(false);
   const [resetDbSuccess, setResetDbSuccess] = useState(false);
 
+  // Database Archives State
+  const [archives, setArchives] = useState<DatabaseArchive[]>([]);
+  const [archiveActionMessage, setArchiveActionMessage] = useState<string | null>(null);
+
   const loadData = useCallback(async () => {
     try {
       const [loadedUsers, loadedCats, loadedSettings, loadedLogs, counts] = await Promise.all([
@@ -122,6 +127,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
       setOrgNameInput(loadedSettings.organizationName || 'Grand Hotel & Suites');
       setAllShiftLogs(loadedLogs);
       setDbCounts(counts);
+      setArchives(db.getDatabaseArchives());
     } catch (err) {
       console.error('Error loading manager data:', err);
     }
@@ -135,10 +141,24 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
 
     try {
       setIsResettingDb(true);
+      const currentSyncGroup = p2pSyncManager.getState().storeName || 'Main Store';
+
+      // 1. Snapshot database into archive
+      const archive = await db.createDatabaseArchive(currentUser?.fullName || 'Manager', currentSyncGroup);
+
+      // 2. Broadcast purge & archive to all connected peers across LAN/Wi-Fi
+      p2pSyncManager.broadcastDatabaseArchivedAndPurged(archive, currentSyncGroup);
+
+      // 3. Purge local database to factory defaults
       await db.resetDatabaseToFactoryDefaults();
-      p2pSyncManager.broadcastHistoryCleared();
+
+      // 4. Delete the associated Sync Group
+      p2pSyncManager.removeKnownSyncGroup(currentSyncGroup);
+      localStorage.removeItem('cdm_store_name');
       localStorage.removeItem('cdm_local_active_shift_id');
       localStorage.removeItem('frontdesk_external_logs');
+
+      p2pSyncManager.disconnect();
       authManager.logout();
 
       setIsResetDbModalOpen(false);
@@ -152,6 +172,45 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
       alert('Failed to reset database. Please try again.');
     } finally {
       setIsResettingDb(false);
+    }
+  };
+
+  const handleRestoreArchive = async (archive: DatabaseArchive) => {
+    const confirmRestore = window.confirm(
+      `Retrieve and restore data from "${archive.hotelName}"?\n\nArchived on: ${new Date(archive.archivedAt).toLocaleString()}\nShifts: ${archive.summary.shiftsCount}, Logs: ${archive.summary.logsCount}\n\nThis will restore all records and reconnect the sync group "${archive.syncGroup}".`
+    );
+    if (!confirmRestore) return;
+
+    try {
+      await db.restoreDatabaseFromArchive(archive.id);
+      if (archive.syncGroup) {
+        await p2pSyncManager.switchSyncGroup(archive.syncGroup);
+      }
+      p2pSyncManager.broadcastDatabaseRestored(archive, archive.syncGroup || archive.hotelName);
+      setArchiveActionMessage(`Data successfully retrieved and restored for "${archive.hotelName}". Reloading...`);
+      setTimeout(() => {
+        window.location.reload();
+      }, 1200);
+    } catch (err) {
+      console.error('Failed to restore archive:', err);
+      alert('Failed to retrieve and restore database from archive.');
+    }
+  };
+
+  const handleDeleteArchive = (archiveId: string, hotelName: string) => {
+    const confirmDelete = window.confirm(
+      `Are you sure you want to PERMANENTLY delete the archive for "${hotelName}"?\n\nThis archive snapshot will be deleted forever.`
+    );
+    if (!confirmDelete) return;
+
+    try {
+      db.deleteDatabaseArchivePermanently(archiveId);
+      setArchives(db.getDatabaseArchives());
+      setArchiveActionMessage(`Archive for "${hotelName}" was permanently deleted.`);
+      setTimeout(() => setArchiveActionMessage(null), 4000);
+    } catch (err) {
+      console.error('Failed to delete archive:', err);
+      alert('Failed to delete archive.');
     }
   };
 
@@ -1418,6 +1477,101 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                         })}
                       </div>
                     )}
+                  </div>
+                )}
+              </div>
+
+              {/* Database Archives & Backup Vault */}
+              <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 shadow-xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                  <div>
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-gray-900 dark:text-white flex items-center space-x-1.5">
+                      <Archive className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                      <span>Database Archives & Backup Vault</span>
+                    </h3>
+                    <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
+                      Snapshots preserved automatically prior to database deletion or reset. Retrieve data to restore, or permanently delete archives.
+                    </p>
+                  </div>
+                  <span className="self-start text-[11px] font-semibold px-2.5 py-1 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-md">
+                    {archives.length} {archives.length === 1 ? 'Archive' : 'Archives'} Preserved
+                  </span>
+                </div>
+
+                {archiveActionMessage && (
+                  <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-200 rounded-lg text-xs font-medium flex items-center space-x-2">
+                    <Check className="w-4 h-4 flex-shrink-0 text-blue-600" />
+                    <span>{archiveActionMessage}</span>
+                  </div>
+                )}
+
+                {archives.length === 0 ? (
+                  <div className="p-6 text-center border border-dashed border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50/50 dark:bg-gray-800/40">
+                    <Archive className="w-8 h-8 text-gray-400 mx-auto mb-2 opacity-60" />
+                    <p className="text-xs font-medium text-gray-600 dark:text-gray-400">No database archives stored yet</p>
+                    <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-1 max-w-sm mx-auto">
+                      When a manager resets or deletes a database, a complete snapshot is safely archived here across all synced devices before purging.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {archives.map((arch) => (
+                      <div
+                        key={arch.id}
+                        className="p-3.5 bg-gray-50 dark:bg-gray-700/40 border border-gray-200 dark:border-gray-700 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-3"
+                      >
+                        <div className="space-y-1.5">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-bold text-sm text-gray-900 dark:text-white">
+                              {arch.hotelName}
+                            </span>
+                            <span className="text-[10px] font-mono px-2 py-0.5 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded">
+                              Sync Group: {arch.syncGroup}
+                            </span>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-3 text-[11px] text-gray-500 dark:text-gray-400">
+                            <span>Archived: {new Date(arch.archivedAt).toLocaleString()}</span>
+                            <span>&bull;</span>
+                            <span>By: <strong className="text-gray-700 dark:text-gray-300">{arch.archivedBy}</strong></span>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2 pt-1 text-[10px]">
+                            <span className="px-2 py-0.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded text-gray-700 dark:text-gray-300 font-mono tabular-nums">
+                              {arch.summary.shiftsCount} Shifts
+                            </span>
+                            <span className="px-2 py-0.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded text-gray-700 dark:text-gray-300 font-mono tabular-nums">
+                              {arch.summary.logsCount} Logs
+                            </span>
+                            <span className="px-2 py-0.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded text-gray-700 dark:text-gray-300 font-mono tabular-nums">
+                              {arch.summary.usersCount} Staff
+                            </span>
+                            <span className="px-2 py-0.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded text-gray-700 dark:text-gray-300 font-mono tabular-nums">
+                              {arch.summary.categoriesCount} Categories
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 self-start md:self-center">
+                          <button
+                            type="button"
+                            onClick={() => handleRestoreArchive(arch)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-lg text-xs font-semibold transition shadow-xs cursor-pointer"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                            <span>Retrieve Data</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteArchive(arch.id, arch.hotelName)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 dark:text-rose-300 border border-rose-200 dark:border-rose-900/60 rounded-lg text-xs font-semibold transition cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Permanently Delete</span>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>

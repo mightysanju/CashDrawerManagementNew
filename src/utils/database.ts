@@ -4,10 +4,12 @@ import {
   UserAccount, 
   ShiftLogEntry, 
   LogCategoryConfig, 
-  AppSettings 
+  AppSettings,
+  DatabaseArchive
 } from '../types';
 
 const DB_NAME = 'cash_drawer_db';
+const ARCHIVE_STORAGE_KEY = 'cdm_database_archives';
 const STORES = {
   SHIFTS: 'shifts',
   ORGANIZATION: 'organization',
@@ -450,5 +452,122 @@ export class DatabaseManager {
       salesRateMultiplier: 120,
       organizationName: 'Grand Hotel & Suites',
     });
+  }
+
+  /* -------------------------------------------------------------
+   *  Database Archiving & Restoration
+   * ------------------------------------------------------------- */
+  getDatabaseArchives(): DatabaseArchive[] {
+    try {
+      const raw = localStorage.getItem(ARCHIVE_STORAGE_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  saveDatabaseArchive(archive: DatabaseArchive): void {
+    try {
+      const existing = this.getDatabaseArchives();
+      const updated = [archive, ...existing.filter((a) => a.id !== archive.id)];
+      localStorage.setItem(ARCHIVE_STORAGE_KEY, JSON.stringify(updated));
+    } catch (e) {
+      console.error('Failed to save database archive:', e);
+    }
+  }
+
+  deleteDatabaseArchivePermanently(archiveId: string): void {
+    try {
+      const existing = this.getDatabaseArchives();
+      const updated = existing.filter((a) => a.id !== archiveId);
+      localStorage.setItem(ARCHIVE_STORAGE_KEY, JSON.stringify(updated));
+    } catch (e) {
+      console.error('Failed to delete database archive:', e);
+    }
+  }
+
+  async createDatabaseArchive(archivedBy: string, syncGroupName?: string): Promise<DatabaseArchive> {
+    const [shifts, users, shiftLogs, categories, settings, organization] = await Promise.all([
+      this.getAllShifts(),
+      this.getUsers(),
+      this.getShiftLogs(),
+      this.getCategories(),
+      this.getSettings(),
+      this.getOrganization(),
+    ]);
+
+    const hotelName = organization?.name || settings?.organizationName || 'Grand Hotel & Suites';
+    const groupName = syncGroupName || hotelName;
+
+    const archive: DatabaseArchive = {
+      id: `arch_${Date.now()}`,
+      hotelName,
+      syncGroup: groupName,
+      archivedAt: new Date().toISOString(),
+      archivedBy: archivedBy || 'Manager',
+      shifts,
+      shiftLogs,
+      categories,
+      users,
+      settings,
+      organization: organization || { id: 'default', name: hotelName },
+      summary: {
+        shiftsCount: shifts.length,
+        logsCount: shiftLogs.length,
+        usersCount: users.length,
+        categoriesCount: categories.length,
+      },
+    };
+
+    this.saveDatabaseArchive(archive);
+    return archive;
+  }
+
+  async restoreDatabaseFromArchive(archiveId: string): Promise<DatabaseArchive> {
+    const archives = this.getDatabaseArchives();
+    const archive = archives.find((a) => a.id === archiveId);
+    if (!archive) {
+      throw new Error(`Archive with ID ${archiveId} not found.`);
+    }
+
+    const db = await this.dbPromise;
+    const storeNames = [
+      STORES.SHIFTS,
+      STORES.SHIFT_LOGS,
+      STORES.ORGANIZATION,
+      STORES.USERS,
+      STORES.CATEGORIES,
+      STORES.SETTINGS,
+    ];
+    const tx = db.transaction(storeNames, 'readwrite');
+    for (const name of storeNames) {
+      if (db.objectStoreNames.contains(name)) {
+        await tx.objectStore(name).clear();
+      }
+    }
+    await tx.done;
+
+    if (archive.shifts && archive.shifts.length > 0) {
+      await this.bulkSaveShifts(archive.shifts);
+    }
+    if (archive.shiftLogs && archive.shiftLogs.length > 0) {
+      await this.bulkSaveShiftLogs(archive.shiftLogs);
+    }
+    if (archive.categories && archive.categories.length > 0) {
+      await this.bulkSaveCategories(archive.categories);
+    }
+    if (archive.users && archive.users.length > 0) {
+      await this.bulkSaveUsers(archive.users);
+    }
+    if (archive.settings) {
+      await this.saveSettings(archive.settings);
+    }
+    if (archive.hotelName) {
+      await this.saveOrganization(archive.hotelName);
+    }
+
+    return archive;
   }
 }

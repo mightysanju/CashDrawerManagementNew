@@ -129,3 +129,26 @@ export interface AppSettings {
   salesRateMultiplier: number; // Default multiplier for potential revenue (e.g. $120.00)
   organizationName: string;
 }
+
+/* -------------------------------------------------------------
+ *  Database Archive & Backup
+ * ------------------------------------------------------------- */
+export interface DatabaseArchive {
+  id: string;
+  hotelName: string;
+  syncGroup: string;
+  archivedAt: string;
+  archivedBy: string;
+  shifts: ShiftRecord[];
+  shiftLogs: ShiftLogEntry[];
+  categories: LogCategoryConfig[];
+  users: UserAccount[];
+  settings: AppSettings;
+  organization?: { id: string; name: string };
+  summary: {
+    shiftsCount: number;
+    logsCount: number;
+    usersCount: number;
+    categoriesCount: number;
+  };
+}

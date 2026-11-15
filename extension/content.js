@@ -418,9 +418,134 @@
     });
   }
 
-  // Toggle open/close with .open class
-  trigger.addEventListener('click', () => {
-    modal.classList.toggle('open');
+  // Movable Bubble Drag-and-Drop Implementation
+  let bubblePos = null;
+  let isDragging = false;
+  let hasMoved = false;
+  let dragStartX = 0;
+  let dragStartY = 0;
+  let bubbleStartX = 0;
+  let bubbleStartY = 0;
+
+  function updateModalPosition(x, y) {
+    if (!modal) return;
+    const isBottomHalf = y > window.innerHeight / 2;
+    const isRightHalf = x > window.innerWidth / 2;
+
+    if (isBottomHalf) {
+      modal.style.bottom = (window.innerHeight - y + 12) + 'px';
+      modal.style.top = 'auto';
+    } else {
+      modal.style.top = (y + 56) + 'px';
+      modal.style.bottom = 'auto';
+    }
+
+    if (isRightHalf) {
+      modal.style.right = Math.max(16, window.innerWidth - x - 48) + 'px';
+      modal.style.left = 'auto';
+    } else {
+      modal.style.left = Math.max(16, x) + 'px';
+      modal.style.right = 'auto';
+    }
+  }
+
+  function applyBubblePosition(x, y) {
+    const clampedX = Math.max(12, Math.min(window.innerWidth - 60, x));
+    const clampedY = Math.max(12, Math.min(window.innerHeight - 60, y));
+    bubblePos = { x: clampedX, y: clampedY };
+    trigger.style.left = clampedX + 'px';
+    trigger.style.top = clampedY + 'px';
+    trigger.style.right = 'auto';
+    trigger.style.bottom = 'auto';
+    updateModalPosition(clampedX, clampedY);
+  }
+
+  // Load saved position from chrome.storage or localStorage
+  function loadSavedBubblePos() {
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+      chrome.storage.local.get(['fdp_bubble_pos'], (res) => {
+        if (res && res.fdp_bubble_pos && typeof res.fdp_bubble_pos.x === 'number') {
+          applyBubblePosition(res.fdp_bubble_pos.x, res.fdp_bubble_pos.y);
+          return;
+        }
+        checkLocalStoragePos();
+      });
+    } else {
+      checkLocalStoragePos();
+    }
+  }
+
+  function checkLocalStoragePos() {
+    try {
+      const saved = localStorage.getItem('fdp_bubble_pos');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (typeof parsed.x === 'number' && typeof parsed.y === 'number') {
+          applyBubblePosition(parsed.x, parsed.y);
+          return;
+        }
+      }
+    } catch {
+      // ignore
+    }
+    applyBubblePosition(window.innerWidth - 72, window.innerHeight - 72);
+  }
+
+  loadSavedBubblePos();
+
+  window.addEventListener('resize', () => {
+    if (bubblePos) {
+      applyBubblePosition(bubblePos.x, bubblePos.y);
+    }
+  });
+
+  trigger.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    isDragging = true;
+    hasMoved = false;
+    dragStartX = e.clientX;
+    dragStartY = e.clientY;
+    const current = bubblePos || { x: window.innerWidth - 72, y: window.innerHeight - 72 };
+    bubbleStartX = current.x;
+    bubbleStartY = current.y;
+
+    trigger.classList.add('dragging');
+
+    function onPointerMove(ev) {
+      if (!isDragging) return;
+      const dx = ev.clientX - dragStartX;
+      const dy = ev.clientY - dragStartY;
+      if (Math.hypot(dx, dy) > 4) {
+        hasMoved = true;
+        applyBubblePosition(bubbleStartX + dx, bubbleStartY + dy);
+      }
+    }
+
+    function onPointerUp() {
+      if (!isDragging) return;
+      isDragging = false;
+      trigger.classList.remove('dragging');
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+
+      if (hasMoved) {
+        if (bubblePos) {
+          try {
+            localStorage.setItem('fdp_bubble_pos', JSON.stringify(bubblePos));
+          } catch {
+            // ignore
+          }
+          if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+            chrome.storage.local.set({ fdp_bubble_pos: bubblePos });
+          }
+        }
+      } else {
+        modal.classList.toggle('open');
+      }
+    }
+
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
   });
 
   closeBtn.addEventListener('click', () => {

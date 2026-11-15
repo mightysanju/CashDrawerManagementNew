@@ -24,10 +24,16 @@
   justify-content: center;
   box-shadow: 0 4px 12px rgba(15, 23, 42, 0.15), 0 1px 3px rgba(0, 0, 0, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.15);
-  cursor: pointer;
+  cursor: grab;
+  touch-action: none;
   transition: background-color 0.15s ease, transform 0.15s ease;
   user-select: none;
   z-index: 2147483647;
+}
+
+.fdp-floating-trigger.dragging {
+  cursor: grabbing !important;
+  transition: none !important;
 }
 
 .fdp-floating-trigger:hover {

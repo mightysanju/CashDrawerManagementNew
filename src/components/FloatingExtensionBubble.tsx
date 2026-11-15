@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   FileText,
   X,
@@ -45,6 +45,145 @@ export const FloatingExtensionBubble: React.FC<FloatingExtensionBubbleProps> = (
   const [clerkNotes, setClerkNotes] = useState('');
   const [hasReminder, setHasReminder] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+
+  // Movable Bubble State
+  const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const isDraggingRef = useRef(false);
+  const dragStartRef = useRef({ x: 0, y: 0 });
+  const bubbleStartRef = useRef({ x: 0, y: 0 });
+  const hasMovedRef = useRef(false);
+  const currentPosRef = useRef<{ x: number; y: number } | null>(null);
+
+  // Initialize position from localStorage or default to bottom-right
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('fdp_bubble_pos');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (typeof parsed.x === 'number' && typeof parsed.y === 'number') {
+          const clampedX = Math.max(12, Math.min(window.innerWidth - 60, parsed.x));
+          const clampedY = Math.max(12, Math.min(window.innerHeight - 60, parsed.y));
+          setPosition({ x: clampedX, y: clampedY });
+          currentPosRef.current = { x: clampedX, y: clampedY };
+          return;
+        }
+      }
+    } catch {
+      // ignore
+    }
+    const defaultX = window.innerWidth - 72;
+    const defaultY = window.innerHeight - 72;
+    setPosition({ x: defaultX, y: defaultY });
+    currentPosRef.current = { x: defaultX, y: defaultY };
+  }, []);
+
+  // Handle window resize clamping
+  useEffect(() => {
+    const handleResize = () => {
+      setPosition((prev) => {
+        if (!prev) return prev;
+        const clampedX = Math.max(12, Math.min(window.innerWidth - 60, prev.x));
+        const clampedY = Math.max(12, Math.min(window.innerHeight - 60, prev.y));
+        currentPosRef.current = { x: clampedX, y: clampedY };
+        return { x: clampedX, y: clampedY };
+      });
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (e.button !== 0) return;
+    isDraggingRef.current = true;
+    hasMovedRef.current = false;
+    dragStartRef.current = { x: e.clientX, y: e.clientY };
+    bubbleStartRef.current = currentPosRef.current || {
+      x: window.innerWidth - 72,
+      y: window.innerHeight - 72,
+    };
+
+    const handlePointerMove = (ev: PointerEvent) => {
+      if (!isDraggingRef.current) return;
+      const dx = ev.clientX - dragStartRef.current.x;
+      const dy = ev.clientY - dragStartRef.current.y;
+      if (Math.hypot(dx, dy) > 4) {
+        hasMovedRef.current = true;
+        setIsDragging(true);
+        const newX = Math.max(12, Math.min(window.innerWidth - 60, bubbleStartRef.current.x + dx));
+        const newY = Math.max(12, Math.min(window.innerHeight - 60, bubbleStartRef.current.y + dy));
+        const nextPos = { x: newX, y: newY };
+        currentPosRef.current = nextPos;
+        setPosition(nextPos);
+      }
+    };
+
+    const handlePointerUp = () => {
+      if (!isDraggingRef.current) return;
+      isDraggingRef.current = false;
+      setIsDragging(false);
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+
+      if (hasMovedRef.current) {
+        if (currentPosRef.current) {
+          try {
+            localStorage.setItem('fdp_bubble_pos', JSON.stringify(currentPosRef.current));
+          } catch {
+            // ignore
+          }
+        }
+      }
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+  };
+
+  const handleButtonClick = () => {
+    if (!hasMovedRef.current) {
+      onToggle();
+    }
+  };
+
+  const triggerStyle = useMemo<React.CSSProperties | undefined>(() => {
+    if (!position) return undefined;
+    return {
+      left: `${position.x}px`,
+      top: `${position.y}px`,
+      right: 'auto',
+      bottom: 'auto',
+      cursor: isDragging ? 'grabbing' : 'grab',
+      touchAction: 'none',
+      userSelect: 'none',
+    };
+  }, [position, isDragging]);
+
+  const modalStyle = useMemo<React.CSSProperties | undefined>(() => {
+    if (!position) return undefined;
+    const isBottomHalf = position.y > (typeof window !== 'undefined' ? window.innerHeight / 2 : 400);
+    const isRightHalf = position.x > (typeof window !== 'undefined' ? window.innerWidth / 2 : 500);
+
+    const style: React.CSSProperties = {};
+
+    if (isBottomHalf) {
+      style.bottom = `${window.innerHeight - position.y + 12}px`;
+      style.top = 'auto';
+    } else {
+      style.top = `${position.y + 56}px`;
+      style.bottom = 'auto';
+    }
+
+    if (isRightHalf) {
+      style.right = `${Math.max(16, window.innerWidth - position.x - 48)}px`;
+      style.left = 'auto';
+    } else {
+      style.left = `${Math.max(16, position.x)}px`;
+      style.right = 'auto';
+    }
+
+    return style;
+  }, [position]);
 
   // Calculate live revenue estimate
   const nights = React.useMemo(() => {
@@ -128,22 +267,29 @@ export const FloatingExtensionBubble: React.FC<FloatingExtensionBubbleProps> = (
 
   return (
     <>
-      {/* Floating Trigger Button */}
+      {/* Floating Trigger Button (Movable Anywhere on Screen) */}
       <button
         id="fdp-inapp-bubble"
         data-fdp-inapp-bubble="true"
         type="button"
-        onClick={onToggle}
-        title="FrontDesk Pro — Floating Shift Log"
-        className="fixed bottom-6 right-6 w-12 h-12 rounded-xl bg-slate-900 hover:bg-slate-800 text-white shadow-md flex items-center justify-center transition-colors z-50 border border-slate-700/50 cursor-pointer"
+        onPointerDown={handlePointerDown}
+        onClick={handleButtonClick}
+        style={triggerStyle}
+        title="FrontDesk Pro — Floating Shift Log (Drag to move anywhere)"
+        className={`fixed ${!position ? 'bottom-6 right-6' : ''} w-12 h-12 rounded-xl bg-slate-900 hover:bg-slate-800 text-white shadow-md flex items-center justify-center transition-colors z-50 border border-slate-700/50 select-none ${
+          isDragging ? 'cursor-grabbing' : 'cursor-grab'
+        }`}
       >
-        <FileText className="w-5 h-5 text-slate-200" />
-        <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-500 border border-white dark:border-slate-900 rounded-full"></span>
+        <FileText className="w-5 h-5 text-slate-200 pointer-events-none" />
+        <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-500 border border-white dark:border-slate-900 rounded-full pointer-events-none"></span>
       </button>
 
-      {/* Floating Modal Panel */}
+      {/* Floating Modal Panel (Dynamically Positioned Relative to Bubble) */}
       {isOpen && (
-        <div className="fixed bottom-20 right-6 w-96 max-w-[calc(100vw-32px)] max-h-[calc(100vh-120px)] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-lg overflow-hidden z-50 flex flex-col animate-in fade-in duration-100">
+        <div 
+          style={modalStyle}
+          className={`fixed ${!position ? 'bottom-20 right-6' : ''} w-96 max-w-[calc(100vw-32px)] max-h-[calc(100vh-120px)] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-lg overflow-hidden z-50 flex flex-col animate-in fade-in duration-100`}
+        >
           {/* Header */}
           <div className="bg-slate-900 text-white p-3 flex items-center justify-between border-b border-slate-800">
             <div className="flex items-center space-x-2">
