@@ -109,9 +109,30 @@ export function CashDrawer() {
   // Load shifts and settings from IndexedDB
   const loadShiftsData = useCallback(async () => {
     try {
-      const allShifts = await db.getAllShifts();
-      const active = allShifts.filter((shift) => shift.status === 'open');
-      const closed = allShifts.filter((shift) => shift.status === 'closed');
+      const [allShifts, settings] = await Promise.all([
+        db.getAllShifts(),
+        db.getSettings(),
+      ]);
+
+      const lastPurged = parseInt(localStorage.getItem('cdm_last_purged_epoch') || '0', 10);
+      const activeEpoch = Math.max(settings?.databaseEpoch || 0, lastPurged);
+      const isRestored = settings?.isRestoredArchive;
+
+      // Filter out and asynchronously purge obsolete ghost shifts created before active database epoch
+      let cleanShifts = allShifts;
+      if (!isRestored && activeEpoch > 0) {
+        cleanShifts = allShifts.filter((shift) => {
+          const shiftTime = new Date(shift.openTime || shift.closeTime || 0).getTime();
+          if (shiftTime > 0 && shiftTime < (activeEpoch - 10000)) {
+            db.deleteShift(shift.id).catch(() => {});
+            return false;
+          }
+          return true;
+        });
+      }
+
+      const active = cleanShifts.filter((shift) => shift.status === 'open');
+      const closed = cleanShifts.filter((shift) => shift.status === 'closed');
 
       setActiveShifts(active);
       setShiftHistory(closed);
@@ -171,8 +192,29 @@ export function CashDrawer() {
 
   const loadLogsData = useCallback(async () => {
     try {
-      const logs = await db.getAllShiftLogs();
-      setShiftLogs(logs);
+      const [logs, settings] = await Promise.all([
+        db.getAllShiftLogs(),
+        db.getSettings(),
+      ]);
+
+      const lastPurged = parseInt(localStorage.getItem('cdm_last_purged_epoch') || '0', 10);
+      const activeEpoch = Math.max(settings?.databaseEpoch || 0, lastPurged);
+      const isRestored = settings?.isRestoredArchive;
+
+      // Filter out and asynchronously purge obsolete ghost logs created before active database epoch
+      let cleanLogs = logs;
+      if (!isRestored && activeEpoch > 0) {
+        cleanLogs = logs.filter((l) => {
+          const logTime = new Date(l.createdAt || 0).getTime();
+          if (logTime > 0 && logTime < (activeEpoch - 10000)) {
+            db.deleteShiftLog(l.id).catch(() => {});
+            return false;
+          }
+          return true;
+        });
+      }
+
+      setShiftLogs(cleanLogs);
     } catch (error) {
       console.error('Error loading shift logs:', error);
     }
@@ -283,7 +325,12 @@ export function CashDrawer() {
     const handleExtensionLog = async (e: Event) => {
       const customEvent = e as CustomEvent;
       const entry = customEvent.detail;
+      const lastPurged = parseInt(localStorage.getItem('cdm_last_purged_epoch') || '0', 10);
       if (entry && entry.id) {
+        const logTime = new Date(entry.createdAt || 0).getTime();
+        if (lastPurged > 0 && logTime > 0 && logTime <= lastPurged) {
+          return;
+        }
         await db.saveShiftLog(entry);
         p2pSyncManager.broadcastShiftLog(entry);
         await loadLogsData();
@@ -294,10 +341,21 @@ export function CashDrawer() {
       const customEvent = e as CustomEvent;
       const logs = customEvent.detail;
       if (Array.isArray(logs) && logs.length > 0) {
+        const lastPurged = parseInt(localStorage.getItem('cdm_last_purged_epoch') || '0', 10);
+        let added = false;
         for (const l of logs) {
-          if (l && l.id) await db.saveShiftLog(l);
+          if (l && l.id) {
+            const logTime = new Date(l.createdAt || 0).getTime();
+            if (lastPurged > 0 && logTime > 0 && logTime <= lastPurged) {
+              continue;
+            }
+            await db.saveShiftLog(l);
+            added = true;
+          }
         }
-        await loadLogsData();
+        if (added) {
+          await loadLogsData();
+        }
       }
     };
 
@@ -305,18 +363,34 @@ export function CashDrawer() {
     const handleWindowMessage = async (event: MessageEvent) => {
       if (!event.data || typeof event.data !== 'object') return;
 
+      const lastPurged = parseInt(localStorage.getItem('cdm_last_purged_epoch') || '0', 10);
+
       if (event.data.type === 'FDP_EXTENSION_LOG_RECEIVED' && event.data.log) {
         const entry = event.data.log;
         if (entry && entry.id) {
+          const logTime = new Date(entry.createdAt || 0).getTime();
+          if (lastPurged > 0 && logTime > 0 && logTime <= lastPurged) {
+            return;
+          }
           await db.saveShiftLog(entry);
           p2pSyncManager.broadcastShiftLog(entry);
           await loadLogsData();
         }
       } else if (event.data.type === 'FDP_EXTENSION_LOGS_SYNC' && Array.isArray(event.data.logs)) {
+        let added = false;
         for (const l of event.data.logs) {
-          if (l && l.id) await db.saveShiftLog(l);
+          if (l && l.id) {
+            const logTime = new Date(l.createdAt || 0).getTime();
+            if (lastPurged > 0 && logTime > 0 && logTime <= lastPurged) {
+              continue;
+            }
+            await db.saveShiftLog(l);
+            added = true;
+          }
         }
-        await loadLogsData();
+        if (added) {
+          await loadLogsData();
+        }
       }
     };
 
@@ -352,12 +426,21 @@ export function CashDrawer() {
       }
 
       if (action === 'DATABASE_INITIALIZED') {
+        setSelectedShift(null);
+        setActiveShifts([]);
+        setShiftHistory([]);
+        setShiftLogs([]);
+        setEntries([]);
+        setShiftDrop(0);
+        setCurrentUser(null);
+        authManager.logout();
         setIsNewHotelSetupModalOpen(false);
+        setIsLoginModalOpen(true);
         await loadShiftsData();
         await loadLogsData();
         await loadSettingsData();
         const hotelName = (data as { hotelName?: string })?.hotelName || 'Hotel';
-        setWelcomeToast(`Connected and synced to new hotel database: ${hotelName}`);
+        setWelcomeToast(`Connected and synced to new clean hotel database: ${hotelName}`);
         setTimeout(() => setWelcomeToast(null), 4000);
         return;
       }

@@ -38,6 +38,14 @@ export type SyncMessage =
       purgedEpoch?: number;
       senderId?: string;
     }
+  | {
+      type: 'DATABASE_HARD_PURGE';
+      archive?: DatabaseArchive;
+      syncGroupToDelete?: string;
+      oldSyncGroup?: string;
+      purgedEpoch: number;
+      senderId?: string;
+    }
   | { 
       type: 'DATABASE_RESTORED_FROM_ARCHIVE'; 
       archive: DatabaseArchive; 
@@ -553,28 +561,42 @@ class P2PSyncManager {
     if (!msg || !msg.type) return;
 
     if (msg.type === 'FULL_SYNC') {
-      const incomingEpoch = msg.databaseEpoch || msg.settings?.databaseEpoch || 0;
+      const incomingEpoch = typeof msg.databaseEpoch === 'number' ? msg.databaseEpoch : (typeof msg.settings?.databaseEpoch === 'number' ? msg.settings.databaseEpoch : 0);
+      const incomingDbId = msg.databaseId || msg.settings?.databaseId || 'default';
       const localSettings = await db.getSettings();
-      const localEpoch = localSettings.databaseEpoch || 0;
+      const localEpoch = typeof localSettings.databaseEpoch === 'number' ? localSettings.databaseEpoch : 0;
+      const localDbId = localSettings.databaseId || 'default';
       const lastPurgedEpoch = parseInt(localStorage.getItem('cdm_last_purged_epoch') || '0', 10);
 
-      // 1. Guard against resurrected obsolete/purged databases
-      if (incomingEpoch > 0 && incomingEpoch <= lastPurgedEpoch && localEpoch > incomingEpoch) {
-        console.warn(`[P2P Sync] Rejected obsolete database (epoch ${incomingEpoch} <= purged ${lastPurgedEpoch}). Propagating current database.`);
-        this.sendFullSyncToPeer(relayFromPeerId, localSettings);
-        return;
+      // 1. ABSOLUTE PURGE GUARD:
+      // If a database purge or new initialization took place (lastPurgedEpoch > 0) and the incoming database has an epoch
+      // that is <= lastPurgedEpoch (which includes legacy un-epoched incomingEpoch === 0 or older databases),
+      // REJECT IT COMPLETELY!
+      if (lastPurgedEpoch > 0 && incomingEpoch <= lastPurgedEpoch) {
+        console.warn(`[P2P Sync] DROPPED OBSOLETE/PURGED DATABASE! Incoming epoch ${incomingEpoch} is <= lastPurgedEpoch ${lastPurgedEpoch}. Replying with HARD PURGE.`);
+        if (relayFromPeerId) {
+          const targetConn = this.connections.get(relayFromPeerId);
+          if (targetConn && targetConn.open) {
+            targetConn.send({
+              type: 'DATABASE_HARD_PURGE',
+              purgedEpoch: lastPurgedEpoch,
+              senderId: this.myClientId,
+            });
+          }
+        }
+        return; // NEVER save obsolete records!
       }
 
-      // 2. If remote peer has an older database superseded by a newer one created here
-      if (localEpoch > 0 && incomingEpoch > 0 && incomingEpoch < localEpoch) {
-        console.warn(`[P2P Sync] Remote database epoch ${incomingEpoch} is older than local ${localEpoch}. Overwriting remote peer.`);
+      // 2. If local database has an active epoch, and incoming database is older (or legacy 0):
+      if (localEpoch > 0 && incomingEpoch < localEpoch) {
+        console.warn(`[P2P Sync] Incoming epoch ${incomingEpoch} is older than local ${localEpoch}. Overwriting remote peer.`);
         this.sendFullSyncToPeer(relayFromPeerId, localSettings);
-        return;
+        return; // NEVER save older records into a newly initialized database!
       }
 
-      // 3. If local database is older than remote's newly created database, adopt remote
-      if (localEpoch > 0 && incomingEpoch > 0 && incomingEpoch > localEpoch) {
-        console.warn(`[P2P Sync] Remote database epoch ${incomingEpoch} is newer than local ${localEpoch}. Auto-archiving local and adopting new database.`);
+      // 3. If incoming database is newer than local (e.g. peer created a new database):
+      if (incomingEpoch > localEpoch) {
+        console.warn(`[P2P Sync] Incoming epoch ${incomingEpoch} is newer than local ${localEpoch}. Auto-archiving local and adopting new database.`);
         try {
           const currentSyncGroup = this.state.storeName || 'Main Store';
           await db.createDatabaseArchive('Auto-Archive (Superseded DB)', currentSyncGroup);
@@ -582,14 +604,52 @@ class P2PSyncManager {
           console.error('Failed to auto-archive local data before adopting newer DB:', e);
         }
         await db.resetDatabaseToFactoryDefaults();
+        localStorage.setItem('cdm_last_purged_epoch', String(incomingEpoch));
+        localStorage.removeItem('cdm_local_active_shift_id');
+        localStorage.removeItem('frontdesk_external_logs');
+        if (typeof window !== 'undefined') {
+          window.postMessage({ type: 'FDP_PURGE_EXTENSION_STORAGE' }, '*');
+        }
       }
 
+      // 4. If epoch matches but databaseId differs:
+      if (localDbId && incomingDbId && localDbId !== incomingDbId && localDbId !== 'default' && incomingDbId !== 'default') {
+        console.warn(`[P2P Sync] Database ID mismatch: local ${localDbId} vs incoming ${incomingDbId}. Retaining local authoritative database.`);
+        return;
+      }
+
+      // 5. Granular Shift & Log Filtering:
+      // In a freshly initialized database (not a restored archive), shifts or shift logs created BEFORE the database epoch
+      // are orphaned ghosts from prior deleted databases. DROP THEM!
+      const activeEpoch = Math.max(localEpoch, incomingEpoch, lastPurgedEpoch);
+      const isRestored = localSettings.isRestoredArchive || msg.settings?.isRestoredArchive;
+
       if (msg.shifts && Array.isArray(msg.shifts)) {
-        await db.bulkSaveShifts(msg.shifts);
+        let validShifts = msg.shifts;
+        if (!isRestored && activeEpoch > 0) {
+          validShifts = msg.shifts.filter((s) => {
+            const t = new Date(s.openTime || s.closeTime || 0).getTime();
+            return t >= (activeEpoch - 10000); // 10s clock drift tolerance
+          });
+        }
+        if (validShifts.length > 0) {
+          await db.bulkSaveShifts(validShifts);
+        }
       }
+
       if (msg.shiftLogs && Array.isArray(msg.shiftLogs)) {
-        await db.bulkSaveShiftLogs(msg.shiftLogs);
+        let validLogs = msg.shiftLogs;
+        if (!isRestored && activeEpoch > 0) {
+          validLogs = msg.shiftLogs.filter((l) => {
+            const t = new Date(l.createdAt || 0).getTime();
+            return t >= (activeEpoch - 10000); // 10s clock drift tolerance
+          });
+        }
+        if (validLogs.length > 0) {
+          await db.bulkSaveShiftLogs(validLogs);
+        }
       }
+
       if (msg.categories && Array.isArray(msg.categories)) {
         await db.bulkSaveCategories(msg.categories);
       }
@@ -605,10 +665,32 @@ class P2PSyncManager {
       }
       this.notifyData('SYNC_COMPLETED', msg);
     } else if (msg.type === 'SHIFT_UPSERT' && msg.shift) {
+      const localSettings = await db.getSettings();
+      const localEpoch = typeof localSettings.databaseEpoch === 'number' ? localSettings.databaseEpoch : 0;
+      const lastPurgedEpoch = parseInt(localStorage.getItem('cdm_last_purged_epoch') || '0', 10);
+      const activeEpoch = Math.max(localEpoch, lastPurgedEpoch);
+      const isRestored = localSettings.isRestoredArchive;
+
+      const shiftTime = new Date(msg.shift.openTime || msg.shift.closeTime || 0).getTime();
+      if (!isRestored && activeEpoch > 0 && shiftTime > 0 && shiftTime < (activeEpoch - 10000)) {
+        console.warn(`[P2P Sync] Dropped obsolete shift created before database epoch: ${msg.shift.id}`);
+        return;
+      }
       await db.saveShift(msg.shift);
       this.notifyData('SHIFT_UPDATED', msg.shift);
       this.relayIfHub(msg, relayFromPeerId);
     } else if (msg.type === 'SHIFT_LOG_UPSERT' && msg.log) {
+      const localSettings = await db.getSettings();
+      const localEpoch = typeof localSettings.databaseEpoch === 'number' ? localSettings.databaseEpoch : 0;
+      const lastPurgedEpoch = parseInt(localStorage.getItem('cdm_last_purged_epoch') || '0', 10);
+      const activeEpoch = Math.max(localEpoch, lastPurgedEpoch);
+      const isRestored = localSettings.isRestoredArchive;
+
+      const logTime = new Date(msg.log.createdAt || 0).getTime();
+      if (!isRestored && activeEpoch > 0 && logTime > 0 && logTime < (activeEpoch - 10000)) {
+        console.warn(`[P2P Sync] Dropped obsolete shift log created before database epoch: ${msg.log.id}`);
+        return;
+      }
       await db.saveShiftLog(msg.log);
       this.notifyData('SHIFT_LOG_UPDATED', msg.log);
       this.relayIfHub(msg, relayFromPeerId);
@@ -640,30 +722,71 @@ class P2PSyncManager {
       await db.clearHistory();
       this.notifyData('HISTORY_CLEARED');
       this.relayIfHub(msg, relayFromPeerId);
-    } else if (msg.type === 'DATABASE_ARCHIVED_AND_PURGED' && msg.archive) {
-      db.saveDatabaseArchive(msg.archive);
-      await db.resetDatabaseToFactoryDefaults();
-      if (msg.purgedEpoch) {
-        localStorage.setItem('cdm_last_purged_epoch', String(msg.purgedEpoch));
+    } else if (msg.type === 'DATABASE_HARD_PURGE' || (msg.type === 'DATABASE_ARCHIVED_AND_PURGED' && msg.archive)) {
+      if (msg.archive) {
+        db.saveDatabaseArchive(msg.archive);
       }
-      if (msg.syncGroupToDelete) {
-        this.removeKnownSyncGroup(msg.syncGroupToDelete);
+      const purgeTimestamp = msg.purgedEpoch || Date.now();
+      localStorage.setItem('cdm_last_purged_epoch', String(purgeTimestamp));
+
+      await db.resetDatabaseToFactoryDefaults();
+      const groupToDelete = msg.syncGroupToDelete || (msg as { oldSyncGroup?: string }).oldSyncGroup;
+      if (groupToDelete) {
+        this.removeKnownSyncGroup(groupToDelete);
         const currentSaved = localStorage.getItem('cdm_store_name');
-        if (currentSaved === msg.syncGroupToDelete) {
+        if (currentSaved === groupToDelete) {
           localStorage.removeItem('cdm_store_name');
         }
       }
       localStorage.removeItem('cdm_local_active_shift_id');
       localStorage.removeItem('frontdesk_external_logs');
+      localStorage.removeItem('cdm_session_user');
+      localStorage.removeItem('frontdesk_auth_session');
       try {
         sessionStorage.clear();
       } catch {
         // ignore
       }
+      if (typeof window !== 'undefined') {
+        window.postMessage({ type: 'FDP_PURGE_EXTENSION_STORAGE' }, '*');
+      }
       authManager.logout();
       this.notifyData('DATABASE_PURGED', msg);
       this.relayIfHub(msg, relayFromPeerId);
     } else if (msg.type === 'DATABASE_INITIALIZED' && msg.settings) {
+      // 1. Snapshot any current local records to archive just in case
+      try {
+        const localShiftsCount = (await db.getAllShifts()).length;
+        if (localShiftsCount > 0) {
+          const currentSyncGroup = this.state.storeName || 'Main Store';
+          await db.createDatabaseArchive('Pre-Initialization Archive', currentSyncGroup);
+        }
+      } catch (e) {
+        console.error('Failed to auto-archive local data before adopting newly initialized DB:', e);
+      }
+
+      // 2. HARD RESET local database to factory defaults - ABSOLUTE PURGE OF OBSOLETE SHIFTS & DRAWS!
+      await db.resetDatabaseToFactoryDefaults();
+
+      // 3. Mark last purged epoch locally so obsolete incoming syncs or old peers are rejected
+      const newEpoch = typeof msg.settings.databaseEpoch === 'number' ? msg.settings.databaseEpoch : Date.now();
+      localStorage.setItem('cdm_last_purged_epoch', String(newEpoch));
+
+      // 4. Clear all local drawer state and extension storage
+      localStorage.removeItem('cdm_local_active_shift_id');
+      localStorage.removeItem('frontdesk_external_logs');
+      localStorage.removeItem('cdm_session_user');
+      localStorage.removeItem('frontdesk_auth_session');
+      try {
+        sessionStorage.clear();
+      } catch {
+        // ignore
+      }
+      if (typeof window !== 'undefined') {
+        window.postMessage({ type: 'FDP_PURGE_EXTENSION_STORAGE' }, '*');
+      }
+
+      // 5. Save the new settings, new hotel organization, and manager account
       await db.saveSettings(msg.settings);
       if (msg.hotelName) {
         await db.saveOrganization(msg.hotelName);
@@ -675,6 +798,10 @@ class P2PSyncManager {
         this.rememberSyncGroup(msg.syncGroup);
         localStorage.setItem('cdm_store_name', msg.syncGroup);
       }
+
+      // 6. Log out previous session so all drawers are cleanly zeroed
+      authManager.logout();
+
       this.notifyData('DATABASE_INITIALIZED', msg);
       this.relayIfHub(msg, relayFromPeerId);
     } else if (msg.type === 'DATABASE_RESTORED_FROM_ARCHIVE' && msg.archive) {
@@ -856,6 +983,16 @@ class P2PSyncManager {
       archive,
       syncGroupToDelete,
       purgedEpoch: purgedEpoch || Date.now(),
+      senderId: this.myClientId,
+    });
+  }
+
+  public broadcastHardPurge(archive: DatabaseArchive, syncGroupToDelete: string, purgedEpoch: number) {
+    this.sendToAll({
+      type: 'DATABASE_HARD_PURGE',
+      archive,
+      syncGroupToDelete,
+      purgedEpoch,
       senderId: this.myClientId,
     });
   }

@@ -61,6 +61,15 @@ export const NewHotelSetupModal: React.FC<NewHotelSetupModalProps> = ({
       const newEpoch = Date.now();
       const newDbId = `db_${newEpoch}_${Math.random().toString(36).substring(2, 7)}`;
 
+      // 0. Ensure local database is clean of any pre-existing shifts/drawers
+      await db.resetDatabaseToFactoryDefaults();
+      localStorage.setItem('cdm_last_purged_epoch', String(newEpoch));
+      localStorage.removeItem('cdm_local_active_shift_id');
+      localStorage.removeItem('frontdesk_external_logs');
+      if (typeof window !== 'undefined') {
+        window.postMessage({ type: 'FDP_PURGE_EXTENSION_STORAGE' }, '*');
+      }
+
       // 1. Save property name
       await db.saveOrganizationName(cleanProp);
 
@@ -71,6 +80,7 @@ export const NewHotelSetupModal: React.FC<NewHotelSetupModalProps> = ({
         organizationName: cleanProp,
         databaseEpoch: newEpoch,
         databaseId: newDbId,
+        isRestoredArchive: false,
       };
       await db.saveSettings(updatedSettings);
 

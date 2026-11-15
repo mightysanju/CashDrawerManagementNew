@@ -131,6 +131,7 @@ export interface AppSettings {
   maxOpenDrawers?: number; // Maximum simultaneous open cash drawers allowed across the property (Default: 1)
   databaseEpoch?: number; // Unique timestamp of database creation/reset to prevent resurrected deleted databases
   databaseId?: string; // Unique database ID
+  isRestoredArchive?: boolean; // Whether database was restored from an archive rather than freshly initialized
 }
 
 /* -------------------------------------------------------------

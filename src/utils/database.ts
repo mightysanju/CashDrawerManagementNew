@@ -151,6 +151,11 @@ export class DatabaseManager {
     return db.get(STORES.SHIFTS, id);
   }
 
+  async deleteShift(id: string): Promise<void> {
+    const db = await this.dbPromise;
+    await db.delete(STORES.SHIFTS, id);
+  }
+
   async getOpenShifts(): Promise<ShiftRecord[]> {
     const db = await this.dbPromise;
     const tx = db.transaction(STORES.SHIFTS, 'readonly');
@@ -582,6 +587,7 @@ export class DatabaseManager {
       organizationName: archive.hotelName || archive.settings?.organizationName || 'Grand Hotel & Suites',
       databaseEpoch: restoreEpoch,
       databaseId: `db_restore_${restoreEpoch}_${Math.random().toString(36).substring(2, 7)}`,
+      isRestoredArchive: true,
     };
     await this.saveSettings(restoredSettings);
     if (archive.hotelName) {

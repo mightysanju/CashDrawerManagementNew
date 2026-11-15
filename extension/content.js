@@ -74,6 +74,19 @@
         syncUserToExtension(user);
       }
 
+      // Purge extension log storage when requested by app during database reset
+      if (event.data.type === 'FDP_PURGE_EXTENSION_STORAGE') {
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+          chrome.storage.local.remove(['frontdesk_logs']);
+        }
+        try {
+          localStorage.removeItem('frontdesk_external_logs');
+          localStorage.removeItem('frontdesk_logs');
+        } catch (e) {
+          // ignore
+        }
+      }
+
       // Deliver logs when page asks
       if (event.data.type === 'FDP_REQUEST_PENDING_LOGS') {
         if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
