@@ -26,7 +26,7 @@ export function TermsOfService() {
           <section>
             <h2 className="text-xl font-bold text-gray-900 mb-2">1. Agreement to Terms</h2>
             <p>
-              By accessing or using the <strong>Cash Drawer Management System</strong> ("Service", "Application", "we", "our"), you agree to be bound by these Terms of Service. If you disagree with any part of these terms, you may not use our services.
+              By accessing or using the <strong>FrontDesk Pro</strong> ("Service", "Application", "we", "our"), you agree to be bound by these Terms of Service. If you disagree with any part of these terms, you may not use our services.
             </p>
           </section>
 
@@ -71,7 +71,7 @@ export function TermsOfService() {
           <section>
             <h2 className="text-xl font-bold text-gray-900 mb-2">6. Limitation of Liability</h2>
             <p>
-              To the maximum extent permitted by applicable law, in no event shall Cash Drawer Management System, its developers, or affiliates be liable for any indirect, incidental, special, consequential, or punitive damages, including loss of profits, data, or cash discrepancies resulting from the use or inability to use the Service.
+              To the maximum extent permitted by applicable law, in no event shall FrontDesk Pro, its developers, or affiliates be liable for any indirect, incidental, special, consequential, or punitive damages, including loss of profits, data, or cash discrepancies resulting from the use or inability to use the Service.
             </p>
           </section>
 

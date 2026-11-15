@@ -18,7 +18,7 @@ export function AboutUs() {
             <span>Our Mission & Architecture</span>
           </div>
           <h1 className="text-3xl md:text-5xl font-extrabold text-gray-900 tracking-tight mb-4">
-            About Cash Drawer Management
+            About FrontDesk Pro
           </h1>
           <p className="text-lg text-gray-600 max-w-2xl mx-auto">
             Empowering small businesses, independent retailers, restaurants, and non-profits with reliable, zero-subscription cash till reconciliation tools.

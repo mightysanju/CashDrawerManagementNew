@@ -107,6 +107,18 @@ export interface ShiftLogEntry {
   reminderDate?: string; // YYYY-MM-DD or ISO
   reminderNote?: string;
   isReminderCompleted?: boolean;
+
+  // Threaded Responses / Replies
+  responses?: ShiftLogResponse[];
+}
+
+export interface ShiftLogResponse {
+  id: string;
+  authorId: string;
+  authorName: string;
+  authorRole: UserRole;
+  message: string;
+  createdAt: string;
 }
 
 /* -------------------------------------------------------------

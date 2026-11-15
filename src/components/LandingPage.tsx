@@ -29,11 +29,11 @@ export function LandingPage() {
           </div>
 
           <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold text-gray-900 tracking-tight max-w-4xl mx-auto mb-6">
-            Intelligent Cash Drawer & Till Management for Businesses
+            Hotel Front Desk Operations, Simplified
           </h1>
 
           <p className="text-lg sm:text-xl text-gray-600 mb-8 max-w-2xl mx-auto leading-relaxed">
-            Eliminate cash discrepancies and manual calculation errors. Count opening floats, track mid-shift drops, balance registers, and generate instant PDF & thermal print receipts.
+            The all-in-one platform for front desk teams — manage cash registers, track group sales leads, log guest complaints, handle shift handoffs, and generate instant audit reports.
           </p>
 
           <div className="flex flex-col sm:flex-row justify-center items-center gap-4 mb-10">
@@ -41,14 +41,14 @@ export function LandingPage() {
               to="/app"
               className="w-full sm:w-auto inline-flex items-center justify-center px-8 py-3.5 border border-transparent text-base font-bold rounded-xl text-white bg-blue-600 hover:bg-blue-700 shadow-md hover:shadow-lg transition transform active:scale-98"
             >
-              Open Cash Register <ChevronRight className="ml-2" size={20} />
+              Open Front Desk Register <ChevronRight className="ml-2" size={20} />
             </Link>
             <Link
               to="/guide"
               className="w-full sm:w-auto inline-flex items-center justify-center px-6 py-3.5 border border-gray-300 text-base font-semibold rounded-xl text-gray-700 bg-white hover:bg-gray-50 hover:text-blue-600 shadow-sm transition"
             >
               <BookOpen size={18} className="mr-2 text-gray-500" />
-              Till Balancing SOP Guide
+              Operations SOP Guide
             </Link>
           </div>
 
@@ -79,30 +79,30 @@ export function LandingPage() {
                 Operational Excellence
               </h2>
               <h3 className="text-3xl font-extrabold text-gray-900">
-                Engineered for High-Volume Retail & Food Service
+                Built for Hotel & Hospitality Front Desks
               </h3>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
               <FeatureCard
                 icon={<Calculator size={26} className="text-blue-600" />}
-                title="Granular Denomination Tally"
-                description="Easily count bills ($100 to $1), coins, bank coin rolls, and manual payout receipts with instant auto-updating sub-totals."
+                title="Cash Register & Denominations"
+                description="Count bills and coins by denomination with live sub-totals. Track opening floats, mid-shift drops, and end-of-shift balances with printable audit receipts."
               />
               <FeatureCard
                 icon={<Clock size={26} className="text-indigo-600" />}
-                title="Shift Drops & Cash Skims"
-                description="Safely skim excess cash during peak hours. Track who completed the drop, timestamp, and safe deposit total."
+                title="Sales Lead Pipeline"
+                description="Log group, wedding, sports, and corporate leads. Track status from New Lead through to Closed Definite — with a Kanban board and revenue estimates."
               />
               <FeatureCard
                 icon={<Printer size={26} className="text-emerald-600" />}
-                title="Instant Print & PDF Export"
-                description="Generate formatted shift receipts ready for 80mm thermal receipt printers or download comprehensive audit PDF reports."
+                title="Shift Log & Complaint Tracking"
+                description="Record guest complaints and miscellaneous notes each shift. Add threaded responses, set reminders, and hand off cleanly to the next clerk."
               />
               <FeatureCard
                 icon={<Lock size={26} className="text-purple-600" />}
-                title="Client-Side Privacy"
-                description="Stored securely inside your local browser database. Zero corporate tracking, zero external database leaks."
+                title="100% Local & Private"
+                description="All data stays in your browser's IndexedDB — zero cloud uploads, zero tracking. Multi-terminal sync via peer-to-peer BroadcastChannel."
               />
             </div>
           </div>
@@ -117,10 +117,10 @@ export function LandingPage() {
                   Training & Standard Operating Procedures
                 </span>
                 <h3 className="text-2xl md:text-3xl font-bold mb-3">
-                  Need a Standard Cash Handling Policy for Your Staff?
+                  Need a Standard Hospitality Operations Policy for Your Staff?
                 </h3>
                 <p className="text-blue-100 text-sm md:text-base leading-relaxed">
-                  Learn how to establish opening floats, investigate over/short variances, avoid counterfeit risks, and train new cashiers with our complete retail SOP guide.
+                  Learn how to run shift handoffs, handle cash discrepancies, track group sales leads, and document guest complaints — with our complete hotel front desk SOP guide.
                 </p>
               </div>
               <Link

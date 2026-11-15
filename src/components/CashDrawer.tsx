@@ -368,23 +368,23 @@ Close this shift, record the cash drop, and generate receipt?
           <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto justify-start lg:justify-end">
             {/* Staff User Profile Badge */}
             {currentUser ? (
-              <div className="flex items-center space-x-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-1.5 shadow-xs">
-                <div className={`p-1.5 rounded-lg ${
+              <div className="flex items-center space-x-2 bg-white border border-gray-200 rounded-lg px-3 py-1.5 shadow-xs">
+                <div className={`p-1.5 rounded-md ${
                   currentUser.role === 'manager'
-                    ? 'bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300'
-                    : 'bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
+                    ? 'bg-slate-100 text-slate-800'
+                    : 'bg-blue-50 text-blue-700'
                 }`}>
                   {currentUser.role === 'manager' ? <ShieldCheck className="w-4 h-4" /> : <User className="w-4 h-4" />}
                 </div>
                 <div className="text-left">
                   <div className="flex items-center space-x-1.5">
-                    <span className="text-xs font-bold text-gray-900 dark:text-white">
+                    <span className="text-xs font-semibold text-gray-900">
                       {currentUser.fullName}
                     </span>
-                    <span className={`text-[10px] font-extrabold uppercase px-1.5 py-0.2 rounded ${
+                    <span className={`text-[10px] font-bold uppercase px-1.5 py-0.2 rounded border ${
                       currentUser.role === 'manager'
-                        ? 'bg-purple-100 text-purple-800'
-                        : 'bg-blue-100 text-blue-800'
+                        ? 'bg-slate-50 text-slate-700 border-slate-200'
+                        : 'bg-blue-50 text-blue-700 border-blue-200'
                     }`}>
                       {currentUser.role}
                     </span>
@@ -447,46 +447,46 @@ Close this shift, record the cash drop, and generate receipt?
         </div>
 
         {/* -------------------- NAVIGATION TABS BAR -------------------- */}
-        <div className="flex border-b border-gray-200 dark:border-gray-700 mb-6 bg-white dark:bg-gray-800 rounded-2xl p-1 shadow-sm">
+        <div className="flex flex-wrap items-center gap-2 mb-6 bg-gray-100 p-1 rounded-xl border border-gray-200/80">
           <button
             onClick={() => setActiveTab('register')}
-            className={`flex-1 py-3 px-4 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center space-x-2 transition ${
+            className={`flex-1 py-2 px-3.5 rounded-lg font-semibold text-xs sm:text-sm flex items-center justify-center space-x-2 transition-all ${
               activeTab === 'register'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-750'
+                ? 'bg-white text-gray-900 shadow-xs border border-gray-200/60'
+                : 'text-gray-600 hover:text-gray-900 hover:bg-white/60'
             }`}
           >
-            <Coins className="w-4 h-4" />
+            <Coins className="w-4 h-4 text-blue-600" />
             <span>Cash Register & Tills</span>
           </button>
 
           <button
             onClick={() => setActiveTab('logs')}
-            className={`flex-1 py-3 px-4 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center space-x-2 transition ${
+            className={`flex-1 py-2 px-3.5 rounded-lg font-semibold text-xs sm:text-sm flex items-center justify-center space-x-2 transition-all ${
               activeTab === 'logs'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-750'
+                ? 'bg-white text-gray-900 shadow-xs border border-gray-200/60'
+                : 'text-gray-600 hover:text-gray-900 hover:bg-white/60'
             }`}
           >
-            <FileText className="w-4 h-4" />
-            <span>Shift Logs & Hospitality Leads ({shiftLogs.length})</span>
+            <FileText className="w-4 h-4 text-indigo-600" />
+            <span>Shift Logs & Leads ({shiftLogs.length})</span>
           </button>
 
           <button
             onClick={() => setActiveTab('reminders')}
-            className={`flex-1 py-3 px-4 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center space-x-2 transition relative ${
+            className={`flex-1 py-2 px-3.5 rounded-lg font-semibold text-xs sm:text-sm flex items-center justify-center space-x-2 transition-all relative ${
               activeTab === 'reminders'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-750'
+                ? 'bg-white text-gray-900 shadow-xs border border-gray-200/60'
+                : 'text-gray-600 hover:text-gray-900 hover:bg-white/60'
             }`}
           >
-            <Bell className="w-4 h-4" />
+            <Bell className="w-4 h-4 text-amber-500" />
             <span>Reminders</span>
             {pendingRemindersCount > 0 && (
-              <span className={`ml-1 text-[10px] font-extrabold px-1.5 py-0.2 rounded-full ${
+              <span className={`ml-1 text-[10px] font-bold px-1.5 py-0.2 rounded-full ${
                 activeTab === 'reminders'
-                  ? 'bg-white text-blue-600'
-                  : 'bg-rose-600 text-white animate-pulse'
+                  ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                  : 'bg-rose-600 text-white'
               }`}>
                 {pendingRemindersCount}
               </span>
@@ -496,9 +496,9 @@ Close this shift, record the cash drop, and generate receipt?
           {currentUser?.role === 'manager' && (
             <button
               onClick={() => setIsUserMgmtModalOpen(true)}
-              className="py-3 px-4 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center space-x-1.5 text-purple-700 bg-purple-50 hover:bg-purple-100 transition border border-purple-200"
+              className="py-2 px-3.5 rounded-lg font-semibold text-xs sm:text-sm flex items-center justify-center space-x-1.5 text-gray-700 bg-white hover:bg-gray-50 transition border border-gray-300 shadow-xs"
             >
-              <ShieldCheck className="w-4 h-4 text-purple-600" />
+              <ShieldCheck className="w-4 h-4 text-blue-600" />
               <span>Manager Console</span>
             </button>
           )}

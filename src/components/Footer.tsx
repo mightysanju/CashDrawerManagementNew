@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Shield, DollarSign } from 'lucide-react';
+import { Shield } from 'lucide-react';
 
 export function Footer() {
   const currentYear = new Date().getFullYear();
@@ -12,13 +12,11 @@ export function Footer() {
           {/* Brand & Security */}
           <div className="md:col-span-1">
             <Link to="/" className="flex items-center text-white font-bold text-xl mb-3">
-              <span className="bg-blue-600 text-white p-1 rounded-md mr-2">
-                <DollarSign size={20} />
-              </span>
-              Cash Manager
+              <img src="/favicon.png" alt="FrontDesk Pro" className="w-7 h-7 rounded mr-2" />
+              FrontDesk <span className="text-blue-400">Pro</span>
             </Link>
             <p className="text-sm text-gray-400 mb-4">
-              Professional, free cash drawer reconciliation and shift management platform designed for retail, food service, and small businesses.
+              The all-in-one hospitality front desk platform — register management, sales lead tracking, complaint logs, and shift handoffs. Built for hotel front desks.
             </p>
             <div className="flex items-center text-xs text-green-400 bg-green-950/60 border border-green-800/80 px-2.5 py-1.5 rounded">
               <Shield size={14} className="mr-1.5 shrink-0" />
@@ -34,7 +32,7 @@ export function Footer() {
             <ul className="space-y-2 text-sm">
               <li>
                 <Link to="/app" className="hover:text-white transition-colors">
-                  Open Cash Drawer
+                  Front Desk Register
                 </Link>
               </li>
               <li>
@@ -120,7 +118,7 @@ export function Footer() {
         </div>
 
         <div className="border-t border-gray-800 pt-6 flex flex-col md:flex-row items-center justify-between text-xs text-gray-500">
-          <p>© {currentYear} Cash Drawer Management System. All rights reserved.</p>
+          <p>© {currentYear} FrontDesk Pro. All rights reserved.</p>
           <div className="flex space-x-6 mt-3 md:mt-0">
             <Link to="/privacy" className="hover:underline">Privacy</Link>
             <Link to="/terms" className="hover:underline">Terms</Link>

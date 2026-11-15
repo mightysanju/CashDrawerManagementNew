@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Menu, X, DollarSign, BookOpen } from 'lucide-react';
+import { Menu, X, BookOpen } from 'lucide-react';
 
 export function Navbar() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -13,12 +13,10 @@ export function Navbar() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16">
           <div className="flex items-center">
-            <Link to="/" className="flex items-center space-x-2">
-              <span className="bg-blue-600 text-white p-1.5 rounded-lg shadow-sm">
-                <DollarSign className="h-6 w-6" />
-              </span>
-              <span className="text-xl font-bold bg-gradient-to-r from-gray-900 to-gray-700 bg-clip-text text-transparent">
-                Cash Manager
+            <Link to="/" className="flex items-center space-x-2.5">
+              <img src="/favicon.png" alt="FrontDesk Pro" className="h-8 w-8 rounded-lg object-cover" />
+              <span className="text-xl font-bold text-gray-900">
+                FrontDesk <span className="text-blue-600">Pro</span>
               </span>
             </Link>
           </div>
@@ -33,7 +31,7 @@ export function Navbar() {
                   : 'text-gray-700 hover:text-blue-600 hover:bg-gray-50'
               }`}
             >
-              Open Drawer
+              Front Desk
             </Link>
             <Link
               to="/guide"
@@ -81,7 +79,7 @@ export function Navbar() {
               to="/app"
               className="ml-3 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition shadow-sm hover:shadow"
             >
-              Launch Register
+              Open Register
             </Link>
           </div>
 
@@ -107,7 +105,7 @@ export function Navbar() {
               onClick={() => setIsMenuOpen(false)}
               className="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-100"
             >
-              Open Drawer
+              Front Desk Register
             </Link>
             <Link
               to="/guide"
@@ -149,7 +147,7 @@ export function Navbar() {
               onClick={() => setIsMenuOpen(false)}
               className="block px-3 py-2 mt-2 text-center rounded-md text-base font-semibold bg-blue-600 text-white hover:bg-blue-700"
             >
-              Launch Register
+              Open Register
             </Link>
           </div>
         </div>

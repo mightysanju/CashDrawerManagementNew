@@ -26,7 +26,7 @@ export const PrivacyPolicy: React.FC = () => {
 
           <section>
             <p className="text-base text-gray-700">
-              At <strong>Cash Drawer Management System</strong> ("we", "our", or "us"), accessible from https://cashdrawermanagement.netlify.app, one of our main priorities is the privacy of our visitors. This Privacy Policy document outlines the types of information collected and how we protect your business and personal data in full compliance with global privacy standards, including the EU General Data Protection Regulation (GDPR), California Consumer Privacy Act (CCPA), and Google AdSense publisher policies.
+              At <strong>FrontDesk Pro</strong> ("we", "our", or "us"), accessible from https://cashdrawermanagement.netlify.app, one of our main priorities is the privacy of our visitors. This Privacy Policy document outlines the types of information collected and how we protect your business and personal data in full compliance with global privacy standards, including the EU General Data Protection Regulation (GDPR), California Consumer Privacy Act (CCPA), and Google AdSense publisher policies.
             </p>
           </section>
 

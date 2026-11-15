@@ -37,7 +37,7 @@ const FAQS: FAQItem[] = [
     answer: "Most retail, grocery, and hospitality businesses enforce an acceptable variance threshold of ±$2.00 to ±$3.00 per shift. Minor coin rounding errors are common, but discrepancies exceeding $5.00 typically trigger a mandatory recount and manager review."
   },
   {
-    question: "Does the Cash Drawer Management platform store company financial data on the cloud?",
+    question: "Does the FrontDesk Pro platform store company financial data on the cloud?",
     answer: "No. The platform utilizes local IndexedDB browser storage. All shift numbers, cashier names, denomination counts, and reports reside exclusively on the device running the browser. No financial records are ever transmitted to any remote servers."
   },
   {
@@ -65,7 +65,7 @@ export function CashHandlingGuide() {
             <span>Retail & Hospitality SOP</span>
           </div>
           <h1 className="text-3xl md:text-5xl font-extrabold text-gray-900 tracking-tight mb-4">
-            Cash Drawer Balancing & SOP Guide
+            FrontDesk Pro Operations & SOP Guide
           </h1>
           <p className="text-lg text-gray-600 max-w-3xl mx-auto">
             Comprehensive Standard Operating Procedures (SOP) for accurate till counting, shift drops, audit compliance, and discrepancy prevention in modern retail.
