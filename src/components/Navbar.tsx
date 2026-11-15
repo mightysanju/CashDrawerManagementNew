@@ -24,16 +24,6 @@ export function Navbar() {
           {/* Desktop Navigation */}
           <div className="hidden md:flex md:items-center md:space-x-1 lg:space-x-4">
             <Link
-              to="/app"
-              className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                isActive('/app')
-                  ? 'text-blue-600 bg-blue-50'
-                  : 'text-gray-700 hover:text-blue-600 hover:bg-gray-50'
-              }`}
-            >
-              Front Desk
-            </Link>
-            <Link
               to="/guide"
               className={`px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center ${
                 isActive('/guide')
@@ -75,11 +65,22 @@ export function Navbar() {
               Privacy
             </Link>
             
+            {/* Animated FrontDesk Call-To-Action Button on Right */}
             <Link
               to="/app"
-              className="ml-3 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition shadow-sm hover:shadow"
+              className="ml-3 relative group inline-flex items-center space-x-2 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-600 bg-[length:200%_auto] hover:bg-[right_center] text-white px-4 py-2 rounded-xl text-sm font-bold shadow-md hover:shadow-lg hover:shadow-blue-500/25 transition-all duration-300 transform hover:-translate-y-0.5 active:translate-y-0 overflow-hidden"
             >
-              Open Register
+              {/* Shimmer sweep animation */}
+              <span className="absolute inset-0 w-full h-full bg-white/20 transform -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-1000 ease-out pointer-events-none" />
+              
+              {/* Live pulsing online beacon */}
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400"></span>
+              </span>
+
+              <span className="tracking-wide">FrontDesk</span>
+              <span className="text-blue-200 group-hover:translate-x-0.5 transition-transform duration-200 font-bold">→</span>
             </Link>
           </div>
 
@@ -103,9 +104,9 @@ export function Navbar() {
             <Link
               to="/app"
               onClick={() => setIsMenuOpen(false)}
-              className="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-100"
+              className="block px-3 py-2 rounded-md text-base font-bold text-blue-600 bg-blue-50 hover:bg-blue-100"
             >
-              Front Desk Register
+              🚀 FrontDesk
             </Link>
             <Link
               to="/guide"

@@ -1,7 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { format } from 'date-fns';
 import { 
-  Clock, 
   History, 
   Printer, 
   FileText, 
@@ -12,16 +10,14 @@ import {
   User, 
   LogOut, 
   LogIn, 
-  AlertCircle,
-  Puzzle
+  Puzzle,
+  ChevronUp
 } from 'lucide-react';
 import { CashEntry, ShiftRecord, ShiftLogEntry, UserAccount, PrimaryCategory } from '../types';
 import { ShiftHistory } from './ShiftHistory';
 import { DatabaseManager } from '../utils/database';
 import { CashSection } from './cash-sections/CashSection';
 import { ReceiptsSection } from './cash-sections/ReceiptsSection';
-import { ActiveDrawers } from './ActiveDrawers';
-import { DrawerControls } from './DrawerControls';
 import { Navbar } from './Navbar';
 import { Footer } from './Footer';
 import { NetworkSyncModal } from './NetworkSyncModal';
@@ -32,6 +28,8 @@ import { RemindersTab } from './RemindersTab';
 import { UserManagementModal } from './UserManagementModal';
 import { ExtensionModal } from './ExtensionModal';
 import { FloatingExtensionBubble } from './FloatingExtensionBubble';
+import { OpenShiftModal } from './OpenShiftModal';
+import { CloseShiftModal } from './CloseShiftModal';
 import { generatePDF, printReceipt } from '../utils/pdfGenerator';
 import { p2pSyncManager, SyncState } from '../utils/p2pSyncManager';
 import { authManager } from '../utils/authManager';
@@ -44,12 +42,7 @@ const DENOMINATIONS = {
 
 const db = new DatabaseManager();
 
-type AppTab = 'register' | 'logs' | 'reminders' | 'admin';
-
 export function CashDrawer() {
-  // Navigation tab state
-  const [activeTab, setActiveTab] = useState<AppTab>('register');
-
   // Authentication State
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(authManager.getCurrentUser());
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
@@ -65,6 +58,13 @@ export function CashDrawer() {
   const [showHistory, setShowHistory] = useState(false);
   const [entries, setEntries] = useState<CashEntry[]>([]);
   const [shiftDrop, setShiftDrop] = useState<number>(0);
+
+  // Auto-popups & Unified View States
+  const [isOpenShiftModalOpen, setIsOpenShiftModalOpen] = useState(false);
+  const [isCloseShiftModalOpen, setIsCloseShiftModalOpen] = useState(false);
+  const [isBusyRemindPending, setIsBusyRemindPending] = useState(false);
+  const [isTallyExpanded, setIsTallyExpanded] = useState(false);
+  const [unifiedSubView, setUnifiedSubView] = useState<'dashboard' | 'reminders'>('dashboard');
 
   // Shift Logs & Reminders State
   const [shiftLogs, setShiftLogs] = useState<ShiftLogEntry[]>([]);
@@ -116,10 +116,9 @@ export function CashDrawer() {
     }
   }, []);
 
-  // Load shift logs from IndexedDB
   const loadLogsData = useCallback(async () => {
     try {
-      const logs = await db.getShiftLogs();
+      const logs = await db.getAllShiftLogs();
       setShiftLogs(logs);
     } catch (error) {
       console.error('Error loading shift logs:', error);
@@ -130,18 +129,27 @@ export function CashDrawer() {
     loadShiftsData();
     loadLogsData();
 
-    // Auto-discover and connect immediately on startup
     p2pSyncManager.autoConnect();
 
-    // Subscribe to auth changes
     const unsubAuth = authManager.subscribe((user) => {
       setCurrentUser(user);
-      if (user && !cashierName) {
-        setCashierName(user.fullName);
+      if (user) {
+        if (!cashierName) setCashierName(user.fullName);
+        const hasSnoozed = sessionStorage.getItem(`fdp_snooze_float_${user.id}`) === 'true';
+        if (hasSnoozed) {
+          setIsBusyRemindPending(true);
+        } else {
+          // Auto-prompt to open drawer if no shift is currently open
+          db.getAllShifts().then((shifts) => {
+            const hasActive = shifts.some((s) => s.status === 'open');
+            if (!hasActive) {
+              setIsOpenShiftModalOpen(true);
+            }
+          });
+        }
       }
     });
 
-    // Listen for P2P network changes and remote sync payloads
     const unsubState = p2pSyncManager.subscribeState(setSyncState);
     const unsubData = p2pSyncManager.subscribeData(() => {
       loadShiftsData();
@@ -155,7 +163,18 @@ export function CashDrawer() {
     };
   }, [loadShiftsData, loadLogsData, cashierName]);
 
-  // Reminders metrics
+  // Initial check for open drawer on mount
+  useEffect(() => {
+    if (currentUser && !selectedShift && activeShifts.length === 0) {
+      const hasSnoozed = sessionStorage.getItem(`fdp_snooze_float_${currentUser.id}`) === 'true';
+      if (hasSnoozed) {
+        setIsBusyRemindPending(true);
+      } else {
+        setIsOpenShiftModalOpen(true);
+      }
+    }
+  }, [currentUser, selectedShift, activeShifts.length]);
+
   const pendingRemindersCount = shiftLogs.filter(
     (l) => l.hasReminder && !l.isReminderCompleted
   ).length;
@@ -168,40 +187,25 @@ export function CashDrawer() {
     setCashierName(shift.cashierName);
   };
 
-  const handleStartShift = async (openingEntries: CashEntry[]) => {
-    // Authentication guard: Clerk or Manager must be signed in
+  const handleModalStartShift = async (
+    drawerNum: string,
+    openingFloat: number,
+    openingEntries: CashEntry[]
+  ) => {
     if (!currentUser) {
-      setLoginRequiredAction('start-shift');
       setIsLoginModalOpen(true);
       return;
     }
 
-    if (!drawerNumber || !cashierName) {
-      alert('Please enter both drawer number and cashier name.');
-      return;
-    }
-
-    if (activeShifts.some((shift) => shift.drawerNumber === drawerNumber)) {
-      alert(
-        'This drawer number is already in use. Please select a different number or close the active shift.'
-      );
-      return;
-    }
-
     try {
-      const openingBalance = openingEntries.reduce(
-        (sum, entry) => sum + entry.total,
-        0
-      );
-
       const newShift: ShiftRecord = {
         id: Date.now().toString(),
-        organizationName,
-        drawerNumber,
-        cashierName: cashierName.trim() || currentUser.fullName,
+        organizationName: organizationName || 'Front Desk',
+        drawerNumber: drawerNum,
+        cashierName: currentUser.fullName,
         cashierId: currentUser.id,
         openTime: new Date().toISOString(),
-        openingBalance,
+        openingBalance: openingFloat,
         entries: openingEntries,
         status: 'open',
       };
@@ -209,71 +213,99 @@ export function CashDrawer() {
       await db.saveShift(newShift);
       p2pSyncManager.broadcastShift(newShift);
 
+      // Auto-log a shift note in Recent Activity
+      const startLog: ShiftLogEntry = {
+        id: `log_open_${Date.now()}`,
+        category: 'Miscellaneous',
+        clerkId: currentUser.id,
+        clerkName: currentUser.fullName,
+        topic: `Shift Started: Drawer #${drawerNum} Opened`,
+        clerkNotes: `Drawer #${drawerNum} opened with starting till float of $${openingFloat.toFixed(2)}.`,
+        hasReminder: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        responses: [],
+      };
+      await db.saveShiftLog(startLog);
+      p2pSyncManager.broadcastShiftLog(startLog);
+
       await loadShiftsData();
+      await loadLogsData();
       handleSelectShift(newShift);
 
-      // Clear form
-      setDrawerNumber('');
-      setCashierName(currentUser.fullName);
+      setIsBusyRemindPending(false);
+      sessionStorage.removeItem(`fdp_snooze_float_${currentUser.id}`);
+      setIsOpenShiftModalOpen(false);
     } catch (error) {
       console.error('Error starting shift:', error);
       alert('Failed to start shift. Please try again.');
     }
   };
 
-  const handleEndShift = async () => {
-    if (!currentUser) {
-      setLoginRequiredAction('end-shift');
-      setIsLoginModalOpen(true);
-      return;
+  const handleRemindLater = () => {
+    if (currentUser) {
+      sessionStorage.setItem(`fdp_snooze_float_${currentUser.id}`, 'true');
     }
+    setIsBusyRemindPending(true);
+    setIsOpenShiftModalOpen(false);
+  };
 
+  const handleConfirmCloseShift = async (
+    finalDrop: number,
+    closingNotes: string
+  ) => {
     if (!selectedShift) return;
 
     const currentBalance = calculateTotal();
-    const difference = currentBalance - selectedShift.openingBalance;
+    const totalDrop = (selectedShift.shiftDrop || 0) + (finalDrop || 0);
 
-    const confirmMessage = `
-Shift Summary for Drawer #${selectedShift.drawerNumber}
-Cashier: ${selectedShift.cashierName} (Logged as: ${currentUser.fullName})
----------------------------------
-Opening Float:    $${selectedShift.openingBalance.toFixed(2)}
-Counted Balance:  $${currentBalance.toFixed(2)}
-Shift Drop:       $${shiftDrop.toFixed(2)}
-Variance:         ${difference >= 0 ? '+' : ''}$${difference.toFixed(2)}
+    const closedShift: ShiftRecord = {
+      ...selectedShift,
+      closeTime: new Date().toISOString(),
+      closingBalance: currentBalance,
+      shiftDrop: totalDrop,
+      entries: [...entries],
+      status: 'closed',
+    };
 
-Close this shift, record the cash drop, and generate receipt?
-    `;
+    await db.saveShift(closedShift);
+    p2pSyncManager.broadcastShift(closedShift);
 
-    if (!window.confirm(confirmMessage.trim())) {
-      return;
-    }
+    // Auto-create a shift log handover note in Recent Activity
+    const handoverLog: ShiftLogEntry = {
+      id: `log_close_${Date.now()}`,
+      category: 'Miscellaneous',
+      clerkId: currentUser?.id || 'usr_staff',
+      clerkName: currentUser?.fullName || 'Front Desk Staff',
+      topic: `Shift Handover: Drawer #${selectedShift.drawerNumber} Closed`,
+      clerkNotes: `Drawer #${selectedShift.drawerNumber} closed. Counted Till: $${currentBalance.toFixed(2)}, Float: $${selectedShift.openingBalance.toFixed(2)}, Safe Drop: $${totalDrop.toFixed(2)}.${closingNotes ? ` Notes: ${closingNotes}` : ''}`,
+      hasReminder: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      responses: [],
+    };
+    await db.saveShiftLog(handoverLog);
+    p2pSyncManager.broadcastShiftLog(handoverLog);
 
-    try {
-      const closedShift: ShiftRecord = {
-        ...selectedShift,
-        closeTime: new Date().toISOString(),
-        closingBalance: currentBalance,
-        shiftDrop,
-        entries: [...entries],
-        status: 'closed',
-      };
+    // Download PDF audit report
+    setTimeout(() => {
+      generatePDF(closedShift);
+    }, 100);
 
-      await db.saveShift(closedShift);
-      p2pSyncManager.broadcastShift(closedShift);
+    setSelectedShift(null);
+    setEntries([]);
+    setShiftDrop(0);
+    setIsCloseShiftModalOpen(false);
+    await loadShiftsData();
+    await loadLogsData();
+  };
 
-      // Download PDF report
-      setTimeout(() => {
-        generatePDF(closedShift);
-      }, 100);
-
-      setSelectedShift(null);
-      setEntries([]);
-      setShiftDrop(0);
-      await loadShiftsData();
-    } catch (error) {
-      console.error('Error ending shift:', error);
-      alert('Failed to end shift. Please try again.');
+  const handleRequestSignOut = () => {
+    if (selectedShift) {
+      // Auto-popup close drawer modal!
+      setIsCloseShiftModalOpen(true);
+    } else {
+      authManager.logout();
     }
   };
 
@@ -328,43 +360,37 @@ Close this shift, record the cash drop, and generate receipt?
   };
 
   const handleEditLog = (entry: ShiftLogEntry) => {
-    if (!currentUser) {
-      setLoginRequiredAction('edit-log');
-      setIsLoginModalOpen(true);
-      return;
-    }
     setEditingLogEntry(entry);
     setIsLogModalOpen(true);
   };
 
-  const handleDeleteLog = async (logId: string) => {
-    try {
-      await db.deleteShiftLog(logId);
-      p2pSyncManager.broadcastShiftLogDelete(logId);
-      loadLogsData();
-    } catch (err) {
-      console.error('Error deleting shift log:', err);
-    }
+  const handleDeleteLog = async (id: string) => {
+    await db.deleteShiftLog(id);
+    p2pSyncManager.broadcastDeleteShiftLog(id);
+    loadLogsData();
   };
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col justify-between pt-16">
       <Navbar />
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full flex-grow">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full flex-grow">
         {/* -------------------- MAIN APP HEADER & USER PROFILE BAR -------------------- */}
-        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-6">
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-5">
           <div>
             <div className="flex items-center space-x-2">
               <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight">
-                Front Desk Operations & Register
+                FrontDesk Operations Platform
               </h1>
-              {syncState.status === 'connected' && (
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" title="Network P2P Connected" />
+              {selectedShift && (
+                <span className="hidden sm:inline-flex items-center space-x-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold px-2.5 py-0.5 rounded-full">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                  <span>Drawer #{selectedShift.drawerNumber} Active</span>
+                </span>
               )}
             </div>
             <p className="text-xs sm:text-sm text-gray-500 mt-0.5">
-              Cash drawer reconciliation, group sales leads, guest complaints, and shift logs.
+              Unified cash register, group sales leads, guest complaints, and live shift handoffs on one page.
             </p>
           </div>
 
@@ -397,10 +423,8 @@ Close this shift, record the cash drop, and generate receipt?
                 </div>
                 <button
                   type="button"
-                  onClick={() => {
-                    authManager.logout();
-                  }}
-                  title="Sign Out"
+                  onClick={handleRequestSignOut}
+                  title="Sign Out / Close Shift"
                   className="ml-1 p-1 text-gray-400 hover:text-rose-600 rounded-lg transition"
                 >
                   <LogOut className="w-4 h-4" />
@@ -436,13 +460,13 @@ Close this shift, record the cash drop, and generate receipt?
               {syncState.status === 'connected' ? (
                 syncState.role === 'hub' ? (
                   syncState.connectedCount === 0
-                    ? 'Sync: Main Register'
-                    : `Sync: Hub (${syncState.connectedCount} peer${syncState.connectedCount > 1 ? 's' : ''})`
+                    ? 'Sync: Hub'
+                    : `Sync: Hub (${syncState.connectedCount})`
                 ) : (
-                  'Sync: Connected Till'
+                  'Sync: Connected'
                 )
               ) : syncState.status === 'scanning' ? (
-                'Sync: Scanning...'
+                'Syncing...'
               ) : (
                 'Connect Registers'
               )}
@@ -462,303 +486,310 @@ Close this shift, record the cash drop, and generate receipt?
           </div>
         </div>
 
-        {/* -------------------- NAVIGATION TABS BAR -------------------- */}
-        <div className="flex flex-wrap items-center gap-2 mb-6 bg-gray-100 p-1 rounded-xl border border-gray-200/80">
-          <button
-            onClick={() => setActiveTab('register')}
-            className={`flex-1 py-2 px-3.5 rounded-lg font-semibold text-xs sm:text-sm flex items-center justify-center space-x-2 transition-all ${
-              activeTab === 'register'
-                ? 'bg-white text-gray-900 shadow-xs border border-gray-200/60'
-                : 'text-gray-600 hover:text-gray-900 hover:bg-white/60'
-            }`}
-          >
-            <Coins className="w-4 h-4 text-blue-600" />
-            <span>Cash Register & Tills</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('logs')}
-            className={`flex-1 py-2 px-3.5 rounded-lg font-semibold text-xs sm:text-sm flex items-center justify-center space-x-2 transition-all ${
-              activeTab === 'logs'
-                ? 'bg-white text-gray-900 shadow-xs border border-gray-200/60'
-                : 'text-gray-600 hover:text-gray-900 hover:bg-white/60'
-            }`}
-          >
-            <FileText className="w-4 h-4 text-indigo-600" />
-            <span>Shift Logs & Leads ({shiftLogs.length})</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('reminders')}
-            className={`flex-1 py-2 px-3.5 rounded-lg font-semibold text-xs sm:text-sm flex items-center justify-center space-x-2 transition-all relative ${
-              activeTab === 'reminders'
-                ? 'bg-white text-gray-900 shadow-xs border border-gray-200/60'
-                : 'text-gray-600 hover:text-gray-900 hover:bg-white/60'
-            }`}
-          >
-            <Bell className="w-4 h-4 text-amber-500" />
-            <span>Reminders</span>
-            {pendingRemindersCount > 0 && (
-              <span className={`ml-1 text-[10px] font-bold px-1.5 py-0.2 rounded-full ${
-                activeTab === 'reminders'
-                  ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                  : 'bg-rose-600 text-white'
-              }`}>
-                {pendingRemindersCount}
-              </span>
-            )}
-          </button>
-
-          {currentUser?.role === 'manager' && (
-            <button
-              onClick={() => setIsUserMgmtModalOpen(true)}
-              className="py-2 px-3.5 rounded-lg font-semibold text-xs sm:text-sm flex items-center justify-center space-x-1.5 text-gray-700 bg-white hover:bg-gray-50 transition border border-gray-300 shadow-xs"
-            >
-              <ShieldCheck className="w-4 h-4 text-blue-600" />
-              <span>Manager Console</span>
-            </button>
-          )}
-        </div>
-
-        {/* -------------------- TAB 1: CASH REGISTER -------------------- */}
-        {activeTab === 'register' && (
-          <div className="space-y-6 animate-fade-in">
-            {/* Shift History Toggle Button */}
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={() => {
-                  if (!currentUser) {
-                    setLoginRequiredAction('view-history');
-                    setIsLoginModalOpen(true);
-                    return;
-                  }
-                  setShowHistory(!showHistory);
-                }}
-                className="inline-flex items-center gap-2 px-3.5 py-2 bg-white border border-gray-300 text-gray-700 font-semibold text-xs rounded-xl hover:bg-gray-50 hover:text-blue-600 transition shadow-xs"
-              >
-                <History size={16} />
-                {showHistory ? 'Hide Shift History' : 'View Shift History'}
-              </button>
+        {/* -------------------- 1. PENDING FLOAT REMINDER BANNER -------------------- */}
+        {isBusyRemindPending && !selectedShift && (
+          <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 mb-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs animate-in fade-in">
+            <div className="flex items-center space-x-3">
+              <div className="p-2 bg-amber-100 text-amber-800 rounded-lg">
+                <Bell className="w-5 h-5 animate-bounce" />
+              </div>
+              <div>
+                <h4 className="text-xs font-bold text-amber-900">
+                  Opening Till Float Pending — You selected "Remind me later"
+                </h4>
+                <p className="text-[11px] text-amber-700">
+                  Clerk on duty: {currentUser?.fullName || 'Staff'}. When free between check-ins, verify your starting till float so your cash records stay accurate.
+                </p>
+              </div>
             </div>
-
-            {/* New Drawer Setup Section */}
-            <DrawerControls
-              drawerNumber={drawerNumber}
-              cashierName={cashierName || currentUser?.fullName || ''}
-              organizationName={organizationName}
-              onDrawerNumberChange={setDrawerNumber}
-              onCashierNameChange={setCashierName}
-              onOrganizationNameChange={setOrganizationName}
-              onStartShift={handleStartShift}
-            />
-
-            {/* Active Drawers Tab */}
-            {activeShifts.length > 0 && (
-              <div className="mb-8">
-                <h2 className="text-lg font-bold text-gray-900 mb-3 flex items-center">
-                  <span className="w-2.5 h-2.5 rounded-full bg-green-500 mr-2 animate-pulse"></span>
-                  Active Registered Tills ({activeShifts.length})
-                </h2>
-                <ActiveDrawers
-                  shifts={activeShifts}
-                  onSelectShift={handleSelectShift}
-                  selectedShiftId={selectedShift?.id || null}
-                />
-              </div>
-            )}
-
-            {/* Active Drawer Working Canvas */}
-            {selectedShift && (
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 mb-8">
-                <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between bg-blue-50/70 border border-blue-200/80 p-5 rounded-xl mb-6 gap-4">
-                  <div className="flex items-start gap-3">
-                    <div className="p-2.5 bg-blue-600 text-white rounded-xl shadow-xs">
-                      <Clock size={22} />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-bold text-gray-900 text-base">
-                          Drawer #{selectedShift.drawerNumber}
-                        </h3>
-                        <span className="text-xs bg-blue-100 text-blue-800 font-medium px-2 py-0.5 rounded">
-                          Cashier: {selectedShift.cashierName}
-                        </span>
-                      </div>
-                      <div className="text-xs text-gray-500 mt-1">
-                        Started: {format(new Date(selectedShift.openTime), 'PPpp')}
-                      </div>
-                      <div className="text-sm font-semibold text-gray-800 mt-0.5">
-                        Opening Float: ${selectedShift.openingBalance.toFixed(2)}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Quick Actions & Shift Drop */}
-                  <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto justify-end">
-                    <div className="flex items-center bg-white border border-gray-300 rounded-xl px-3 py-1.5 shadow-xs">
-                      <span className="text-xs font-semibold text-gray-600 mr-2">Cash Drop: $</span>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        placeholder="0.00"
-                        value={shiftDrop || ''}
-                        onChange={(e) =>
-                          setShiftDrop(parseFloat(e.target.value) || 0)
-                        }
-                        className="w-20 text-sm font-semibold outline-hidden"
-                      />
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => handleOpenNewLogModal('Sales')}
-                      title="Log shift group lead or note"
-                      className="inline-flex items-center gap-1.5 px-3 py-2 bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-semibold rounded-xl hover:bg-emerald-100 transition shadow-xs"
-                    >
-                      <FileText size={15} />
-                      + Shift Log
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => printReceipt({
-                        ...selectedShift,
-                        closingBalance: currentTotal,
-                        shiftDrop,
-                        entries,
-                      })}
-                      title="Print receipt of current count"
-                      className="inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-300 text-gray-700 text-xs font-semibold rounded-xl hover:bg-gray-50 hover:text-blue-600 transition shadow-xs"
-                    >
-                      <Printer size={15} />
-                      Print Receipt
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => generatePDF({
-                        ...selectedShift,
-                        closingBalance: currentTotal,
-                        shiftDrop,
-                        entries,
-                      })}
-                      title="Download current count PDF"
-                      className="inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-300 text-gray-700 text-xs font-semibold rounded-xl hover:bg-gray-50 hover:text-blue-600 transition shadow-xs"
-                    >
-                      <FileText size={15} />
-                      PDF Summary
-                    </button>
-
-                    <button
-                      onClick={handleEndShift}
-                      className="px-4 py-2 bg-red-600 text-white font-semibold text-xs rounded-xl hover:bg-red-700 transition shadow-xs"
-                    >
-                      End Shift & Reconcile
-                    </button>
-                  </div>
-                </div>
-
-                {/* Currency Breakdown Grids */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                  <CashSection
-                    title="Bills"
-                    type="bill"
-                    entries={entries}
-                    denominations={DENOMINATIONS.bill}
-                    onUpdate={updateEntry}
-                  />
-                  <CashSection
-                    title="Loose Coins"
-                    type="coin"
-                    entries={entries}
-                    denominations={DENOMINATIONS.coin}
-                    onUpdate={updateEntry}
-                  />
-                  <CashSection
-                    title="Bank Rolls"
-                    type="roll"
-                    entries={entries}
-                    denominations={DENOMINATIONS.roll}
-                    onUpdate={updateEntry}
-                  />
-                  <ReceiptsSection entries={entries} onUpdate={updateEntry} />
-                </div>
-
-                {/* Summary Bar */}
-                <div className="mt-8 p-5 bg-gray-50 border border-gray-200 rounded-xl">
-                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                    <div>
-                      <span className="text-xs uppercase tracking-wider font-bold text-gray-500 block mb-0.5">
-                        Live Cash Counted
-                      </span>
-                      <div className="flex items-baseline gap-2">
-                        <span className="text-3xl font-extrabold text-gray-900 font-mono">
-                          ${currentTotal.toFixed(2)}
-                        </span>
-                        <span className="text-xs text-gray-500">
-                          (including float + receipts)
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="text-left sm:text-right">
-                      <span className="text-xs uppercase tracking-wider font-bold text-gray-500 block mb-0.5">
-                        Variance From Float
-                      </span>
-                      <span
-                        className={`inline-flex items-center text-sm font-bold px-2.5 py-1 rounded-md ${
-                          currentDifference === 0
-                            ? 'bg-gray-100 text-gray-700'
-                            : currentDifference > 0
-                              ? 'bg-green-100 text-green-800'
-                              : 'bg-red-100 text-red-800'
-                        }`}
-                      >
-                        {currentDifference >= 0 ? '+' : ''}${currentDifference.toFixed(2)}
-                        {currentDifference > 0 && ' (Intake / Over)'}
-                        {currentDifference < 0 && ' (Shortage)'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* History Modal / Drawer */}
-            {showHistory && (
-              <div className="mb-8">
-                <ShiftHistory 
-                  history={shiftHistory} 
-                  onHistoryCleared={() => {
-                    p2pSyncManager.broadcastHistoryCleared();
-                    loadShiftsData();
-                  }} 
-                />
-              </div>
-            )}
+            <button
+              onClick={() => setIsOpenShiftModalOpen(true)}
+              className="px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl transition shadow-xs flex-shrink-0"
+            >
+              Count Opening Float Now
+            </button>
           </div>
         )}
 
-        {/* -------------------- TAB 2: SHIFT LOGS & HOSPITALITY LEADS -------------------- */}
-        {activeTab === 'logs' && (
-          <div className="animate-fade-in">
-            {!currentUser && (
-              <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs flex items-center justify-between">
-                <span className="flex items-center space-x-1.5">
-                  <AlertCircle className="w-4 h-4 text-amber-600" />
-                  <span>Viewing public shift logs. Please sign in to create new sales leads or edit entries.</span>
-                </span>
+        {/* -------------------- 2. ACTIVE TILL & CASH REGISTER COMMAND BAR -------------------- */}
+        {selectedShift ? (
+          <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-5 mb-6 shadow-xs">
+            <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+              {/* Drawer Info & Metrics */}
+              <div className="flex items-start gap-3">
+                <div className="p-2.5 bg-blue-600 text-white rounded-xl shadow-xs">
+                  <Coins size={22} />
+                </div>
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="font-bold text-gray-900 text-base">
+                      Active Till: Drawer #{selectedShift.drawerNumber}
+                    </h3>
+                    <span className="text-[11px] bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold px-2 py-0.5 rounded-full inline-flex items-center space-x-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                      <span>Active Shift</span>
+                    </span>
+                    <span className="text-xs bg-gray-100 text-gray-700 font-medium px-2 py-0.5 rounded">
+                      Cashier: {selectedShift.cashierName}
+                    </span>
+                  </div>
+
+                  {/* Financial Metrics Strip */}
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-600 mt-1.5">
+                    <span>Opening Float: <strong className="text-gray-900 font-bold">${selectedShift.openingBalance.toFixed(2)}</strong></span>
+                    <span>•</span>
+                    <span>Counted Cash: <strong className="text-blue-700 font-bold">${currentTotal.toFixed(2)}</strong></span>
+                    <span>•</span>
+                    <span>Safe Drops: <strong className="text-gray-900 font-bold">${(shiftDrop || 0).toFixed(2)}</strong></span>
+                    <span>•</span>
+                    <span>Variance: <strong className={currentDifference === 0 ? 'text-gray-700 font-bold' : currentDifference > 0 ? 'text-emerald-700 font-bold' : 'text-rose-600 font-bold'}>
+                      {currentDifference >= 0 ? '+' : ''}${currentDifference.toFixed(2)}
+                    </strong></span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Till Quick Actions */}
+              <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto justify-start lg:justify-end">
+                {/* Cash Drop input */}
+                <div className="flex items-center bg-gray-50 border border-gray-300 rounded-lg px-2.5 py-1.5 text-xs">
+                  <span className="text-gray-500 font-medium mr-1.5">Drop: $</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={shiftDrop || ''}
+                    onChange={(e) => setShiftDrop(parseFloat(e.target.value) || 0)}
+                    className="w-16 bg-transparent text-xs font-bold outline-none"
+                    title="Record mid-shift cash skim to safe"
+                  />
+                </div>
+
+                {/* Tally Denominations Toggle */}
                 <button
-                  onClick={() => setIsLoginModalOpen(true)}
-                  className="px-2.5 py-1 bg-amber-600 text-white rounded-lg font-bold"
+                  type="button"
+                  onClick={() => setIsTallyExpanded(!isTallyExpanded)}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition shadow-xs ${
+                    isTallyExpanded
+                      ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                  }`}
                 >
-                  Sign In
+                  <Coins size={14} />
+                  <span>{isTallyExpanded ? 'Hide Till Counter ▲' : 'Count Till Cash ▼'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => printReceipt({
+                    ...selectedShift,
+                    closingBalance: currentTotal,
+                    shiftDrop,
+                    entries,
+                  })}
+                  title="Print current till receipt"
+                  className="p-1.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition"
+                >
+                  <Printer size={15} />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => generatePDF({
+                    ...selectedShift,
+                    closingBalance: currentTotal,
+                    shiftDrop,
+                    entries,
+                  })}
+                  title="Download audit PDF report"
+                  className="p-1.5 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition"
+                >
+                  <FileText size={15} />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowHistory(!showHistory)}
+                  title="Review previous shift records"
+                  className={`p-1.5 border rounded-lg transition ${
+                    showHistory ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  <History size={15} />
+                </button>
+
+                {/* Close Shift Button */}
+                <button
+                  type="button"
+                  onClick={() => setIsCloseShiftModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 rounded-lg text-xs font-bold transition shadow-xs"
+                >
+                  <LogOut size={14} />
+                  <span>Close Shift</span>
                 </button>
               </div>
-            )}
+            </div>
 
+            {/* Collapsible Inline Denomination Counter */}
+            {isTallyExpanded && (
+              <div className="mt-4 pt-4 border-t border-gray-200 space-y-4 animate-in fade-in duration-150">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500">
+                    Active Till Denomination Breakdown
+                  </h4>
+                  <button
+                    onClick={() => setIsTallyExpanded(false)}
+                    className="text-xs text-blue-600 hover:underline flex items-center space-x-1"
+                  >
+                    <span>Collapse Till Counter</span>
+                    <ChevronUp className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <CashSection
+                    type="bill"
+                    title="Bills"
+                    denominations={DENOMINATIONS.bill}
+                    entries={entries}
+                    onUpdateEntry={updateEntry}
+                  />
+                  <CashSection
+                    type="coin"
+                    title="Coins"
+                    denominations={DENOMINATIONS.coin}
+                    entries={entries}
+                    onUpdateEntry={updateEntry}
+                  />
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <CashSection
+                    type="roll"
+                    title="Coin Rolls"
+                    denominations={DENOMINATIONS.roll}
+                    entries={entries}
+                    onUpdateEntry={updateEntry}
+                  />
+                  <ReceiptsSection
+                    entries={entries}
+                    onUpdateEntry={updateEntry}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          /* No Shift Active — Till Starter Bar */
+          <div className="bg-white border border-gray-200 rounded-xl p-4 sm:p-5 mb-6 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-center space-x-3">
+              <div className="p-2.5 bg-slate-100 text-slate-700 rounded-xl">
+                <Coins size={22} />
+              </div>
+              <div>
+                <h3 className="font-bold text-gray-900 text-sm sm:text-base">
+                  Cash Register: No Active Till Open
+                </h3>
+                <p className="text-xs text-gray-500">
+                  {currentUser
+                    ? `Welcome ${currentUser.fullName}. Open drawer to verify opening float and balance tills.`
+                    : 'Sign in to start your shift drawer and access live registers.'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              {currentUser ? (
+                <button
+                  onClick={() => setIsOpenShiftModalOpen(true)}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-xs transition inline-flex items-center space-x-1.5"
+                >
+                  <Coins size={15} />
+                  <span>Open Drawer & Set Float</span>
+                </button>
+              ) : (
+                <button
+                  onClick={() => setIsLoginModalOpen(true)}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-xs transition inline-flex items-center space-x-1.5"
+                >
+                  <LogIn size={15} />
+                  <span>Staff Sign In</span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setShowHistory(!showHistory)}
+                className="px-3 py-2 bg-white border border-gray-300 text-gray-700 rounded-xl text-xs font-semibold hover:bg-gray-50 transition"
+              >
+                <History size={15} className="inline mr-1" />
+                <span>Archives</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Shift History Section (Toggled) */}
+        {showHistory && (
+          <div className="mb-6 animate-in fade-in duration-150">
+            <ShiftHistory 
+              history={shiftHistory} 
+              onHistoryCleared={() => {
+                p2pSyncManager.broadcastHistoryCleared();
+                loadShiftsData();
+              }} 
+            />
+          </div>
+        )}
+
+        {/* -------------------- 3. UNIFIED SHIFT OPERATIONS HUB (ON THE SAME PAGE) -------------------- */}
+        <div className="space-y-4">
+          {/* Subview Navigation Strip */}
+          <div className="flex flex-wrap items-center justify-between gap-2 bg-gray-100 p-1 rounded-xl border border-gray-200">
+            <div className="flex items-center space-x-1">
+              <button
+                onClick={() => setUnifiedSubView('dashboard')}
+                className={`py-1.5 px-3 rounded-lg font-bold text-xs transition ${
+                  unifiedSubView === 'dashboard'
+                    ? 'bg-white text-gray-900 shadow-xs'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                <FileText className="w-3.5 h-3.5 inline mr-1 text-blue-600" />
+                <span>Shift Operations & Logs ({shiftLogs.length})</span>
+              </button>
+
+              <button
+                onClick={() => setUnifiedSubView('reminders')}
+                className={`py-1.5 px-3 rounded-lg font-bold text-xs transition relative ${
+                  unifiedSubView === 'reminders'
+                    ? 'bg-white text-gray-900 shadow-xs'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                <Bell className="w-3.5 h-3.5 inline mr-1 text-amber-500" />
+                <span>Reminders</span>
+                {pendingRemindersCount > 0 && (
+                  <span className="ml-1 text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-rose-600 text-white">
+                    {pendingRemindersCount}
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {currentUser?.role === 'manager' && (
+              <button
+                onClick={() => setIsUserMgmtModalOpen(true)}
+                className="py-1.5 px-3 rounded-lg font-semibold text-xs text-gray-700 bg-white hover:bg-gray-50 border border-gray-300 shadow-xs"
+              >
+                <ShieldCheck className="w-3.5 h-3.5 inline mr-1 text-blue-600" />
+                <span>Manager Console</span>
+              </button>
+            )}
+          </div>
+
+          {/* Unified Content Display */}
+          {unifiedSubView === 'dashboard' ? (
             <ShiftLogDashboard
               logs={shiftLogs}
               currentUser={currentUser || {
@@ -775,28 +806,33 @@ Close this shift, record the cash drop, and generate receipt?
               onDeleteLog={handleDeleteLog}
               onRefresh={loadLogsData}
             />
-          </div>
-        )}
-
-        {/* -------------------- TAB 3: REMINDERS -------------------- */}
-        {activeTab === 'reminders' && (
-          <div className="animate-fade-in">
-            <RemindersTab
-              logs={shiftLogs}
-              currentUser={currentUser || {
-                id: 'guest',
-                username: 'guest',
-                passwordHash: '',
-                fullName: 'Front Desk Guest',
-                role: 'clerk',
-                createdAt: new Date().toISOString(),
-                isActive: true,
-              }}
-              onEditLog={handleEditLog}
-              onRefresh={loadLogsData}
-            />
-          </div>
-        )}
+          ) : (
+            <div className="animate-in fade-in">
+              <div className="mb-4 flex items-center justify-between">
+                <button
+                  onClick={() => setUnifiedSubView('dashboard')}
+                  className="text-xs text-blue-600 font-semibold hover:underline"
+                >
+                  ← Back to Shift Operations & Logs
+                </button>
+              </div>
+              <RemindersTab
+                logs={shiftLogs}
+                currentUser={currentUser || {
+                  id: 'guest',
+                  username: 'guest',
+                  passwordHash: '',
+                  fullName: 'Front Desk Guest',
+                  role: 'clerk',
+                  createdAt: new Date().toISOString(),
+                  isActive: true,
+                }}
+                onEditLog={handleEditLog}
+                onRefresh={loadLogsData}
+              />
+            </div>
+          )}
+        </div>
       </main>
 
       {/* Staff Login Modal */}
@@ -806,26 +842,22 @@ Close this shift, record the cash drop, and generate receipt?
           setIsLoginModalOpen(false);
           setLoginRequiredAction(null);
         }}
-        onSuccess={(user) => {
-          setCurrentUser(user);
-          setCashierName(user.fullName);
-          setIsLoginModalOpen(false);
-          if (loginRequiredAction === 'admin') {
-            setIsUserMgmtModalOpen(true);
-          }
-          setLoginRequiredAction(null);
+        requiredAction={loginRequiredAction}
+        onLoginSuccess={() => {
+          loadShiftsData();
+          loadLogsData();
         }}
       />
 
-      {/* Shift Log Create / Edit Modal */}
-      {currentUser && (
+      {/* Shift Log Create/Edit Modal */}
+      {isLogModalOpen && (
         <ShiftLogModal
           isOpen={isLogModalOpen}
           onClose={() => {
             setIsLogModalOpen(false);
             setEditingLogEntry(null);
           }}
-          currentUser={currentUser}
+          currentUser={currentUser!}
           currentShiftId={selectedShift?.id}
           drawerNumber={selectedShift?.drawerNumber || drawerNumber}
           defaultCategory={defaultLogCat}
@@ -835,6 +867,25 @@ Close this shift, record the cash drop, and generate receipt?
           }}
         />
       )}
+
+      {/* Auto-Prompt: Open Shift Drawer Modal */}
+      <OpenShiftModal
+        isOpen={isOpenShiftModalOpen}
+        onClose={() => setIsOpenShiftModalOpen(false)}
+        onStartShift={handleModalStartShift}
+        onRemindLater={handleRemindLater}
+        defaultDrawerNumber={drawerNumber || '1'}
+        cashierName={currentUser?.fullName || 'Front Desk Staff'}
+      />
+
+      {/* Auto-Prompt: Close Shift Drawer Modal */}
+      <CloseShiftModal
+        isOpen={isCloseShiftModalOpen}
+        onClose={() => setIsCloseShiftModalOpen(false)}
+        shift={selectedShift}
+        currentBalance={currentTotal}
+        onConfirmClose={handleConfirmCloseShift}
+      />
 
       {/* Manager Console Modal */}
       {currentUser && currentUser.role === 'manager' && (
