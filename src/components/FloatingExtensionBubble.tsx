@@ -18,6 +18,7 @@ interface FloatingExtensionBubbleProps {
   onLogSaved: () => void;
   isOpen: boolean;
   onToggle: () => void;
+  onRequireLogin?: () => void;
 }
 
 const db = new DatabaseManager();
@@ -27,6 +28,7 @@ export const FloatingExtensionBubble: React.FC<FloatingExtensionBubbleProps> = (
   onLogSaved,
   isOpen,
   onToggle,
+  onRequireLogin,
 }) => {
   const [activeCategory, setActiveCategory] = useState<PrimaryCategory>('Sales');
   const [name, setName] = useState('');
@@ -160,54 +162,101 @@ export const FloatingExtensionBubble: React.FC<FloatingExtensionBubbleProps> = (
           </div>
 
           {/* Staff Login Indicator */}
-          <div className="bg-slate-50 px-3.5 py-1.5 border-b border-gray-200 flex items-center justify-between text-[11px]">
-            <div className="flex items-center space-x-1.5">
-              {currentUser?.role === 'manager' ? (
-                <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
-              ) : (
-                <User className="w-3.5 h-3.5 text-gray-500" />
-              )}
-              <span className="text-gray-600">Logged in:</span>
-              <strong className="text-gray-900">{currentUser?.fullName || 'Front Desk Clerk'}</strong>
+          {currentUser ? (
+            <div className="bg-slate-50 px-3.5 py-1.5 border-b border-gray-200 flex items-center justify-between text-[11px]">
+              <div className="flex items-center space-x-1.5">
+                {currentUser.role === 'manager' ? (
+                  <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
+                ) : (
+                  <User className="w-3.5 h-3.5 text-gray-500" />
+                )}
+                <span className="text-gray-600">Logged in:</span>
+                <strong className="text-gray-900">{currentUser.fullName}</strong>
+              </div>
+              <span className={`text-[9px] uppercase font-bold tracking-wider px-1.5 py-0.2 rounded ${
+                currentUser.role === 'manager' ? 'bg-indigo-100 text-indigo-700' : 'bg-blue-100 text-blue-700'
+              }`}>
+                {currentUser.role}
+              </span>
             </div>
-            <span className="text-[9px] uppercase font-bold tracking-wider px-1.5 py-0.2 rounded bg-gray-200 text-gray-700">
-              {currentUser?.role || 'clerk'}
-            </span>
-          </div>
+          ) : (
+            <div className="bg-amber-50 px-3.5 py-2 border-b border-amber-200 flex items-center justify-between text-[11px]">
+              <div className="flex items-center space-x-1.5 text-amber-800">
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                <span className="font-semibold">Not Signed In</span>
+              </div>
+              {onRequireLogin && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onToggle();
+                    onRequireLogin();
+                  }}
+                  className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-[10px] font-bold transition shadow-xs cursor-pointer"
+                >
+                  Sign In First &rarr;
+                </button>
+              )}
+            </div>
+          )}
 
-          {/* Category Tabs */}
-          <div className="flex p-1 m-3 bg-gray-100 rounded-xl gap-1 text-xs">
-            <button
-              type="button"
-              onClick={() => setActiveCategory('Sales')}
-              className={`flex-1 py-1.5 px-2 rounded-lg font-semibold flex items-center justify-center space-x-1 transition ${
-                activeCategory === 'Sales' ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              <Building2 className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Sales</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveCategory('Complaint')}
-              className={`flex-1 py-1.5 px-2 rounded-lg font-semibold flex items-center justify-center space-x-1 transition ${
-                activeCategory === 'Complaint' ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-              <span>Complaint</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveCategory('Miscellaneous')}
-              className={`flex-1 py-1.5 px-2 rounded-lg font-semibold flex items-center justify-center space-x-1 transition ${
-                activeCategory === 'Miscellaneous' ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              <Tag className="w-3.5 h-3.5 text-indigo-600" />
-              <span>Note</span>
-            </button>
-          </div>
+          {!currentUser ? (
+            <div className="p-6 text-center space-y-3">
+              <div className="w-12 h-12 bg-amber-100 text-amber-700 rounded-full flex items-center justify-center mx-auto">
+                <User className="w-6 h-6" />
+              </div>
+              <h4 className="font-bold text-gray-900 text-sm">Staff Authentication Required</h4>
+              <p className="text-xs text-gray-500 max-w-xs mx-auto">
+                Please sign in to your FrontDesk Pro staff account to record and audit shift logs, guest complaints, and group sales leads.
+              </p>
+              {onRequireLogin && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onToggle();
+                    onRequireLogin();
+                  }}
+                  className="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-xl shadow-xs transition"
+                >
+                  Sign In to FrontDesk Pro
+                </button>
+              )}
+            </div>
+          ) : (
+            <>
+              {/* Category Tabs */}
+              <div className="flex p-1 m-3 bg-gray-100 rounded-xl gap-1 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setActiveCategory('Sales')}
+                  className={`flex-1 py-1.5 px-2 rounded-lg font-semibold flex items-center justify-center space-x-1 transition ${
+                    activeCategory === 'Sales' ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  <Building2 className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Sales</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveCategory('Complaint')}
+                  className={`flex-1 py-1.5 px-2 rounded-lg font-semibold flex items-center justify-center space-x-1 transition ${
+                    activeCategory === 'Complaint' ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Complaint</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveCategory('Miscellaneous')}
+                  className={`flex-1 py-1.5 px-2 rounded-lg font-semibold flex items-center justify-center space-x-1 transition ${
+                    activeCategory === 'Miscellaneous' ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  <Tag className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Note</span>
+                </button>
+              </div>
 
           {/* Form Body */}
           <form onSubmit={handleSubmit} className="p-3.5 pt-0 overflow-y-auto space-y-2.5 text-xs flex-1">
@@ -428,7 +477,9 @@ export const FloatingExtensionBubble: React.FC<FloatingExtensionBubbleProps> = (
               </div>
             )}
           </form>
-        </div>
+        </>
+      )}
+    </div>
       )}
     </>
   );

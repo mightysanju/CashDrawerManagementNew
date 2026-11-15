@@ -55,7 +55,14 @@ class AuthManager {
 
     if (typeof window !== 'undefined') {
       try {
+        // Cross-world postMessage (reaches Chrome extension content scripts reliably)
+        window.postMessage({ type: 'FDP_APP_USER_SYNC', user: this.currentUser }, '*');
         window.dispatchEvent(
+          new CustomEvent('FDP_APP_USER_SYNC', {
+            detail: this.currentUser,
+          })
+        );
+        document.dispatchEvent(
           new CustomEvent('FDP_APP_USER_SYNC', {
             detail: this.currentUser,
           })

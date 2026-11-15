@@ -1114,6 +1114,7 @@ export function CashDrawer() {
           onLogSaved={loadLogsData}
           isOpen={isFloatingBubbleOpen}
           onToggle={() => setIsFloatingBubbleOpen(!isFloatingBubbleOpen)}
+          onRequireLogin={() => setIsLoginModalOpen(true)}
         />
       )}
 
