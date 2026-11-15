@@ -216,18 +216,23 @@ export class DatabaseManager {
   async getUserByUsername(username: string): Promise<UserAccount | undefined> {
     const db = await this.dbPromise;
     const clean = username.trim().toLowerCase();
-    const tx = db.transaction(STORES.USERS, 'readonly');
-    const index = tx.store.index('username');
-    const user = await index.get(clean);
-    if (user) return user;
+    try {
+      const user = await db.getFromIndex(STORES.USERS, 'username', clean);
+      if (user) return user;
+    } catch {
+      // index query failed, fall through to memory scan
+    }
+
+    // Direct scan across all stored users to be 100% resilient
+    const users = await db.getAll(STORES.USERS);
+    const directUser = users.find((u) => u.username.trim().toLowerCase() === clean);
+    if (directUser) return directUser;
 
     // Friendly alias fallback: if user typed "clerk", check "clerk1"; if "clerk1", check "clerk"
     if (clean === 'clerk') {
-      const aliasUser = await index.get('clerk1');
-      if (aliasUser) return aliasUser;
+      return users.find((u) => u.username.trim().toLowerCase() === 'clerk1');
     } else if (clean === 'clerk1') {
-      const aliasUser = await index.get('clerk');
-      if (aliasUser) return aliasUser;
+      return users.find((u) => u.username.trim().toLowerCase() === 'clerk');
     }
 
     return undefined;
@@ -238,7 +243,8 @@ export class DatabaseManager {
     const cleanUsername = user.username.trim().toLowerCase();
 
     // Check if user with this username already exists so the unique index constraint is respected
-    const existing = await this.getUserByUsername(cleanUsername);
+    const all = await db.getAll(STORES.USERS);
+    const existing = all.find((u) => u.username.trim().toLowerCase() === cleanUsername);
     const idToUse = existing ? existing.id : (user.id || `usr_${Date.now()}`);
 
     await db.put(STORES.USERS, {
@@ -256,11 +262,22 @@ export class DatabaseManager {
   async bulkSaveUsers(users: UserAccount[]): Promise<void> {
     if (!users || users.length === 0) return;
     const db = await this.dbPromise;
-    const tx = db.transaction(STORES.USERS, 'readwrite');
+    const all = await db.getAll(STORES.USERS);
+    const existingByUsername = new Map<string, UserAccount>();
+    all.forEach((u) => existingByUsername.set(u.username.trim().toLowerCase(), u));
+
     for (const u of users) {
-      await tx.store.put(u);
+      if (!u || !u.username) continue;
+      const clean = u.username.trim().toLowerCase();
+      const existing = existingByUsername.get(clean);
+      const idToUse = existing ? existing.id : (u.id || `usr_${Date.now()}`);
+      await db.put(STORES.USERS, {
+        ...u,
+        id: idToUse,
+        username: clean,
+      });
+      existingByUsername.set(clean, { ...u, id: idToUse, username: clean });
     }
-    await tx.done;
   }
 
   /* -------------------------------------------------------------

@@ -80,7 +80,13 @@ class AuthManager {
     }
 
     try {
-      const user = await db.getUserByUsername(cleanUser);
+      let user = await db.getUserByUsername(cleanUser);
+      if (!user) {
+        // Quick 300ms retry in case an incoming P2P user sync is currently writing
+        await new Promise((r) => setTimeout(r, 300));
+        user = await db.getUserByUsername(cleanUser);
+      }
+
       if (!user) {
         return { success: false, error: 'Invalid username or password.' };
       }

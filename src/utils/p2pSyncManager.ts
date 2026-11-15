@@ -149,6 +149,7 @@ class P2PSyncManager {
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private isConnecting: boolean = false;
   private myClientId: string = '';
+  private watchdogTimer: ReturnType<typeof setInterval> | null = null;
 
   // Network Discovery Beacon fields
   private globalBroadcastChannel: BroadcastChannel | null = null;
@@ -174,7 +175,7 @@ class P2PSyncManager {
 
   constructor() {
     try {
-      const saved = localStorage.getItem('cdm_store_name');
+      const saved = localStorage.getItem('cdm_synced_register') || localStorage.getItem('cdm_store_name');
       if (saved && saved.trim() && saved.trim().toLowerCase() !== 'main store') {
         this.state.storeName = saved.trim();
         this.storeSlug = this.sanitizeSlug(saved.trim());
@@ -184,6 +185,7 @@ class P2PSyncManager {
     }
     this.initBroadcastChannel();
     this.initGlobalDiscovery();
+    this.startWatchdog();
   }
 
   /**
@@ -924,7 +926,7 @@ class P2PSyncManager {
     let currentStore = storeName;
     if (!currentStore) {
       try {
-        const saved = localStorage.getItem('cdm_store_name');
+        const saved = localStorage.getItem('cdm_synced_register') || localStorage.getItem('cdm_store_name');
         if (saved && saved.trim() && saved.trim().toLowerCase() !== 'main store') {
           currentStore = saved.trim();
         } else {
@@ -945,6 +947,7 @@ class P2PSyncManager {
 
     try {
       localStorage.setItem('cdm_store_name', currentStore);
+      localStorage.setItem('cdm_synced_register', currentStore);
       this.rememberSyncGroup(currentStore);
     } catch {
       // ignore
@@ -1241,18 +1244,16 @@ class P2PSyncManager {
 
     if (msg.type === 'FULL_SYNC') {
       const incomingEpoch = typeof msg.databaseEpoch === 'number' ? msg.databaseEpoch : (typeof msg.settings?.databaseEpoch === 'number' ? msg.settings.databaseEpoch : 0);
-      const incomingDbId = msg.databaseId || msg.settings?.databaseId || 'default';
       const localSettings = await db.getSettings();
       const localEpoch = typeof localSettings.databaseEpoch === 'number' ? localSettings.databaseEpoch : 0;
-      const localDbId = localSettings.databaseId || 'default';
       const lastPurgedEpoch = parseInt(localStorage.getItem('cdm_last_purged_epoch') || '0', 10);
 
       // 1. ABSOLUTE PURGE GUARD:
-      // If a database purge or new initialization took place (lastPurgedEpoch > 0) and the incoming database has an epoch
-      // that is <= lastPurgedEpoch (which includes legacy un-epoched incomingEpoch === 0 or older databases),
-      // REJECT IT COMPLETELY!
-      if (lastPurgedEpoch > 0 && incomingEpoch <= lastPurgedEpoch) {
-        console.warn(`[P2P Sync] DROPPED OBSOLETE/PURGED DATABASE! Incoming epoch ${incomingEpoch} is <= lastPurgedEpoch ${lastPurgedEpoch}. Replying with HARD PURGE.`);
+      // If a database purge took place (lastPurgedEpoch > 0) and the incoming database has an epoch
+      // that is strictly older than lastPurgedEpoch (which includes legacy un-epoched incomingEpoch === 0 or older databases),
+      // REJECT IT!
+      if (lastPurgedEpoch > 0 && incomingEpoch < lastPurgedEpoch) {
+        console.warn(`[P2P Sync] DROPPED OBSOLETE/PURGED DATABASE! Incoming epoch ${incomingEpoch} is < lastPurgedEpoch ${lastPurgedEpoch}. Replying with HARD PURGE.`);
         if (relayFromPeerId) {
           const targetConn = this.connections.get(relayFromPeerId);
           if (targetConn && targetConn.open) {
@@ -1289,12 +1290,6 @@ class P2PSyncManager {
         if (typeof window !== 'undefined') {
           window.postMessage({ type: 'FDP_PURGE_EXTENSION_STORAGE' }, '*');
         }
-      }
-
-      // 4. If epoch matches but databaseId differs:
-      if (localDbId && incomingDbId && localDbId !== incomingDbId && localDbId !== 'default' && incomingDbId !== 'default') {
-        console.warn(`[P2P Sync] Database ID mismatch: local ${localDbId} vs incoming ${incomingDbId}. Retaining local authoritative database.`);
-        return;
       }
 
       // 5. Granular Shift & Log Filtering:
@@ -1551,17 +1546,27 @@ class P2PSyncManager {
     conn.on('close', () => {
       this.connections.delete(conn.peer);
       this.updateState({ connectedCount: this.connections.size });
+      if (this.state.role === 'client') {
+        this.updateState({ status: 'disconnected' });
+        const remembered = localStorage.getItem('cdm_synced_register') || this.state.storeName;
+        this.scheduleReconnect(remembered);
+      }
     });
 
     conn.on('error', () => {
       this.connections.delete(conn.peer);
       this.updateState({ connectedCount: this.connections.size });
+      if (this.state.role === 'client') {
+        this.updateState({ status: 'disconnected' });
+        const remembered = localStorage.getItem('cdm_synced_register') || this.state.storeName;
+        this.scheduleReconnect(remembered);
+      }
     });
   }
 
   private startHeartbeat() {
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
-    this.heartbeatTimer = setInterval(() => {
+    this.heartbeatTimer = setInterval(async () => {
       if (this.connections.size > 0) {
         const ping: SyncMessage = { type: 'HEARTBEAT', senderId: this.myClientId };
         this.connections.forEach((conn) => {
@@ -1573,8 +1578,56 @@ class P2PSyncManager {
             }
           }
         });
+
+        // Periodic reconciliation: Hub shares latest users and shifts to prevent drift
+        if (this.state.role === 'hub') {
+          try {
+            const [users, shifts, settings] = await Promise.all([
+              db.getUsers(),
+              db.getAllShifts(),
+              db.getSettings(),
+            ]);
+            this.sendToAll({
+              type: 'FULL_SYNC',
+              shifts,
+              users,
+              settings,
+              databaseEpoch: settings.databaseEpoch || 0,
+              databaseId: settings.databaseId || 'default',
+              senderId: this.myClientId,
+            });
+          } catch {
+            // ignore
+          }
+        }
       }
-    }, 12000);
+    }, 10000);
+  }
+
+  private startWatchdog() {
+    if (this.watchdogTimer) clearInterval(this.watchdogTimer);
+    this.watchdogTimer = setInterval(async () => {
+      if (typeof window === 'undefined') return;
+      if (localStorage.getItem('cdm_sync_paused') === 'true') return;
+
+      const rememberedStore = localStorage.getItem('cdm_synced_register') || localStorage.getItem('cdm_store_name');
+      if (!rememberedStore || rememberedStore.trim().toLowerCase() === 'main store') return;
+
+      const isClientAndOrphan = this.state.role === 'client' && this.connections.size === 0;
+      const isDisconnected = this.state.status === 'disconnected' || this.state.status === 'error';
+      const isPeerDown = !this.peer || this.peer.destroyed;
+
+      if ((isClientAndOrphan || isDisconnected || isPeerDown) && !this.isConnecting) {
+        console.debug(`[P2P Sync Watchdog] Reconnecting to remembered register: "${rememberedStore}"...`);
+        this.autoConnect(rememberedStore);
+      } else if (this.peer && this.peer.disconnected && !this.peer.destroyed) {
+        try {
+          this.peer.reconnect();
+        } catch {
+          // ignore
+        }
+      }
+    }, 4000);
   }
 
   private scheduleReconnect(storeName: string) {
@@ -1582,7 +1635,7 @@ class P2PSyncManager {
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.autoConnect(storeName);
-    }, 4000);
+    }, 3000);
   }
 
   private notifyData(action: string, data?: unknown) {

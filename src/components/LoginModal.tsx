@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Lock, User, Key, AlertCircle, LogIn, X } from 'lucide-react';
 import { authManager } from '../utils/authManager';
 import { UserAccount } from '../types';
@@ -24,6 +24,13 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setLoading(false);
+      setError(null);
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
