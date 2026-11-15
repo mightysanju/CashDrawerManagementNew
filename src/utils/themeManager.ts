@@ -11,14 +11,16 @@ export function applyTheme(isDark: boolean) {
   if (typeof document === 'undefined') return;
   if (isDark) {
     document.documentElement.classList.add('dark');
+    document.body.classList.add('dark');
     localStorage.setItem('frontdesk_theme', 'dark');
   } else {
     document.documentElement.classList.remove('dark');
+    document.body.classList.remove('dark');
     localStorage.setItem('frontdesk_theme', 'light');
   }
 }
 
-// Global listeners for instant sync across components
+// Global listeners for instant sync across all components
 const listeners = new Set<(isDark: boolean) => void>();
 
 export function useTheme() {

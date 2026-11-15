@@ -37,6 +37,16 @@
       gtag('config', 'G-V3SY2X3LZJ');
     </script>
     <title>FrontDesk Pro — Hospitality Operations Platform</title>
+    <script>
+      (function() {
+        var theme = localStorage.getItem('frontdesk_theme');
+        if (theme === 'dark' || (!theme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -1,3 +1,106 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Smooth theme transition */
+html, body {
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* ==========================================================================
+   COMPREHENSIVE DARK MODE SYSTEM
+   Ensures ALL cards, backgrounds, borders, inputs, modals, and text
+   switch to deep dark slate in Dark Mode and regular in Light Mode.
+   ========================================================================== */
+html.dark {
+  color-scheme: dark;
+}
+
+html.dark body {
+  background-color: #0b1120 !important;
+  color: #f1f5f9 !important;
+}
+
+/* Containers and Main backgrounds */
+html.dark .min-h-screen,
+html.dark main {
+  background-color: #0b1120 !important;
+  color: #f1f5f9 !important;
+}
+
+/* All White Cards & Panels */
+html.dark .bg-white {
+  background-color: #0f172a !important;
+  color: #f8fafc !important;
+}
+
+/* Inset / Subtle Backgrounds */
+html.dark .bg-gray-50,
+html.dark .bg-gray-100 {
+  background-color: #1e293b !important;
+  color: #e2e8f0 !important;
+}
+
+html.dark .bg-gray-200 {
+  background-color: #334155 !important;
+  color: #f8fafc !important;
+}
+
+/* Borders */
+html.dark .border-gray-100,
+html.dark .border-gray-200,
+html.dark .border-gray-300 {
+  border-color: #334155 !important;
+}
+
+/* Headings & High Contrast Text */
+html.dark .text-gray-900,
+html.dark .text-gray-800,
+html.dark .text-gray-700 {
+  color: #f8fafc !important;
+}
+
+/* Secondary & Muted Text */
+html.dark .text-gray-600,
+html.dark .text-gray-500 {
+  color: #94a3b8 !important;
+}
+
+html.dark .text-gray-400 {
+  color: #64748b !important;
+}
+
+/* Form Inputs, Selects, and Textareas */
+html.dark input:not([type="checkbox"]):not([type="radio"]),
+html.dark select,
+html.dark textarea {
+  background-color: #1e293b !important;
+  color: #f8fafc !important;
+  border-color: #334155 !important;
+}
+
+html.dark input::placeholder,
+html.dark textarea::placeholder {
+  color: #64748b !important;
+}
+
+/* Table and Row Hovers */
+html.dark .hover\:bg-gray-50:hover,
+html.dark .hover\:bg-gray-100:hover {
+  background-color: #1e293b !important;
+}
+
+/* Navigation & Header */
+html.dark nav {
+  background-color: rgba(15, 23, 42, 0.95) !important;
+  border-bottom-color: #1e293b !important;
+}
+
+/* Shadow adjustments */
+html.dark .shadow-xs,
+html.dark .shadow-sm,
+html.dark .shadow-md,
+html.dark .shadow-lg,
+html.dark .shadow-xl {
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.5) !important;
+}
