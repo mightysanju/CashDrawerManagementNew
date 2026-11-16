@@ -702,7 +702,6 @@ export function CashDrawer() {
         ...selectedShift,
         entries: updatedEntries,
         shiftDrop: shiftDrop !== undefined ? shiftDrop : selectedShift.shiftDrop,
-        safeDrop: shiftDrop !== undefined ? shiftDrop : selectedShift.safeDrop,
       };
       db.saveShift(updatedShift);
       p2pSyncManager.broadcastShift(updatedShift);
@@ -715,7 +714,6 @@ export function CashDrawer() {
       const updatedShift: ShiftRecord = {
         ...selectedShift,
         shiftDrop: newDrop,
-        safeDrop: newDrop,
       };
       setSelectedShift(updatedShift);
       try {

@@ -239,6 +239,7 @@ class P2PSyncManager {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private isConnecting: boolean = false;
+  private connectingSince: number = 0;
   private myClientId: string = '';
   private watchdogTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -362,11 +363,27 @@ class P2PSyncManager {
       }
 
       let settled = false;
+      setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          try {
+            peer.destroy();
+          } catch {
+            // ignore
+          }
+          reject(new Error('Discovery hub claim timeout'));
+        }
+      }, 10000);
       peer.on('open', (id) => {
+        if (settled) {
+          try { peer.destroy(); } catch { /* ignore */ }
+          return;
+        }
         settled = true;
         this.discoveryPeer = peer;
         this.discoveryClientId = id;
         this.isDiscoveryHub = true;
+        this.addLog('info', 'Discovery beacon active (this PC is announcing/collecting databases on the network).');
 
         peer.on('connection', (conn) => {
           this.discoveryConnections.set(conn.peer, conn);
@@ -545,16 +562,8 @@ class P2PSyncManager {
       }
 
       this.notifyData('AVAILABLE_DATABASES_UPDATED', this.getAvailableNetworkDatabases());
-
-      // Auto-adopt network database if this station has no users or is unconfigured ('Main Store')
-      db.hasUsers().then((hasUsers) => {
-        const savedStore = localStorage.getItem('cdm_store_name');
-        const isUnconfigured = !savedStore || savedStore.trim().toLowerCase() === 'main store';
-        if ((!hasUsers || isUnconfigured) && dbName.toLowerCase() !== 'main store' && dbName !== this.state.storeName) {
-          console.warn(`[P2P Sync] Station is unconfigured. Auto-joining discovered network database: "${dbName}"`);
-          this.switchSyncGroup(dbName);
-        }
-      });
+      // NOTE: no silent auto-adoption here. Unconfigured stations are shown the list of
+      // discovered databases and the user chooses: Connect & Sync, or Create Account.
     } else if (msg.type === 'DISCOVERY_REGISTRY_SYNC' && Array.isArray(msg.databases)) {
       for (const d of msg.databases) {
         if (d && d.name) {
@@ -562,25 +571,13 @@ class P2PSyncManager {
           const isRemote = d.peerId !== this.myClientId;
           this.discoveredDatabases.set(d.name, {
             ...d,
+            lastSeen: d.lastSeen > 0 ? Date.now() : 0,
             isHostedOnPeer: isRemote,
             isActive: d.name === this.state.storeName,
           });
         }
       }
       this.notifyData('AVAILABLE_DATABASES_UPDATED', this.getAvailableNetworkDatabases());
-
-      // Auto-adopt network database if this station has no users or is unconfigured ('Main Store')
-      db.hasUsers().then((hasUsers) => {
-        const savedStore = localStorage.getItem('cdm_store_name');
-        const isUnconfigured = !savedStore || savedStore.trim().toLowerCase() === 'main store';
-        if (!hasUsers || isUnconfigured) {
-          const validDbs = msg.databases.filter((d) => d && d.name && d.name.toLowerCase() !== 'main store');
-          if (validDbs.length > 0 && validDbs[0].name !== this.state.storeName) {
-            console.warn(`[P2P Sync] Station is unconfigured. Auto-joining network database from registry: "${validDbs[0].name}"`);
-            this.switchSyncGroup(validDbs[0].name);
-          }
-        }
-      });
     } else if (msg.type === 'NETWORK_SWITCH_DATABASE') {
       if (this.isDiscoveryHub) {
         this.discoveryConnections.forEach((conn) => {
@@ -881,39 +878,46 @@ class P2PSyncManager {
       }
     });
 
-    // 2. Short wait (800ms) to receive discovery announcements from peers on LAN
-    await new Promise((r) => setTimeout(r, 800));
-
-    // 3. Find any active database hosted on the network
-    const onlineDatabases = Array.from(this.discoveredDatabases.values()).filter(
-      (d) => d.lastSeen > Date.now() - 60000 && d.name.toLowerCase() !== 'main store'
-    );
-
-    const hasLocalUsers = await db.hasUsers();
-
-    if (onlineDatabases.length > 0) {
-      onlineDatabases.sort((a, b) => (b.epoch || 0) - (a.epoch || 0));
-      const targetDb = onlineDatabases[0];
-
-      if (this.state.storeName !== targetDb.name || !hasLocalUsers) {
-        console.warn(`[P2P Sync] Auto-connecting to active network database: "${targetDb.name}"`);
-        await this.switchSyncGroup(targetDb.name);
-        return;
+    // 2. Poll up to ~7s (re-probing every 1.5s) so slow signaling/Wi-Fi doesn't look like "no database"
+    const findOnline = () =>
+      Array.from(this.discoveredDatabases.values()).filter(
+        (d) => d.lastSeen > Date.now() - 60000 && d.name.toLowerCase() !== 'main store'
+      );
+    for (let i = 0; i < 14 && findOnline().length === 0; i++) {
+      await new Promise((r) => setTimeout(r, 500));
+      if (i > 0 && i % 3 === 0) {
+        try { this.globalBroadcastChannel?.postMessage(probe); } catch { /* ignore */ }
+        this.discoveryConnections.forEach((conn) => {
+          if (conn.open) {
+            try { conn.send(probe); } catch { /* ignore */ }
+          }
+        });
       }
     }
 
-    // 4. If no online database found on network:
+    // 3. Any active database hosted on the network
+    const onlineDatabases = findOnline();
+
+    const hasLocalUsers = await db.hasUsers();
+
+    // Fresh/unconfigured station: DO NOT silently join. Let the user choose from the list
+    // (Connect & Sync) or create a new account.
     if (!hasLocalUsers) {
+      if (onlineDatabases.length > 0) {
+        this.addLog('info', `Found ${onlineDatabases.length} database(s) on the network. Waiting for user to choose.`);
+        this.notifyData('AVAILABLE_DATABASES_UPDATED', this.getAvailableNetworkDatabases());
+        return;
+      }
       const known = this.getKnownSyncGroups().filter((g) => g.toLowerCase() !== 'main store');
       if (known.length === 0) {
-        console.warn('[P2P Sync] No database available on network or locally. Triggering welcome setup.');
+        this.addLog('warn', 'No database found on the network after scanning. Offering to create a new account.');
         onNoDatabaseFound?.();
         this.notifyData('NO_DATABASE_AVAILABLE');
         return;
       }
     }
 
-    // 5. Connect to current or local store
+    // 4. Configured station: reconnect to its remembered / current store
     await this.autoConnect();
     await this.announceCurrentDatabase();
   }
@@ -1179,8 +1183,10 @@ class P2PSyncManager {
    * 2. If the Hub is already active on another machine, connects to it as a client peer.
    */
   public async autoConnect(storeName?: string) {
-    if (this.isConnecting) return;
+    // Self-heal: a stuck connection attempt must never block reconnects for more than 45s
+    if (this.isConnecting && Date.now() - this.connectingSince < 45000) return;
     this.isConnecting = true;
+    this.connectingSince = Date.now();
 
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
@@ -1271,8 +1277,25 @@ class P2PSyncManager {
       }
 
       let settled = false;
+      // Never hang forever if the signaling server is slow/unreachable
+      setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          try {
+            peer.destroy();
+          } catch {
+            // ignore
+          }
+          this.addLog('warn', 'Hub claim timed out after 10s (signaling server slow or unreachable). Trying client mode...');
+          reject(new Error('Hub claim timeout'));
+        }
+      }, 10000);
 
       peer.on('open', (id) => {
+        if (settled) {
+          try { peer.destroy(); } catch { /* ignore */ }
+          return;
+        }
         settled = true;
         this.peer = peer;
         this.myClientId = id;

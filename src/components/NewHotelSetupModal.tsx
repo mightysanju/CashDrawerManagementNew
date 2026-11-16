@@ -71,17 +71,20 @@ export const NewHotelSetupModal: React.FC<NewHotelSetupModalProps> = ({
       return;
     }
 
+    let scanFinished = false;
+
     const refreshDatabases = () => {
       const dbs = p2pSyncManager.getAvailableNetworkDatabases().filter(
-        (d) => d.name.toLowerCase() !== 'main store'
+        (d) => d.name.toLowerCase() !== 'main store' && d.lastSeen > Date.now() - 90000
       );
       setAvailableDbs(dbs);
 
-      // ONLY set default tab on initial load if user hasn't clicked/typed in a tab yet
+      // Default tab: stay on "Sync" while scanning; only fall to "Create" once the scan
+      // has finished and truly found nothing. Never override a manual tab choice.
       if (!userSelectedTabRef.current) {
         if (dbs.length > 0) {
           setActiveTab('sync');
-        } else {
+        } else if (scanFinished) {
           setActiveTab('create');
         }
       }
@@ -89,12 +92,19 @@ export const NewHotelSetupModal: React.FC<NewHotelSetupModalProps> = ({
 
     refreshDatabases();
 
-    // Trigger an active probe on mount
+    // Trigger an active probe on mount (waits up to ~7s for peers to answer)
     setIsScanning(true);
     p2pSyncManager.scanNetworkAndAutoSync().finally(() => {
+      scanFinished = true;
       refreshDatabases();
       setIsScanning(false);
     });
+
+    // Keep discovering while the modal is open (new PCs may come online later)
+    const rescanTimer = setInterval(() => {
+      p2pSyncManager.announceCurrentDatabase();
+      refreshDatabases();
+    }, 4000);
 
     const unsubData = p2pSyncManager.subscribeData((action) => {
       if (action === 'AVAILABLE_DATABASES_UPDATED' || action === 'DISCOVERY_REGISTRY_SYNC') {
@@ -102,7 +112,10 @@ export const NewHotelSetupModal: React.FC<NewHotelSetupModalProps> = ({
       }
     });
 
-    return () => unsubData();
+    return () => {
+      clearInterval(rescanTimer);
+      unsubData();
+    };
   }, [isOpen]);
 
   if (!isOpen) return null;
