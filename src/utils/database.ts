@@ -3,6 +3,7 @@ import {
   ShiftRecord, 
   UserAccount, 
   ShiftLogEntry, 
+  ShiftLogResponse,
   LogCategoryConfig, 
   AppSettings,
   DatabaseArchive
@@ -324,9 +325,45 @@ export class DatabaseManager {
     return index.getAll(shiftId);
   }
 
+  /**
+   * Intelligently merges an incoming shift log with any existing shift log in the store.
+   * - Preserves and unions all threaded replies/responses by ID so no reply is ever lost.
+   * - Keeps the latest reminder date, notes, and completion status.
+   * - Respects the latest updatedAt timestamp.
+   */
+  private mergeShiftLogRecords(existing: ShiftLogEntry, incoming: ShiftLogEntry): ShiftLogEntry {
+    const respMap = new Map<string, ShiftLogResponse>();
+    (existing.responses || []).forEach((r) => {
+      if (r && r.id) respMap.set(r.id, r);
+    });
+    (incoming.responses || []).forEach((r) => {
+      if (r && r.id) respMap.set(r.id, r);
+    });
+
+    const mergedResponses = Array.from(respMap.values()).sort(
+      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    );
+
+    const existingTime = new Date(existing.updatedAt || existing.createdAt || 0).getTime();
+    const incomingTime = new Date(incoming.updatedAt || incoming.createdAt || 0).getTime();
+    const base = incomingTime >= existingTime ? incoming : existing;
+
+    return {
+      ...base,
+      responses: mergedResponses,
+      hasReminder: incomingTime >= existingTime ? (incoming.hasReminder ?? existing.hasReminder) : (existing.hasReminder ?? incoming.hasReminder),
+      reminderDate: incomingTime >= existingTime ? (incoming.reminderDate ?? existing.reminderDate) : (existing.reminderDate ?? incoming.reminderDate),
+      reminderNote: incomingTime >= existingTime ? (incoming.reminderNote ?? existing.reminderNote) : (existing.reminderNote ?? incoming.reminderNote),
+      isReminderCompleted: incomingTime >= existingTime ? (incoming.isReminderCompleted ?? existing.isReminderCompleted) : (existing.isReminderCompleted ?? incoming.isReminderCompleted),
+      updatedAt: new Date(Math.max(existingTime, incomingTime, Date.now())).toISOString(),
+    };
+  }
+
   async saveShiftLog(log: ShiftLogEntry): Promise<void> {
     const db = await this.dbPromise;
-    await db.put(STORES.SHIFT_LOGS, log);
+    const existing = await db.get(STORES.SHIFT_LOGS, log.id);
+    const finalLog = existing ? this.mergeShiftLogRecords(existing, log) : log;
+    await db.put(STORES.SHIFT_LOGS, finalLog);
   }
 
   async deleteShiftLog(logId: string): Promise<void> {
@@ -339,7 +376,10 @@ export class DatabaseManager {
     const db = await this.dbPromise;
     const tx = db.transaction(STORES.SHIFT_LOGS, 'readwrite');
     for (const log of logs) {
-      await tx.store.put(log);
+      if (!log || !log.id) continue;
+      const existing = await tx.store.get(log.id);
+      const finalLog = existing ? this.mergeShiftLogRecords(existing, log) : log;
+      await tx.store.put(finalLog);
     }
     await tx.done;
   }

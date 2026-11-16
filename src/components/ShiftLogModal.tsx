@@ -265,6 +265,7 @@ export const ShiftLogModal: React.FC<ShiftLogModalProps> = ({
       reminderDate: hasReminder ? reminderDate : undefined,
       reminderNote: hasReminder ? reminderNote.trim() : undefined,
       isReminderCompleted: editEntry?.isReminderCompleted || false,
+      responses: editEntry?.responses || [],
     };
 
     if (category === 'Sales') {

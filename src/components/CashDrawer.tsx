@@ -198,19 +198,14 @@ export function CashDrawer() {
       ]);
 
       const lastPurged = parseInt(localStorage.getItem('cdm_last_purged_epoch') || '0', 10);
-      const activeEpoch = Math.max(settings?.databaseEpoch || 0, lastPurged);
       const isRestored = settings?.isRestoredArchive;
 
-      // Filter out and asynchronously purge obsolete ghost logs created before active database epoch
+      // Filter out any ghost logs from an old purged database
       let cleanLogs = logs;
-      if (!isRestored && activeEpoch > 0) {
+      if (!isRestored && lastPurged > 0) {
         cleanLogs = logs.filter((l) => {
           const logTime = new Date(l.createdAt || 0).getTime();
-          if (logTime > 0 && logTime < (activeEpoch - 10000)) {
-            db.deleteShiftLog(l.id).catch(() => {});
-            return false;
-          }
-          return true;
+          return logTime === 0 || logTime >= (lastPurged - 10000);
         });
       }
 

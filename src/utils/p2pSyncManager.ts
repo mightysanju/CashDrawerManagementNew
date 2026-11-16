@@ -1693,10 +1693,10 @@ class P2PSyncManager {
 
       if (msg.shiftLogs && Array.isArray(msg.shiftLogs)) {
         let validLogs = msg.shiftLogs;
-        if (!isRestored && activeEpoch > 0) {
+        if (!isRestored && lastPurgedEpoch > 0) {
           validLogs = msg.shiftLogs.filter((l) => {
             const t = new Date(l.createdAt || 0).getTime();
-            return t >= (activeEpoch - 10000); // 10s clock drift tolerance
+            return t === 0 || t >= (lastPurgedEpoch - 10000); // 10s clock drift tolerance
           });
         }
         if (validLogs.length > 0) {
@@ -1745,14 +1745,12 @@ class P2PSyncManager {
       this.relayIfHub(msg, relayFromPeerId);
     } else if (msg.type === 'SHIFT_LOG_UPSERT' && msg.log) {
       const localSettings = await db.getSettings();
-      const localEpoch = typeof localSettings.databaseEpoch === 'number' ? localSettings.databaseEpoch : 0;
       const lastPurgedEpoch = parseInt(localStorage.getItem('cdm_last_purged_epoch') || '0', 10);
-      const activeEpoch = Math.max(localEpoch, lastPurgedEpoch);
       const isRestored = localSettings.isRestoredArchive;
 
       const logTime = new Date(msg.log.createdAt || 0).getTime();
-      if (!isRestored && activeEpoch > 0 && logTime > 0 && logTime < (activeEpoch - 10000)) {
-        console.warn(`[P2P Sync] Dropped obsolete shift log created before database epoch: ${msg.log.id}`);
+      if (!isRestored && lastPurgedEpoch > 0 && logTime > 0 && logTime < (lastPurgedEpoch - 10000)) {
+        console.warn(`[P2P Sync] Dropped obsolete shift log created before hard database purge: ${msg.log.id}`);
         return;
       }
       await db.saveShiftLog(msg.log);
@@ -2015,17 +2013,21 @@ class P2PSyncManager {
         // Broadcast current station presence + active user every heartbeat
         this.broadcastStationPresence();
 
-        // Periodic reconciliation: Hub shares latest users and shifts to prevent drift
+        // Periodic reconciliation: Hub shares latest users, shifts, shift logs, and categories to prevent drift
         if (this.state.role === 'hub') {
           try {
-            const [users, shifts, settings] = await Promise.all([
+            const [users, shifts, settings, shiftLogs, categories] = await Promise.all([
               db.getUsers(),
               db.getAllShifts(),
               db.getSettings(),
+              db.getShiftLogs(),
+              db.getCategories(),
             ]);
             this.sendToAll({
               type: 'FULL_SYNC',
               shifts,
+              shiftLogs,
+              categories,
               users,
               settings,
               databaseEpoch: settings.databaseEpoch || 0,
@@ -2098,6 +2100,13 @@ class P2PSyncManager {
     if (this.broadcastChannel) {
       try {
         this.broadcastChannel.postMessage(msg);
+      } catch {
+        // ignore
+      }
+    }
+    if (this.globalBroadcastChannel) {
+      try {
+        this.globalBroadcastChannel.postMessage(msg);
       } catch {
         // ignore
       }
