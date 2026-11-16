@@ -199,8 +199,12 @@ export interface SyncState {
 
 const PEER_PREFIX = 'cdm-lan-v3-';
 const GLOBAL_BEACON_CHANNEL = 'cdm_lan_global_beacon';
-const DISCOVERY_HUB_PEER_ID = 'cdm-lan-v3-beacon-hub';
-const DISCOVERY_CLIENT_PREFIX = 'cdm-lan-v3-beacon-node-';
+const DISCOVERY_BEACON_IDS = [
+  'cdm-lan-v3-beacon-hub',
+  'cdm-lan-v3-beacon-alt',
+  'cdm-lan-v3-beacon-node',
+];
+const DISCOVERY_CLIENT_PREFIX = 'cdm-lan-v3-beacon-client-';
 
 const db = new DatabaseManager();
 
@@ -237,6 +241,8 @@ class P2PSyncManager {
   private broadcastChannel: BroadcastChannel | null = null;
   private storeSlug: string = 'main-store';
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private reconnectAttempts: number = 0;
+  private lastReconnectAttempt: number = 0;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private isConnecting: boolean = false;
   private connectingSince: number = 0;
@@ -329,31 +335,42 @@ class P2PSyncManager {
    * Starts discovery peer to find all databases on the LAN
    */
   private async startDiscoveryPeer() {
-    if (this.discoveryPeer) return;
+    if (this.discoveryPeer && !this.discoveryPeer.destroyed) return;
 
-    try {
-      await this.tryHostDiscoveryHub();
-    } catch {
+    let connected = false;
+    for (const beaconId of DISCOVERY_BEACON_IDS) {
       try {
-        await this.connectAsDiscoveryClient();
-      } catch (err) {
-        console.debug('Discovery client connection notice:', err);
-        this.scheduleDiscoveryReconnect();
+        await this.tryHostDiscoveryHub(beaconId);
+        connected = true;
+        break;
+      } catch {
+        try {
+          await this.connectAsDiscoveryClient(beaconId);
+          connected = true;
+          break;
+        } catch {
+          // Beacon occupied but unresponsive; try next beacon in pool
+          continue;
+        }
       }
+    }
+
+    if (!connected) {
+      this.scheduleDiscoveryReconnect();
     }
 
     if (this.discoveryHeartbeatTimer) clearInterval(this.discoveryHeartbeatTimer);
     this.discoveryHeartbeatTimer = setInterval(() => {
       this.announceCurrentDatabase();
       this.pruneOldDiscoveredDatabases();
-    }, 10000);
+    }, 8000);
   }
 
-  private tryHostDiscoveryHub(): Promise<void> {
+  private tryHostDiscoveryHub(beaconId: string = DISCOVERY_BEACON_IDS[0]): Promise<void> {
     return new Promise((resolve, reject) => {
       let peer: Peer;
       try {
-        peer = new Peer(DISCOVERY_HUB_PEER_ID, {
+        peer = new Peer(beaconId, {
           config: STUN_CONFIG,
           debug: 1,
         });
@@ -371,9 +388,10 @@ class P2PSyncManager {
           } catch {
             // ignore
           }
-          reject(new Error('Discovery hub claim timeout'));
+          reject(new Error(`Discovery hub claim timeout for ${beaconId}`));
         }
-      }, 10000);
+      }, 7000);
+
       peer.on('open', (id) => {
         if (settled) {
           try { peer.destroy(); } catch { /* ignore */ }
@@ -383,10 +401,29 @@ class P2PSyncManager {
         this.discoveryPeer = peer;
         this.discoveryClientId = id;
         this.isDiscoveryHub = true;
-        this.addLog('info', 'Discovery beacon active (this PC is announcing/collecting databases on the network).');
+        this.addLog('info', `Discovery beacon active (${beaconId}) - announcing & collecting hotel databases on LAN.`);
 
         peer.on('connection', (conn) => {
           this.discoveryConnections.set(conn.peer, conn);
+
+          const sendRegistry = () => {
+            try {
+              conn.send({
+                type: 'DISCOVERY_REGISTRY_SYNC',
+                databases: this.getAvailableNetworkDatabases(),
+                senderId: this.myClientId,
+              });
+            } catch {
+              // ignore
+            }
+          };
+
+          if (conn.open) {
+            sendRegistry();
+          } else {
+            conn.on('open', sendRegistry);
+          }
+
           conn.on('data', async (raw) => {
             const msg = raw as SyncMessage;
             await this.handleDiscoveryMessage(msg, conn.peer);
@@ -397,15 +434,6 @@ class P2PSyncManager {
           conn.on('error', () => {
             this.discoveryConnections.delete(conn.peer);
           });
-
-          // Deliver current database registry to connecting peer
-          if (conn.open) {
-            conn.send({
-              type: 'DISCOVERY_REGISTRY_SYNC',
-              databases: this.getAvailableNetworkDatabases(),
-              senderId: this.myClientId,
-            });
-          }
         });
 
         this.announceCurrentDatabase();
@@ -426,7 +454,7 @@ class P2PSyncManager {
     });
   }
 
-  private connectAsDiscoveryClient(): Promise<void> {
+  private connectAsDiscoveryClient(beaconId: string = DISCOVERY_BEACON_IDS[0]): Promise<void> {
     return new Promise((resolve, reject) => {
       const clientId = `${DISCOVERY_CLIENT_PREFIX}${Math.floor(1000 + Math.random() * 9000)}`;
       let peer: Peer;
@@ -449,16 +477,16 @@ class P2PSyncManager {
           } catch {
             // ignore
           }
-          reject(new Error('Discovery hub connection timed out'));
+          reject(new Error(`Discovery hub connection timed out for ${beaconId}`));
         }
-      }, 12000);
+      }, 5000);
 
       peer.on('open', (myId) => {
         this.discoveryPeer = peer;
         this.discoveryClientId = myId;
         this.isDiscoveryHub = false;
 
-        const conn = peer.connect(DISCOVERY_HUB_PEER_ID, { reliable: true });
+        const conn = peer.connect(beaconId, { reliable: true });
 
         const setupClient = () => {
           if (settled) return;
@@ -481,7 +509,16 @@ class P2PSyncManager {
             this.scheduleDiscoveryReconnect();
           });
 
+          // Immediately announce our database & request registry
           this.announceCurrentDatabase();
+          try {
+            conn.send({
+              type: 'DISCOVERY_PROBE',
+              senderId: this.myClientId,
+            });
+          } catch {
+            // ignore
+          }
           resolve();
         };
 
@@ -1238,18 +1275,24 @@ class P2PSyncManager {
     try {
       // Step 1: Try to claim the Hub role
       await this.tryHostHub(hubId);
+      this.reconnectAttempts = 0;
     } catch {
       // Step 2: Hub exists! Connect as Client
       try {
         await this.connectAsClient(hubId);
+        this.reconnectAttempts = 0;
       } catch (err: unknown) {
-        console.debug('Client connection attempt failed, scheduling auto-retry:', err);
+        console.debug('Client connection attempt failed, operating in standalone in-sync mode:', err);
         const errMsg = err instanceof Error ? err.message : String(err);
-        this.addLog('error', `Connection to Hub failed: ${errMsg}. Retrying in background...`);
+        this.addLog('info', `Station ready in local in-sync mode (${errMsg}). Background search for peers active.`);
+        this.mySyncStage = 'in_sync';
         this.updateState({
-          status: 'error',
-          errorMessage: 'Unable to reach register hub. Retrying in background...',
+          status: 'connected',
+          role: 'standalone',
+          connectedCount: 0,
+          errorMessage: null,
         });
+        this.broadcastStationPresence('in_sync');
         this.scheduleReconnect(currentStore);
       }
     } finally {
@@ -1262,6 +1305,18 @@ class P2PSyncManager {
    * Tries to bind as the Primary Hub
    */
   private tryHostHub(hubId: string): Promise<void> {
+    if (this.peer && !this.peer.destroyed && this.peer.id === hubId && this.state.role === 'hub') {
+      this.mySyncStage = 'in_sync';
+      this.updateState({
+        status: 'connected',
+        role: 'hub',
+        myPeerId: hubId,
+        errorMessage: null,
+      });
+      this.broadcastStationPresence('in_sync');
+      return Promise.resolve();
+    }
+
     return new Promise((resolve, reject) => {
       this.cleanupPeer();
 
@@ -1286,10 +1341,10 @@ class P2PSyncManager {
           } catch {
             // ignore
           }
-          this.addLog('warn', 'Hub claim timed out after 10s (signaling server slow or unreachable). Trying client mode...');
+          this.addLog('warn', 'Hub claim timed out after 8s. Trying client mode...');
           reject(new Error('Hub claim timeout'));
         }
-      }, 10000);
+      }, 8000);
 
       peer.on('open', (id) => {
         if (settled) {
@@ -1994,13 +2049,18 @@ class P2PSyncManager {
       const rememberedStore = localStorage.getItem('cdm_synced_register') || localStorage.getItem('cdm_store_name');
       if (!rememberedStore || rememberedStore.trim().toLowerCase() === 'main store') return;
 
+      // Never race an active reconnect timer or in-progress handshake
+      if (this.reconnectTimer || this.isConnecting) return;
+      if (Date.now() - this.lastReconnectAttempt < 10000) return;
+
       const isClientAndOrphan = this.state.role === 'client' && this.connections.size === 0;
-      const isDisconnected = this.state.status === 'disconnected' || this.state.status === 'error';
+      const isDisconnected = this.state.status === 'disconnected';
       const isPeerDown = !this.peer || this.peer.destroyed;
 
-      if ((isClientAndOrphan || isDisconnected || isPeerDown) && !this.isConnecting) {
+      if (isClientAndOrphan || isDisconnected || isPeerDown) {
+        this.lastReconnectAttempt = Date.now();
         console.debug(`[P2P Sync Watchdog] Reconnecting to remembered register: "${rememberedStore}"...`);
-        this.addLog('warn', `Watchdog detected disconnection. Auto-reconnecting to "${rememberedStore}"...`);
+        this.addLog('info', `Background watchdog checking hotel network for "${rememberedStore}"...`);
         this.autoConnect(rememberedStore);
       } else if (this.peer && this.peer.disconnected && !this.peer.destroyed) {
         try {
@@ -2009,15 +2069,18 @@ class P2PSyncManager {
           // ignore
         }
       }
-    }, 4000);
+    }, 12000);
   }
 
   private scheduleReconnect(storeName: string) {
     if (this.reconnectTimer) return;
+    this.reconnectAttempts++;
+    const delay = Math.min(25000, 4000 * Math.pow(1.3, Math.min(this.reconnectAttempts, 5)));
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
+      this.lastReconnectAttempt = Date.now();
       this.autoConnect(storeName);
-    }, 3000);
+    }, delay);
   }
 
   private notifyData(action: string, data?: unknown) {

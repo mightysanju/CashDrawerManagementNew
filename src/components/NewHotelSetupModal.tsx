@@ -75,17 +75,14 @@ export const NewHotelSetupModal: React.FC<NewHotelSetupModalProps> = ({
 
     const refreshDatabases = () => {
       const dbs = p2pSyncManager.getAvailableNetworkDatabases().filter(
-        (d) => d.name.toLowerCase() !== 'main store' && d.lastSeen > Date.now() - 90000
+        (d) => d.name.toLowerCase() !== 'main store'
       );
       setAvailableDbs(dbs);
 
-      // Default tab: stay on "Sync" while scanning; only fall to "Create" once the scan
-      // has finished and truly found nothing. Never override a manual tab choice.
+      // Default tab: if user hasn't made a choice, start on 'sync' if databases exist
       if (!userSelectedTabRef.current) {
         if (dbs.length > 0) {
           setActiveTab('sync');
-        } else if (scanFinished) {
-          setActiveTab('create');
         }
       }
     };
@@ -362,121 +359,159 @@ export const NewHotelSetupModal: React.FC<NewHotelSetupModalProps> = ({
 
               {/* List of Available Discovered Databases */}
               {availableDbs.length > 0 ? (
-                <div className="space-y-2.5">
-                  {availableDbs.map((dbItem) => {
-                    const isConnectingThis = syncingDbName === dbItem.name;
-                    return (
-                      <div
-                        key={dbItem.name}
-                        className="p-4 bg-gray-50 dark:bg-gray-700/40 border border-gray-200 dark:border-gray-600 rounded-xl hover:border-blue-300 dark:hover:border-blue-700 transition flex items-center justify-between"
-                      >
-                        <div className="flex items-center space-x-3 truncate mr-3">
-                          <div className="w-9 h-9 rounded-xl bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
-                            <Building2 className="w-5 h-5" />
-                          </div>
-                          <div className="truncate">
-                            <div className="flex items-center space-x-2">
-                              <span className="text-xs font-bold text-gray-900 dark:text-white truncate">
-                                {dbItem.name}
-                              </span>
-                              <span className="inline-flex items-center px-1.5 py-0.5 bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 text-[10px] font-semibold rounded shrink-0">
-                                <Radio className="w-2.5 h-2.5 mr-1 text-emerald-600 animate-pulse" />
-                                Online on LAN
-                              </span>
-                            </div>
-                            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 mt-1 text-[11px] text-gray-500 dark:text-gray-400">
-                              <span className="inline-flex items-center text-gray-700 dark:text-gray-300 font-medium">
-                                <User className="w-3 h-3 mr-1 text-blue-500 shrink-0" />
-                                Created by <strong className="ml-1 text-gray-900 dark:text-white">{dbItem.createdBy || 'Manager'}</strong>
-                              </span>
-                              {(dbItem.createdAt || dbItem.epoch > 0) && (
-                                <span className="inline-flex items-center text-gray-500 dark:text-gray-400">
-                                  <Clock className="w-3 h-3 mr-1 text-gray-400 shrink-0" />
-                                  {formatCreatedTime(dbItem.createdAt || dbItem.epoch)}
-                                </span>
-                              )}
-                              <span className="text-gray-400 dark:text-gray-500 text-[10px]">
-                                {dbItem.shiftsCount !== undefined && dbItem.shiftsCount > 0
-                                  ? `· ${dbItem.shiftsCount} shift records`
-                                  : '· Ready to sync'}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => handleConnectSync(dbItem.name)}
-                          disabled={!!syncingDbName}
-                          className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-75 text-white rounded-xl text-xs font-semibold flex items-center space-x-1.5 shrink-0 transition shadow-xs"
+                <div className="space-y-4">
+                  <div className="space-y-2.5">
+                    {availableDbs.map((dbItem) => {
+                      const isConnectingThis = syncingDbName === dbItem.name;
+                      return (
+                        <div
+                          key={dbItem.name}
+                          className="p-4 bg-gray-50 dark:bg-gray-700/40 border border-gray-200 dark:border-gray-600 rounded-xl hover:border-blue-300 dark:hover:border-blue-700 transition flex items-center justify-between"
                         >
-                          {isConnectingThis ? (
-                            <>
-                              {syncStageText === 'In Sync' ? (
-                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-300 animate-pulse" />
-                              ) : (
-                                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                              )}
-                              <span>{syncStageText}</span>
-                            </>
-                          ) : (
-                            <>
-                              <Download className="w-3.5 h-3.5" />
-                              <span>Connect & Sync</span>
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    );
-                  })}
+                          <div className="flex items-center space-x-3 truncate mr-3">
+                            <div className="w-9 h-9 rounded-xl bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                              <Building2 className="w-5 h-5" />
+                            </div>
+                            <div className="truncate">
+                              <div className="flex items-center space-x-2">
+                                <span className="text-xs font-bold text-gray-900 dark:text-white truncate">
+                                  {dbItem.name}
+                                </span>
+                                <span className="inline-flex items-center px-1.5 py-0.5 bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 text-[10px] font-semibold rounded shrink-0">
+                                  <Radio className="w-2.5 h-2.5 mr-1 text-emerald-600 animate-pulse" />
+                                  Online on LAN
+                                </span>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                                <span className="inline-flex items-center text-gray-700 dark:text-gray-300 font-medium">
+                                  <User className="w-3 h-3 mr-1 text-blue-500 shrink-0" />
+                                  Created by <strong className="ml-1 text-gray-900 dark:text-white">{dbItem.createdBy || 'Manager'}</strong>
+                                </span>
+                                {(dbItem.createdAt || dbItem.epoch > 0) && (
+                                  <span className="inline-flex items-center text-gray-500 dark:text-gray-400">
+                                    <Clock className="w-3 h-3 mr-1 text-gray-400 shrink-0" />
+                                    {formatCreatedTime(dbItem.createdAt || dbItem.epoch)}
+                                  </span>
+                                )}
+                                <span className="text-gray-400 dark:text-gray-500 text-[10px]">
+                                  {dbItem.shiftsCount !== undefined && dbItem.shiftsCount > 0
+                                    ? `· ${dbItem.shiftsCount} shift records`
+                                    : '· Ready to sync'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => handleConnectSync(dbItem.name)}
+                            disabled={!!syncingDbName}
+                            className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-75 text-white rounded-xl text-xs font-semibold flex items-center space-x-1.5 shrink-0 transition shadow-xs"
+                          >
+                            {isConnectingThis ? (
+                              <>
+                                {syncStageText === 'In Sync' ? (
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-300 animate-pulse" />
+                                ) : (
+                                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                )}
+                                <span>{syncStageText}</span>
+                              </>
+                            ) : (
+                              <>
+                                <Download className="w-3.5 h-3.5" />
+                                <span>Connect & Sync</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Option 2 is ALWAYS available directly from Option 1 */}
+                  <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        userSelectedTabRef.current = true;
+                        setActiveTab('create');
+                      }}
+                      className="w-full py-2.5 px-3 bg-gray-100 dark:bg-gray-700/60 hover:bg-gray-200 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl text-xs font-bold text-gray-800 dark:text-gray-200 flex items-center justify-center space-x-2 transition"
+                    >
+                      <PlusCircle className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                      <span>Or Start New Hotel Account / Database (Option 2)</span>
+                      <ArrowRight className="w-3.5 h-3.5 opacity-60" />
+                    </button>
+                  </div>
                 </div>
               ) : (
-                /* Empty state when no databases are discovered */
-                <div className="p-6 bg-gray-50 dark:bg-gray-700/30 border border-dashed border-gray-200 dark:border-gray-700 rounded-2xl text-center space-y-3">
-                  <div className="w-12 h-12 bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 rounded-2xl flex items-center justify-center mx-auto">
-                    <WifiOff className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-bold text-gray-900 dark:text-white">
-                      No Active Sync Databases Found on LAN
-                    </h4>
-                    <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1 max-w-sm mx-auto leading-relaxed">
-                      Ensure another computer is running FrontDesk on the same Wi-Fi/LAN, or proceed to Option 2 to create an account and start a new database.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('create')}
-                    className="inline-flex items-center space-x-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold transition"
-                  >
-                    <PlusCircle className="w-3.5 h-3.5" />
-                    <span>Proceed to Option 2: Create Account</span>
-                  </button>
+              /* Empty state when no databases are discovered */
+              <div className="p-6 bg-gray-50 dark:bg-gray-700/30 border border-dashed border-gray-200 dark:border-gray-700 rounded-2xl text-center space-y-3">
+                <div className="w-12 h-12 bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 rounded-2xl flex items-center justify-center mx-auto">
+                  <WifiOff className="w-6 h-6" />
                 </div>
-              )}
-
-              {/* Informational Footer */}
-              <div className="p-3 bg-blue-50/60 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/40 rounded-xl text-[11px] text-blue-800 dark:text-blue-300 flex items-start space-x-2">
-                <CheckCircle2 className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
-                <span>
-                  Syncing copies all shift till balances, guest complaints, sales leads, and staff accounts from the primary register instantly over your local network.
-                </span>
+                <div>
+                  <h4 className="text-xs font-bold text-gray-900 dark:text-white">
+                    No Active Sync Databases Found on LAN
+                  </h4>
+                  <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1 max-w-sm mx-auto leading-relaxed">
+                    Ensure another computer is running FrontDesk on the same Wi-Fi/LAN, or proceed to Option 2 to create an account and start a new database.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    userSelectedTabRef.current = true;
+                    setActiveTab('create');
+                  }}
+                  className="inline-flex items-center space-x-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold transition shadow-xs"
+                >
+                  <PlusCircle className="w-3.5 h-3.5" />
+                  <span>Proceed to Option 2: Create Account</span>
+                </button>
               </div>
+            )}
+
+            {/* Informational Footer */}
+            <div className="p-3 bg-blue-50/60 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/40 rounded-xl text-[11px] text-blue-800 dark:text-blue-300 flex items-start space-x-2">
+              <CheckCircle2 className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+              <span>
+                Syncing copies all shift till balances, guest complaints, sales leads, and staff accounts from the primary register instantly over your local network.
+              </span>
             </div>
-          )}
+          </div>
+        )}
 
-          {/* ================= OPTION 2: CREATE ACCOUNT & DATABASE ================= */}
-          {activeTab === 'create' && (
-            <div className="space-y-4">
-              <div className="bg-slate-50 dark:bg-slate-800/50 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-300">
-                <div className="font-bold flex items-center space-x-1.5 text-gray-900 dark:text-white mb-1">
-                  <ShieldCheck className="w-4 h-4 text-blue-600" />
-                  <span>Start a New Hotel Network Database</span>
-                </div>
-                <p className="text-[11px] text-gray-500 dark:text-gray-400 leading-relaxed">
-                  Use this option if no sync database is available on your network or if you are setting up a new property. This device will host the primary database.
-                </p>
+        {/* ================= OPTION 2: CREATE ACCOUNT & DATABASE ================= */}
+        {activeTab === 'create' && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-gray-100 dark:border-gray-700">
+              <div className="text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
+                Option 2: Create Account & Hotel
               </div>
+              <button
+                type="button"
+                onClick={() => {
+                  userSelectedTabRef.current = true;
+                  setActiveTab('sync');
+                }}
+                className="text-xs text-blue-600 dark:text-blue-400 hover:underline font-semibold flex items-center space-x-1"
+              >
+                <Wifi className="w-3 h-3" />
+                <span>← Back to Option 1: Sync from Network</span>
+              </button>
+            </div>
+
+            <div className="bg-slate-50 dark:bg-slate-800/50 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-300">
+              <div className="font-bold flex items-center space-x-1.5 text-gray-900 dark:text-white mb-1">
+                <ShieldCheck className="w-4 h-4 text-blue-600" />
+                <span>Start a New Hotel Network Database (Option 2)</span>
+              </div>
+              <p className="text-[11px] text-gray-500 dark:text-gray-400 leading-relaxed">
+                This option creates a brand new hotel database and primary manager account. Once created, other computers on your network will immediately see this database and be able to connect and sync with it.
+              </p>
+            </div>
 
               <form onSubmit={handleCreateSubmit} className="space-y-3.5">
                 {/* Property Name */}

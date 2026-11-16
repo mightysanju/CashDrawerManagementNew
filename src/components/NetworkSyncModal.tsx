@@ -54,9 +54,10 @@ interface NetworkSyncModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSyncTriggered?: () => void;
+  onRequestCreateNewHotel?: () => void;
 }
 
-export function NetworkSyncModal({ isOpen, onClose, onSyncTriggered }: NetworkSyncModalProps) {
+export function NetworkSyncModal({ isOpen, onClose, onSyncTriggered, onRequestCreateNewHotel }: NetworkSyncModalProps) {
   const [syncState, setSyncState] = useState<SyncState>(p2pSyncManager.getState());
   const [availableDbs, setAvailableDbs] = useState<AvailableNetworkDatabase[]>(
     p2pSyncManager.getAvailableNetworkDatabases()
@@ -576,14 +577,31 @@ export function NetworkSyncModal({ isOpen, onClose, onSyncTriggered }: NetworkSy
                 </div>
               </form>
             ) : (
-              <button
-                type="button"
-                onClick={() => setIsAddingNew(true)}
-                className="w-full py-2 border-2 border-dashed border-gray-200 dark:border-gray-700 hover:border-blue-400 dark:hover:border-blue-500 rounded-xl text-xs font-semibold text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition flex items-center justify-center space-x-1.5"
-              >
-                <Plus size={14} />
-                <span>Add / Connect Another Hotel Database</span>
-              </button>
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onRequestCreateNewHotel) {
+                      onRequestCreateNewHotel();
+                    } else {
+                      setIsAddingNew(true);
+                    }
+                  }}
+                  className="w-full py-2.5 px-3 bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 dark:hover:bg-blue-900/60 border border-blue-200 dark:border-blue-800 rounded-xl text-xs font-bold text-blue-700 dark:text-blue-300 transition flex items-center justify-center space-x-1.5"
+                >
+                  <Plus size={14} className="text-blue-600 dark:text-blue-400" />
+                  <span>Create New Account / Database (Option 2)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsAddingNew(true)}
+                  className="w-full py-2 border-2 border-dashed border-gray-200 dark:border-gray-700 hover:border-blue-400 dark:hover:border-blue-500 rounded-xl text-xs font-semibold text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition flex items-center justify-center space-x-1.5"
+                >
+                  <ArrowRightLeft size={13} />
+                  <span>Add / Connect Another Database by Name</span>
+                </button>
+              </div>
             )}
           </div>
 

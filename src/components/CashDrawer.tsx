@@ -1373,6 +1373,10 @@ export function CashDrawer() {
           loadShiftsData();
           loadLogsData();
         }}
+        onRequestCreateNewHotel={() => {
+          setIsSyncModalOpen(false);
+          setIsNewHotelSetupModalOpen(true);
+        }}
       />
 
       {/* Browser Extension Info & Download Modal */}
