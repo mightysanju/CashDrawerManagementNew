@@ -422,7 +422,7 @@ export function CashDrawer() {
       if (action === 'DATABASE_PURGED') {
         setSelectedShift(null);
         setActiveShifts([]);
-        setAllShifts([]);
+        setShiftHistory([]);
         setShiftLogs([]);
         setEntries([]);
         setShiftDrop(0);
@@ -729,7 +729,7 @@ export function CashDrawer() {
 
   const handleDeleteLog = async (id: string) => {
     await db.deleteShiftLog(id);
-    p2pSyncManager.broadcastDeleteShiftLog(id);
+    p2pSyncManager.broadcastShiftLogDelete(id);
     loadLogsData();
   };
 

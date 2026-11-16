@@ -1195,8 +1195,10 @@ class P2PSyncManager {
           currentStore = saved.trim();
         } else {
           const org = await db.getOrganization();
-          if (org && org.name && org.name.trim()) {
-            currentStore = org.name.trim();
+          if (org && typeof org === 'string' && org.trim()) {
+            currentStore = org.trim();
+          } else if (org && typeof org === 'object' && (org as { name?: string }).name) {
+            currentStore = (org as { name?: string }).name!.trim();
           } else {
             currentStore = this.state.storeName || 'Sunset Palms Beach Resort';
           }
@@ -2050,6 +2052,10 @@ class P2PSyncManager {
       logId,
       senderId: this.myClientId,
     });
+  }
+
+  public broadcastDeleteShiftLog(logId: string) {
+    this.broadcastShiftLogDelete(logId);
   }
 
   public broadcastCategory(category: LogCategoryConfig) {
