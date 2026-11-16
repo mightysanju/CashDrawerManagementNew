@@ -434,7 +434,7 @@ class P2PSyncManager {
           }
           reject(new Error('Discovery hub connection timed out'));
         }
-      }, 5000);
+      }, 12000);
 
       peer.on('open', (myId) => {
         this.discoveryPeer = peer;
@@ -1340,10 +1340,10 @@ class P2PSyncManager {
           } catch {
             // ignore
           }
-          this.addLog('warn', `Connection to Hub ${hubId} timed out after 6s. Hub might be offline or waking up.`);
+          this.addLog('warn', `Connection to Hub ${hubId} timed out after 20s. Hub might be offline or negotiating ICE.`);
           reject(new Error('Connection timeout to hub'));
         }
-      }, 6000);
+      }, 20000);
 
       peer.on('open', (myId) => {
         this.peer = peer;
@@ -1868,7 +1868,11 @@ class P2PSyncManager {
     if (this.state.role === 'hub') {
       this.connections.forEach((otherConn) => {
         if (otherConn.peer !== excludePeerId && otherConn.open) {
-          otherConn.send(msg);
+          try {
+            otherConn.send(msg);
+          } catch (e) {
+            console.warn(`[P2P Sync] Error relaying frame (${msg.type}) to peer ${otherConn.peer}:`, e);
+          }
         }
       });
     }
