@@ -13,9 +13,19 @@ import {
   ArrowRightLeft,
   Radio,
   User,
-  Clock
+  Clock,
+  Monitor,
+  Edit3,
+  Link2,
+  AlertTriangle,
+  Server
 } from 'lucide-react';
-import { p2pSyncManager, SyncState, AvailableNetworkDatabase } from '../utils/p2pSyncManager';
+import { 
+  p2pSyncManager, 
+  SyncState, 
+  AvailableNetworkDatabase,
+  ConnectedStationInfo 
+} from '../utils/p2pSyncManager';
 
 const formatCreatedTime = (timestamp?: string | number) => {
   if (!timestamp) return null;
@@ -45,14 +55,20 @@ export function NetworkSyncModal({ isOpen, onClose, onSyncTriggered }: NetworkSy
   const [availableDbs, setAvailableDbs] = useState<AvailableNetworkDatabase[]>(
     p2pSyncManager.getAvailableNetworkDatabases()
   );
+  const [stations, setStations] = useState<ConnectedStationInfo[]>(
+    p2pSyncManager.getConnectedStations()
+  );
   const [newGroupName, setNewGroupName] = useState('');
   const [isAddingNew, setIsAddingNew] = useState(false);
   const [isSwitching, setIsSwitching] = useState(false);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [stationNameInput, setStationNameInput] = useState('');
 
   useEffect(() => {
     const unsubState = p2pSyncManager.subscribeState((newState) => {
       setSyncState(newState);
       setAvailableDbs(p2pSyncManager.getAvailableNetworkDatabases());
+      setStations(p2pSyncManager.getConnectedStations());
       if (newState.status === 'connected' && onSyncTriggered) {
         onSyncTriggered();
       }
@@ -61,6 +77,9 @@ export function NetworkSyncModal({ isOpen, onClose, onSyncTriggered }: NetworkSy
     const unsubData = p2pSyncManager.subscribeData((action) => {
       if (action === 'AVAILABLE_DATABASES_UPDATED' || action === 'NETWORK_SWITCH_FOLLOWED') {
         setAvailableDbs(p2pSyncManager.getAvailableNetworkDatabases());
+      }
+      if (action === 'STATION_PRESENCE_UPDATED' || action === 'SYNC_COMPLETED') {
+        setStations(p2pSyncManager.getConnectedStations());
       }
     });
 
@@ -71,6 +90,14 @@ export function NetworkSyncModal({ isOpen, onClose, onSyncTriggered }: NetworkSy
   }, [onSyncTriggered]);
 
   if (!isOpen) return null;
+
+  const handleSaveStationName = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!stationNameInput.trim()) return;
+    p2pSyncManager.setStationName(stationNameInput.trim());
+    setStations(p2pSyncManager.getConnectedStations());
+    setIsEditingName(false);
+  };
 
   const handleSelectGroup = async (group: string) => {
     if (group === syncState.storeName) return;
@@ -216,6 +243,159 @@ export function NetworkSyncModal({ isOpen, onClose, onSyncTriggered }: NetworkSy
                   ? 'All shifts, till balances, notes, and staff accounts sync instantly across computers in this hotel group.'
                   : 'Click on any discovered hotel database below to connect and sync with it.'}
               </p>
+            </div>
+          </div>
+
+          {/* Connected Stations & Live User Presence */}
+          <div className="border border-gray-200 dark:border-gray-700 rounded-xl p-4 bg-gray-50/50 dark:bg-gray-800/50 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2 text-xs font-bold text-gray-700 dark:text-gray-300">
+                <Monitor size={16} className="text-emerald-600 dark:text-emerald-400" />
+                <span>Connected Registers & Active Staff</span>
+              </div>
+              <span className="text-[11px] font-medium text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800">
+                {stations.length} System{stations.length === 1 ? '' : 's'} Online
+              </span>
+            </div>
+
+            <div className="space-y-2">
+              {stations.map((st) => (
+                <div
+                  key={st.peerId}
+                  className={`p-3 rounded-xl border transition-all ${
+                    st.isThisDevice
+                      ? 'bg-white dark:bg-gray-700/80 border-blue-200 dark:border-blue-800 shadow-xs ring-1 ring-blue-500/20'
+                      : 'bg-white dark:bg-gray-700/50 border-gray-200 dark:border-gray-700'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    {/* Left: Device Name & User */}
+                    <div className="flex items-start space-x-2.5 min-w-0">
+                      <div className={`p-2 rounded-lg shrink-0 mt-0.5 ${
+                        st.isThisDevice
+                          ? 'bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300'
+                          : 'bg-gray-100 dark:bg-gray-600 text-gray-600 dark:text-gray-300'
+                      }`}>
+                        <Monitor size={15} />
+                      </div>
+
+                      <div className="min-w-0 space-y-1">
+                        <div className="flex items-center space-x-1.5 flex-wrap">
+                          {st.isThisDevice && isEditingName ? (
+                            <form onSubmit={handleSaveStationName} className="flex items-center space-x-1">
+                              <input
+                                type="text"
+                                value={stationNameInput}
+                                onChange={(e) => setStationNameInput(e.target.value)}
+                                className="text-xs font-bold px-1.5 py-0.5 border border-blue-400 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                                autoFocus
+                              />
+                              <button
+                                type="submit"
+                                className="p-1 text-emerald-600 hover:text-emerald-700 rounded"
+                                title="Save name"
+                              >
+                                <Check size={12} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setIsEditingName(false)}
+                                className="p-1 text-gray-400 hover:text-gray-600 rounded"
+                              >
+                                <X size={12} />
+                              </button>
+                            </form>
+                          ) : (
+                            <>
+                              <span className="text-xs font-bold text-gray-900 dark:text-white truncate">
+                                {st.stationName}
+                              </span>
+                              {st.isThisDevice && (
+                                <span className="text-[10px] bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 font-bold px-1.5 py-0.2 rounded">
+                                  This PC
+                                </span>
+                              )}
+                              {st.isPrimaryHub && (
+                                <span className="text-[10px] bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300 font-bold px-1.5 py-0.2 rounded flex items-center">
+                                  <Server size={9} className="mr-0.5" />
+                                  Primary Hub
+                                </span>
+                              )}
+                              {st.isThisDevice && !isEditingName && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setStationNameInput(st.stationName);
+                                    setIsEditingName(true);
+                                  }}
+                                  className="text-gray-400 hover:text-blue-600 p-0.5 rounded transition"
+                                  title="Rename this register PC"
+                                >
+                                  <Edit3 size={11} />
+                                </button>
+                              )}
+                            </>
+                          )}
+                        </div>
+
+                        {/* Logged in User */}
+                        <div className="flex items-center space-x-1 text-xs">
+                          {st.loggedInUser ? (
+                            <span className="inline-flex items-center text-emerald-700 dark:text-emerald-300 font-medium bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.5 rounded text-[11px]">
+                              <User size={11} className="mr-1 text-emerald-600 dark:text-emerald-400" />
+                              <strong>{st.loggedInUser.fullName || st.loggedInUser.username}</strong>
+                              <span className="ml-1 text-gray-500 dark:text-gray-400 text-[10px]">(@{st.loggedInUser.username})</span>
+                              <span className="ml-1 text-[9px] uppercase font-bold px-1 py-0.2 rounded bg-emerald-200 dark:bg-emerald-800 text-emerald-800 dark:text-emerald-200">
+                                {st.loggedInUser.role}
+                              </span>
+                            </span>
+                          ) : (
+                            <span className="text-[11px] text-gray-400 dark:text-gray-500 italic flex items-center">
+                              <User size={11} className="mr-1 opacity-50" />
+                              No staff signed in (Standby)
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Notice if station is connected to a different database */}
+                        {st.databaseName && st.databaseName !== syncState.storeName && (
+                          <div className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold flex items-center space-x-1 pt-0.5">
+                            <AlertTriangle size={11} className="shrink-0" />
+                            <span>On database: "{st.databaseName}"</span>
+                            <button
+                              type="button"
+                              onClick={() => handleSelectGroup(st.databaseName)}
+                              className="underline hover:text-amber-700 dark:hover:text-amber-300 ml-1 font-bold"
+                            >
+                              Sync Together
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Right: Sync Status Badge (Connection Established vs In Sync) */}
+                    <div className="shrink-0 text-right">
+                      {st.syncStage === 'in_sync' ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1 animate-pulse"></span>
+                          In Sync
+                        </span>
+                      ) : st.syncStage === 'connection_established' ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-700">
+                          <Link2 size={10} className="mr-1 text-blue-600" />
+                          Connection Established
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
+                          <RefreshCw size={10} className="mr-1 animate-spin text-amber-600" />
+                          Connecting...
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
 

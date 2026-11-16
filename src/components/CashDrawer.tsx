@@ -836,7 +836,7 @@ export function CashDrawer() {
                   </span>
                 ) : (
                   <span className="truncate max-w-[210px]">
-                    Sync: <strong>{syncState.storeName}</strong> (Synced)
+                    Sync: <strong>{syncState.storeName}</strong> {syncState.connectedCount > 0 ? `(${syncState.connectedCount + 1} online)` : '(In Sync)'}
                   </span>
                 )
               ) : syncState.status === 'scanning' ? (

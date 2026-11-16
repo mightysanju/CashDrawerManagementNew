@@ -53,6 +53,7 @@ export const NewHotelSetupModal: React.FC<NewHotelSetupModalProps> = ({
   const [availableDbs, setAvailableDbs] = useState<AvailableNetworkDatabase[]>([]);
   const [isScanning, setIsScanning] = useState(false);
   const [syncingDbName, setSyncingDbName] = useState<string | null>(null);
+  const [syncStageText, setSyncStageText] = useState<'Connecting...' | 'Connection Established' | 'In Sync'>('Connecting...');
 
   // Form states for Option 2 (Create Account)
   const [propertyName, setPropertyName] = useState('Grand Hotel & Suites');
@@ -124,10 +125,15 @@ export const NewHotelSetupModal: React.FC<NewHotelSetupModalProps> = ({
   const handleConnectSync = async (targetDbName: string) => {
     try {
       setSyncingDbName(targetDbName);
+      setSyncStageText('Connecting...');
       setError(null);
 
       // Connect to chosen network database
       await p2pSyncManager.switchNetworkSyncGroup(targetDbName, false);
+
+      // Progressive Stage 1: Connection Established
+      setSyncStageText('Connection Established');
+      await new Promise((r) => setTimeout(r, 600));
 
       // Give peer up to 3 seconds to deliver FULL_SYNC
       let attempts = 0;
@@ -137,6 +143,10 @@ export const NewHotelSetupModal: React.FC<NewHotelSetupModalProps> = ({
         if (hasUsers) break;
         attempts++;
       }
+
+      // Progressive Stage 2: In Sync
+      setSyncStageText('In Sync');
+      await new Promise((r) => setTimeout(r, 600));
 
       onSetupComplete();
     } catch (err: unknown) {
@@ -385,12 +395,16 @@ export const NewHotelSetupModal: React.FC<NewHotelSetupModalProps> = ({
                           type="button"
                           onClick={() => handleConnectSync(dbItem.name)}
                           disabled={!!syncingDbName}
-                          className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-xs font-semibold flex items-center space-x-1.5 shrink-0 transition shadow-xs"
+                          className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-75 text-white rounded-xl text-xs font-semibold flex items-center space-x-1.5 shrink-0 transition shadow-xs"
                         >
                           {isConnectingThis ? (
                             <>
-                              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                              <span>Connecting...</span>
+                              {syncStageText === 'In Sync' ? (
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-300 animate-pulse" />
+                              ) : (
+                                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                              )}
+                              <span>{syncStageText}</span>
                             </>
                           ) : (
                             <>

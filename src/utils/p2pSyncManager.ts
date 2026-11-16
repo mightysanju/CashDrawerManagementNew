@@ -8,6 +8,50 @@ import {
   DatabaseArchive
 } from '../types';
 import { DatabaseManager } from './database';
+import { authManager } from './authManager';
+
+export type SyncStage = 'connecting' | 'connection_established' | 'in_sync';
+
+export interface ConnectedStationInfo {
+  peerId: string;
+  stationName: string;
+  platform: string;
+  browser: string;
+  loggedInUser?: {
+    id: string;
+    fullName: string;
+    username: string;
+    role: string;
+  } | null;
+  databaseName: string;
+  databaseEpoch?: number;
+  isPrimaryHub: boolean;
+  syncStage: SyncStage;
+  lastSeen: number;
+  isThisDevice: boolean;
+}
+
+export function detectPlatformAndBrowser(): { platform: string; browser: string } {
+  if (typeof navigator === 'undefined') {
+    return { platform: 'Unknown', browser: 'Browser' };
+  }
+  const ua = navigator.userAgent;
+  let platform = 'PC';
+  if (/Windows/i.test(ua)) platform = 'Windows';
+  else if (/Macintosh|Mac OS/i.test(ua)) platform = 'macOS';
+  else if (/CrOS/i.test(ua)) platform = 'ChromeOS';
+  else if (/Linux/i.test(ua)) platform = 'Linux';
+  else if (/iPad|iPhone|iPod/i.test(ua)) platform = 'iOS';
+  else if (/Android/i.test(ua)) platform = 'Android';
+
+  let browser = 'Browser';
+  if (/Edg\//i.test(ua)) browser = 'Edge';
+  else if (/Chrome\//i.test(ua)) browser = 'Chrome';
+  else if (/Firefox\//i.test(ua)) browser = 'Firefox';
+  else if (/Safari\//i.test(ua) && !/Chrome/i.test(ua)) browser = 'Safari';
+
+  return { platform, browser };
+}
 
 export interface AvailableNetworkDatabase {
   name: string;
@@ -109,6 +153,12 @@ export type SyncMessage =
   | {
       type: 'DISCOVERY_PROBE';
       senderId?: string;
+    }
+  | {
+      type: 'STATION_PRESENCE';
+      station: ConnectedStationInfo;
+      allStations?: ConnectedStationInfo[];
+      senderId?: string;
     };
 
 export type SyncRole = 'hub' | 'client' | 'standalone';
@@ -151,6 +201,11 @@ class P2PSyncManager {
   private myClientId: string = '';
   private watchdogTimer: ReturnType<typeof setInterval> | null = null;
 
+  // Connected Stations & Live User Presence
+  private connectedStations: Map<string, ConnectedStationInfo> = new Map();
+  private mySyncStage: SyncStage = 'connecting';
+  private customStationName: string = '';
+
   // Network Discovery Beacon fields
   private globalBroadcastChannel: BroadcastChannel | null = null;
   private discoveryPeer: Peer | null = null;
@@ -186,6 +241,15 @@ class P2PSyncManager {
     this.initBroadcastChannel();
     this.initGlobalDiscovery();
     this.startWatchdog();
+
+    // Broadcast station presence whenever current user logs in or out
+    try {
+      authManager.subscribe(() => {
+        this.broadcastStationPresence();
+      });
+    } catch {
+      // ignore
+    }
   }
 
   /**
@@ -902,6 +966,99 @@ class P2PSyncManager {
     return { ...this.state };
   }
 
+  public getMyStationInfo(): ConnectedStationInfo {
+    const { platform, browser } = detectPlatformAndBrowser();
+    let name = this.customStationName;
+    if (!name) {
+      try {
+        name = localStorage.getItem('cdm_station_name') || '';
+      } catch {
+        // ignore
+      }
+    }
+    if (!name) {
+      const isHub = this.state.role === 'hub';
+      name = isHub ? `Register #1 (${platform} / ${browser})` : `Register #2 (${platform} / ${browser})`;
+      try {
+        localStorage.setItem('cdm_station_name', name);
+      } catch {
+        // ignore
+      }
+    }
+    this.customStationName = name;
+
+    let user = null;
+    try {
+      user = authManager.getCurrentUser();
+    } catch {
+      // ignore
+    }
+
+    return {
+      peerId: this.myClientId || 'local-station',
+      stationName: name,
+      platform,
+      browser,
+      loggedInUser: user ? {
+        id: user.id,
+        fullName: user.fullName,
+        username: user.username,
+        role: user.role,
+      } : null,
+      databaseName: this.state.storeName,
+      isPrimaryHub: this.state.role === 'hub',
+      syncStage: this.mySyncStage,
+      lastSeen: Date.now(),
+      isThisDevice: true,
+    };
+  }
+
+  public setStationName(name: string) {
+    const clean = name.trim();
+    if (!clean) return;
+    this.customStationName = clean;
+    try {
+      localStorage.setItem('cdm_station_name', clean);
+    } catch {
+      // ignore
+    }
+    this.broadcastStationPresence();
+    this.notifyData('STATION_PRESENCE_UPDATED', this.getConnectedStations());
+  }
+
+  public getConnectedStations(): ConnectedStationInfo[] {
+    const myStation = this.getMyStationInfo();
+    const stations: ConnectedStationInfo[] = [myStation];
+    const now = Date.now();
+
+    this.connectedStations.forEach((st, peerId) => {
+      // Keep stations seen within last 45 seconds
+      if (now - st.lastSeen < 45000 && peerId !== this.myClientId) {
+        stations.push({
+          ...st,
+          isThisDevice: false,
+        });
+      }
+    });
+
+    return stations;
+  }
+
+  public broadcastStationPresence(stage?: SyncStage) {
+    if (stage) {
+      this.mySyncStage = stage;
+    }
+    const myStation = this.getMyStationInfo();
+    const packet: SyncMessage = {
+      type: 'STATION_PRESENCE',
+      station: myStation,
+      allStations: this.state.role === 'hub' ? this.getConnectedStations() : undefined,
+      senderId: this.myClientId,
+    };
+    this.sendToAll(packet);
+    this.notifyData('STATION_PRESENCE_UPDATED', this.getConnectedStations());
+  }
+
   public subscribeState(listener: (state: SyncState) => void): () => void {
     this.stateListeners.add(listener);
     listener(this.getState());
@@ -1029,6 +1186,7 @@ class P2PSyncManager {
         settled = true;
         this.peer = peer;
         this.myClientId = id;
+        this.mySyncStage = 'in_sync';
         this.updateState({
           status: 'connected',
           role: 'hub',
@@ -1041,6 +1199,7 @@ class P2PSyncManager {
           this.handleIncomingConnection(conn);
         });
 
+        this.broadcastStationPresence('in_sync');
         resolve();
       });
 
@@ -1105,6 +1264,10 @@ class P2PSyncManager {
 
           this.connections.set(conn.peer, conn);
           this.setupConnectionHandlers(conn);
+
+          // Initial handshake: Connection Established
+          this.mySyncStage = 'connection_established';
+          this.broadcastStationPresence('connection_established');
 
           this.updateState({
             status: 'connected',
@@ -1196,6 +1359,29 @@ class P2PSyncManager {
       this.connections.set(conn.peer, conn);
       this.setupConnectionHandlers(conn);
       this.updateState({ connectedCount: this.connections.size });
+
+      // Record incoming connection initially as 'connection_established'
+      this.connectedStations.set(conn.peer, {
+        peerId: conn.peer,
+        stationName: 'Register Station',
+        platform: 'PC',
+        browser: 'Browser',
+        databaseName: this.state.storeName,
+        isPrimaryHub: false,
+        syncStage: 'connection_established',
+        lastSeen: Date.now(),
+        isThisDevice: false,
+      });
+
+      // Send Hub station info + all connected stations
+      if (conn.open) {
+        conn.send({
+          type: 'STATION_PRESENCE',
+          station: this.getMyStationInfo(),
+          allStations: this.getConnectedStations(),
+          senderId: this.myClientId,
+        });
+      }
 
       // Automatically send the Hub's full state (shifts, logs, categories, users, settings) to joining node
       try {
@@ -1360,6 +1546,15 @@ class P2PSyncManager {
           localStorage.setItem('cdm_store_name', msg.settings.organizationName);
         }
       }
+      this.mySyncStage = 'in_sync';
+      if (relayFromPeerId) {
+        const existing = this.connectedStations.get(relayFromPeerId);
+        if (existing) {
+          existing.syncStage = 'in_sync';
+          existing.lastSeen = Date.now();
+        }
+      }
+      this.broadcastStationPresence('in_sync');
       this.notifyData('SYNC_COMPLETED', msg);
     } else if (msg.type === 'SHIFT_UPSERT' && msg.shift) {
       const localSettings = await db.getSettings();
@@ -1547,6 +1742,28 @@ class P2PSyncManager {
       }
       this.notifyData('DATABASE_RESTORED', msg);
       this.relayIfHub(msg, relayFromPeerId);
+    } else if (msg.type === 'STATION_PRESENCE' && msg.station) {
+      const sender = msg.station.peerId || msg.senderId;
+      if (sender && sender !== this.myClientId) {
+        this.connectedStations.set(sender, {
+          ...msg.station,
+          isThisDevice: false,
+          lastSeen: Date.now(),
+        });
+      }
+      if (Array.isArray(msg.allStations)) {
+        for (const st of msg.allStations) {
+          if (st && st.peerId && st.peerId !== this.myClientId) {
+            this.connectedStations.set(st.peerId, {
+              ...st,
+              isThisDevice: false,
+              lastSeen: Date.now(),
+            });
+          }
+        }
+      }
+      this.relayIfHub(msg, relayFromPeerId);
+      this.notifyData('STATION_PRESENCE_UPDATED', this.getConnectedStations());
     }
   }
 
@@ -1568,6 +1785,8 @@ class P2PSyncManager {
 
     conn.on('close', () => {
       this.connections.delete(conn.peer);
+      this.connectedStations.delete(conn.peer);
+      this.notifyData('STATION_PRESENCE_UPDATED', this.getConnectedStations());
       this.updateState({ connectedCount: this.connections.size });
       if (this.state.role === 'client') {
         this.updateState({ status: 'disconnected' });
@@ -1578,6 +1797,8 @@ class P2PSyncManager {
 
     conn.on('error', () => {
       this.connections.delete(conn.peer);
+      this.connectedStations.delete(conn.peer);
+      this.notifyData('STATION_PRESENCE_UPDATED', this.getConnectedStations());
       this.updateState({ connectedCount: this.connections.size });
       if (this.state.role === 'client') {
         this.updateState({ status: 'disconnected' });
@@ -1601,6 +1822,9 @@ class P2PSyncManager {
             }
           }
         });
+
+        // Broadcast current station presence + active user every heartbeat
+        this.broadcastStationPresence();
 
         // Periodic reconciliation: Hub shares latest users and shifts to prevent drift
         if (this.state.role === 'hub') {
@@ -1820,6 +2044,8 @@ class P2PSyncManager {
       }
     });
     this.connections.clear();
+    this.connectedStations.clear();
+    this.mySyncStage = 'connecting';
 
     if (this.peer) {
       try {
