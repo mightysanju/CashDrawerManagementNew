@@ -68,8 +68,14 @@ function getGlobalDb(): Promise<IDBPDatabase> {
       blocked() {
         console.warn('[IndexedDB] Database connection blocked by an older connection.');
       },
-      blocking() {
-        console.warn('[IndexedDB] Database is blocking a version upgrade.');
+      blocking(_currentVersion, _blockedVersion, event) {
+        console.warn('[IndexedDB] Database is blocking a version upgrade. Closing stale handle.');
+        try {
+          (event?.target as unknown as { result?: { close?: () => void } })?.result?.close?.();
+        } catch {
+          // ignore
+        }
+        globalDbPromise = null;
       },
       terminated() {
         console.warn('[IndexedDB] Database connection terminated abnormally. Resetting.');
