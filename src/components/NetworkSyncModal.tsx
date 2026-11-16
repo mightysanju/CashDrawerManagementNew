@@ -288,9 +288,11 @@ export function NetworkSyncModal({ isOpen, onClose, onSyncTriggered }: NetworkSy
             </div>
 
             <div className="space-y-2">
-              {stations.map((st) => (
+              {Array.from(
+                new Map(stations.map((st) => [st.deviceId || st.peerId, st])).values()
+              ).map((st) => (
                 <div
-                  key={st.peerId}
+                  key={st.deviceId || st.peerId}
                   className={`p-3 rounded-xl border transition-all ${
                     st.isThisDevice
                       ? 'bg-white dark:bg-gray-700/80 border-blue-200 dark:border-blue-800 shadow-xs ring-1 ring-blue-500/20'

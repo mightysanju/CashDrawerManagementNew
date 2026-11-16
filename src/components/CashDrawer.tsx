@@ -701,9 +701,29 @@ export function CashDrawer() {
       const updatedShift: ShiftRecord = {
         ...selectedShift,
         entries: updatedEntries,
+        shiftDrop: shiftDrop !== undefined ? shiftDrop : selectedShift.shiftDrop,
+        safeDrop: shiftDrop !== undefined ? shiftDrop : selectedShift.safeDrop,
       };
       db.saveShift(updatedShift);
       p2pSyncManager.broadcastShift(updatedShift);
+    }
+  };
+
+  const handleUpdateShiftDrop = async (newDrop: number) => {
+    setShiftDrop(newDrop);
+    if (selectedShift) {
+      const updatedShift: ShiftRecord = {
+        ...selectedShift,
+        shiftDrop: newDrop,
+        safeDrop: newDrop,
+      };
+      setSelectedShift(updatedShift);
+      try {
+        await db.saveShift(updatedShift);
+        p2pSyncManager.broadcastShift(updatedShift);
+      } catch (err) {
+        console.error('Error saving shift drop:', err);
+      }
     }
   };
 
@@ -1000,7 +1020,7 @@ export function CashDrawer() {
                     step="0.01"
                     placeholder="0.00"
                     value={shiftDrop || ''}
-                    onChange={(e) => setShiftDrop(parseFloat(e.target.value) || 0)}
+                    onChange={(e) => handleUpdateShiftDrop(parseFloat(e.target.value) || 0)}
                     className="w-16 bg-transparent text-xs font-bold outline-none text-gray-900 dark:text-white"
                     title="Record mid-shift cash skim to safe"
                   />
