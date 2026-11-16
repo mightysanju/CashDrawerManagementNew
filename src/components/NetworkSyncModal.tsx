@@ -18,13 +18,19 @@ import {
   Edit3,
   Link2,
   AlertTriangle,
-  Server
+  Server,
+  Terminal,
+  Copy,
+  ChevronDown,
+  ChevronUp,
+  Info
 } from 'lucide-react';
 import { 
   p2pSyncManager, 
   SyncState, 
   AvailableNetworkDatabase,
-  ConnectedStationInfo 
+  ConnectedStationInfo,
+  SyncLogEntry
 } from '../utils/p2pSyncManager';
 
 const formatCreatedTime = (timestamp?: string | number) => {
@@ -63,14 +69,21 @@ export function NetworkSyncModal({ isOpen, onClose, onSyncTriggered }: NetworkSy
   const [isSwitching, setIsSwitching] = useState(false);
   const [isEditingName, setIsEditingName] = useState(false);
   const [stationNameInput, setStationNameInput] = useState('');
+  const [syncLogs, setSyncLogs] = useState<SyncLogEntry[]>(p2pSyncManager.getSyncLogs());
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [copiedLogs, setCopiedLogs] = useState(false);
 
   useEffect(() => {
     const unsubState = p2pSyncManager.subscribeState((newState) => {
       setSyncState(newState);
       setAvailableDbs(p2pSyncManager.getAvailableNetworkDatabases());
       setStations(p2pSyncManager.getConnectedStations());
+      setSyncLogs(p2pSyncManager.getSyncLogs());
       if (newState.status === 'connected' && onSyncTriggered) {
         onSyncTriggered();
+      }
+      if (newState.status === 'error') {
+        setShowDiagnostics(true);
       }
     });
 
@@ -81,6 +94,9 @@ export function NetworkSyncModal({ isOpen, onClose, onSyncTriggered }: NetworkSy
       if (action === 'STATION_PRESENCE_UPDATED' || action === 'SYNC_COMPLETED') {
         setStations(p2pSyncManager.getConnectedStations());
       }
+      if (action === 'SYNC_LOGS_UPDATED') {
+        setSyncLogs(p2pSyncManager.getSyncLogs());
+      }
     });
 
     return () => {
@@ -90,6 +106,19 @@ export function NetworkSyncModal({ isOpen, onClose, onSyncTriggered }: NetworkSy
   }, [onSyncTriggered]);
 
   if (!isOpen) return null;
+
+  const handleCopyLogs = () => {
+    const text = syncLogs
+      .map((l) => `[${l.timestamp}] [${l.level.toUpperCase()}] ${l.message}${l.details ? ` (${l.details})` : ''}`)
+      .join('\n');
+    try {
+      navigator.clipboard.writeText(text);
+      setCopiedLogs(true);
+      setTimeout(() => setCopiedLogs(false), 2000);
+    } catch {
+      // ignore
+    }
+  };
 
   const handleSaveStationName = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -573,6 +602,99 @@ export function NetworkSyncModal({ isOpen, onClose, onSyncTriggered }: NetworkSy
                 <strong className="text-gray-800 dark:text-gray-200">Shared Purge:</strong> When a database is deleted, it is deleted from all synced devices.
               </li>
             </ul>
+          </div>
+
+          {/* Real-time Connection Diagnostics & Live Error Log Box */}
+          <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden bg-gray-50/50 dark:bg-gray-800/50">
+            <button
+              type="button"
+              onClick={() => setShowDiagnostics(!showDiagnostics)}
+              className="w-full flex items-center justify-between p-3 text-left hover:bg-gray-100/60 dark:hover:bg-gray-700/60 transition"
+            >
+              <div className="flex items-center space-x-2">
+                <Terminal size={15} className="text-slate-600 dark:text-slate-300" />
+                <span className="text-xs font-bold text-gray-800 dark:text-gray-200">
+                  Connection Diagnostics & Error Log Box
+                </span>
+                {syncLogs.some((l) => l.level === 'error') && (
+                  <span className="px-1.5 py-0.2 bg-red-100 dark:bg-red-950/60 text-red-700 dark:text-red-300 rounded text-[10px] font-bold">
+                    Errors Logged
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center space-x-2 text-xs text-gray-500">
+                <span className="text-[11px]">{showDiagnostics ? 'Hide Code Box' : 'Show Code Box'}</span>
+                {showDiagnostics ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              </div>
+            </button>
+
+            {showDiagnostics && (
+              <div className="p-3 border-t border-gray-200 dark:border-gray-700 bg-gray-950 text-gray-100 space-y-2">
+                <div className="flex items-center justify-between text-[11px] text-gray-400 pb-1.5 border-b border-gray-800">
+                  <span className="font-mono text-[10px]">P2P Diagnostic Console ({syncLogs.length} events)</span>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      type="button"
+                      onClick={handleCopyLogs}
+                      className="px-2 py-0.5 bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white rounded text-[10px] flex items-center space-x-1 transition"
+                    >
+                      <Copy size={10} />
+                      <span>{copiedLogs ? 'Copied!' : 'Copy Logs'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => p2pSyncManager.clearSyncLogs()}
+                      className="px-2 py-0.5 bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white rounded text-[10px] transition"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+
+                <div className="font-mono text-[10px] max-h-48 overflow-y-auto space-y-1 pr-1 bg-black/60 p-2 rounded-lg border border-gray-800/80">
+                  {syncLogs.length === 0 ? (
+                    <div className="text-gray-500 italic py-2 text-center text-[10px]">
+                      No connection errors. Network sync is operating normally.
+                    </div>
+                  ) : (
+                    syncLogs.map((log) => (
+                      <div key={log.id} className="leading-relaxed flex items-start space-x-1.5">
+                        <span className="text-gray-500 shrink-0 select-none">[{log.timestamp}]</span>
+                        <span className={`px-1 py-0.1 rounded text-[9px] font-bold shrink-0 uppercase ${
+                          log.level === 'error'
+                            ? 'bg-red-900/80 text-red-200 border border-red-700'
+                            : log.level === 'warn'
+                              ? 'bg-amber-900/80 text-amber-200 border border-amber-700'
+                              : log.level === 'success'
+                                ? 'bg-emerald-900/80 text-emerald-200 border border-emerald-700'
+                                : 'bg-blue-900/80 text-blue-200 border border-blue-700'
+                        }`}>
+                          {log.level}
+                        </span>
+                        <span className={`break-all ${
+                          log.level === 'error'
+                            ? 'text-red-300 font-semibold'
+                            : log.level === 'warn'
+                              ? 'text-amber-300'
+                              : log.level === 'success'
+                                ? 'text-emerald-300'
+                                : 'text-gray-300'
+                        }`}>
+                          {log.message}
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                <div className="text-[10px] text-gray-400 bg-gray-900/70 p-2 rounded border border-gray-800 flex items-start space-x-1.5">
+                  <Info size={12} className="shrink-0 mt-0.5 text-blue-400" />
+                  <span>
+                    <strong>Network Troubleshooting:</strong> If a register is having trouble connecting, check if Windows Network Profile is set to <strong>"Private network"</strong>. Automatic TURN relay fallback (ports 80/443) is enabled to bypass hotel Wi-Fi Client Isolation.
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

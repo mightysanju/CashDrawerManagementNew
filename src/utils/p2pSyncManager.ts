@@ -12,9 +12,19 @@ import { authManager } from './authManager';
 
 export type SyncStage = 'connecting' | 'connection_established' | 'in_sync';
 
+export interface SyncLogEntry {
+  id: string;
+  timestamp: string;
+  level: 'info' | 'warn' | 'error' | 'success';
+  message: string;
+  details?: string;
+}
+
 export interface ConnectedStationInfo {
+  deviceId: string;
   peerId: string;
   stationName: string;
+  deviceTag: string;
   platform: string;
   browser: string;
   loggedInUser?: {
@@ -29,6 +39,20 @@ export interface ConnectedStationInfo {
   syncStage: SyncStage;
   lastSeen: number;
   isThisDevice: boolean;
+}
+
+export function getOrCreateDeviceId(): string {
+  try {
+    let id = localStorage.getItem('cdm_device_id');
+    if (!id || id.length < 4) {
+      const randHex = Math.floor((1 + Math.random()) * 0x10000).toString(16).substring(1).toUpperCase();
+      id = `DESKTOP-${randHex}`;
+      localStorage.setItem('cdm_device_id', id);
+    }
+    return id;
+  } catch {
+    return 'DESKTOP-1000';
+  }
 }
 
 export function detectPlatformAndBrowser(): { platform: string; browser: string } {
@@ -180,13 +204,30 @@ const DISCOVERY_CLIENT_PREFIX = 'cdm-lan-v3-beacon-node-';
 
 const db = new DatabaseManager();
 
-// Google's public STUN servers for reliable local LAN / Wi-Fi NAT traversal
+// STUN & TURN servers for reliable local LAN, Wi-Fi NAT traversal, and AP Isolation bypass
 const STUN_CONFIG = {
   iceServers: [
+    // Fast Google STUN for direct local P2P connection
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'stun:stun3.l.google.com:19302' },
+    // TURN relay fallback (bypasses hotel AP Client Isolation and strict Windows firewalls)
+    {
+      urls: 'turn:openrelay.metered.ca:80',
+      username: 'openrelay',
+      credential: 'openrelay',
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443',
+      username: 'openrelay',
+      credential: 'openrelay',
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+      username: 'openrelay',
+      credential: 'openrelay',
+    },
   ],
 };
 
@@ -202,9 +243,14 @@ class P2PSyncManager {
   private watchdogTimer: ReturnType<typeof setInterval> | null = null;
 
   // Connected Stations & Live User Presence
+  private myDeviceId: string = getOrCreateDeviceId();
   private connectedStations: Map<string, ConnectedStationInfo> = new Map();
   private mySyncStage: SyncStage = 'connecting';
   private customStationName: string = '';
+
+  // Connection Diagnostics & Live Error Logs
+  private syncLogs: SyncLogEntry[] = [];
+  private readonly MAX_LOGS = 60;
 
   // Network Discovery Beacon fields
   private globalBroadcastChannel: BroadcastChannel | null = null;
@@ -966,8 +1012,35 @@ class P2PSyncManager {
     return { ...this.state };
   }
 
+  public addLog(level: 'info' | 'warn' | 'error' | 'success', message: string, details?: string) {
+    const now = new Date();
+    const timestamp = now.toTimeString().split(' ')[0] + '.' + String(now.getMilliseconds()).padStart(3, '0');
+    const entry: SyncLogEntry = {
+      id: `log_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      timestamp,
+      level,
+      message,
+      details,
+    };
+    this.syncLogs.unshift(entry);
+    if (this.syncLogs.length > this.MAX_LOGS) {
+      this.syncLogs.pop();
+    }
+    this.notifyData('SYNC_LOGS_UPDATED', this.syncLogs);
+  }
+
+  public getSyncLogs(): SyncLogEntry[] {
+    return [...this.syncLogs];
+  }
+
+  public clearSyncLogs() {
+    this.syncLogs = [];
+    this.notifyData('SYNC_LOGS_UPDATED', this.syncLogs);
+  }
+
   public getMyStationInfo(): ConnectedStationInfo {
     const { platform, browser } = detectPlatformAndBrowser();
+    const deviceId = this.myDeviceId;
     let name = this.customStationName;
     if (!name) {
       try {
@@ -976,9 +1049,12 @@ class P2PSyncManager {
         // ignore
       }
     }
-    if (!name) {
+    // If name is unset or contains legacy generic 'Register #...', replace with unique Device Tag
+    if (!name || name.startsWith('Register #')) {
       const isHub = this.state.role === 'hub';
-      name = isHub ? `Register #1 (${platform} / ${browser})` : `Register #2 (${platform} / ${browser})`;
+      name = isHub 
+        ? `${deviceId} - Hub (${platform}/${browser})` 
+        : `${deviceId} (${platform}/${browser})`;
       try {
         localStorage.setItem('cdm_station_name', name);
       } catch {
@@ -995,8 +1071,10 @@ class P2PSyncManager {
     }
 
     return {
+      deviceId,
       peerId: this.myClientId || 'local-station',
       stationName: name,
+      deviceTag: deviceId,
       platform,
       browser,
       loggedInUser: user ? {
@@ -1022,6 +1100,7 @@ class P2PSyncManager {
     } catch {
       // ignore
     }
+    this.addLog('info', `Station name updated to "${clean}"`);
     this.broadcastStationPresence();
     this.notifyData('STATION_PRESENCE_UPDATED', this.getConnectedStations());
   }
@@ -1030,14 +1109,19 @@ class P2PSyncManager {
     const myStation = this.getMyStationInfo();
     const stations: ConnectedStationInfo[] = [myStation];
     const now = Date.now();
+    const seenDeviceIds = new Set<string>([myStation.deviceId]);
 
-    this.connectedStations.forEach((st, peerId) => {
-      // Keep stations seen within last 45 seconds
-      if (now - st.lastSeen < 45000 && peerId !== this.myClientId) {
+    this.connectedStations.forEach((st, key) => {
+      const devId = st.deviceId || key;
+      // Deduplicate strictly by deviceId, exclude this machine, and prune if inactive > 25 seconds
+      if (devId && devId !== this.myDeviceId && !seenDeviceIds.has(devId) && (now - st.lastSeen < 25000)) {
+        seenDeviceIds.add(devId);
         stations.push({
           ...st,
           isThisDevice: false,
         });
+      } else if (now - st.lastSeen >= 25000) {
+        this.connectedStations.delete(key);
       }
     });
 
@@ -1139,6 +1223,8 @@ class P2PSyncManager {
       errorMessage: null,
     });
 
+    this.addLog('info', `Connecting to register group "${currentStore}" (Device ID: ${this.myDeviceId})...`);
+
     const hubId = this.getHubPeerId(this.storeSlug);
 
     try {
@@ -1150,6 +1236,8 @@ class P2PSyncManager {
         await this.connectAsClient(hubId);
       } catch (err: unknown) {
         console.debug('Client connection attempt failed, scheduling auto-retry:', err);
+        const errMsg = err instanceof Error ? err.message : String(err);
+        this.addLog('error', `Connection to Hub failed: ${errMsg}. Retrying in background...`);
         this.updateState({
           status: 'error',
           errorMessage: 'Unable to reach register hub. Retrying in background...',
@@ -1199,6 +1287,7 @@ class P2PSyncManager {
           this.handleIncomingConnection(conn);
         });
 
+        this.addLog('success', `Active as Primary Hotel Hub (${id})`);
         this.broadcastStationPresence('in_sync');
         resolve();
       });
@@ -1211,8 +1300,10 @@ class P2PSyncManager {
           } catch {
             // ignore
           }
+          this.addLog('info', `Hub active on another PC (${err.type || 'occupied'}). Connecting as register client...`);
           reject(err);
         } else {
+          this.addLog('warn', `Hub notice: ${err.type || err.message || err}`);
           console.error('Hub error after active:', err);
         }
       });
@@ -1247,6 +1338,7 @@ class P2PSyncManager {
           } catch {
             // ignore
           }
+          this.addLog('warn', `Connection to Hub ${hubId} timed out after 6s. Hub might be offline or waking up.`);
           reject(new Error('Connection timeout to hub'));
         }
       }, 6000);
@@ -1254,6 +1346,7 @@ class P2PSyncManager {
       peer.on('open', (myId) => {
         this.peer = peer;
         this.myClientId = myId;
+        this.addLog('info', `Register client started (${myId}). Connecting to Hub: ${hubId}...`);
 
         const conn = peer.connect(hubId, { reliable: true });
 
@@ -1267,6 +1360,7 @@ class P2PSyncManager {
 
           // Initial handshake: Connection Established
           this.mySyncStage = 'connection_established';
+          this.addLog('info', `WebRTC connection opened with Hub (${conn.peer}). Status: Connection Established.`);
           this.broadcastStationPresence('connection_established');
 
           this.updateState({
@@ -1322,12 +1416,19 @@ class P2PSyncManager {
             } catch {
               // ignore
             }
+            this.addLog('error', `Connection error with Hub (${conn.peer}): ${err?.message || err}`);
             reject(err);
           }
         });
 
         conn.on('close', () => {
           this.connections.delete(conn.peer);
+          this.connectedStations.forEach((st, devId) => {
+            if (st.peerId === conn.peer) {
+              this.connectedStations.delete(devId);
+            }
+          });
+          this.addLog('warn', `Connection to Hub closed (${conn.peer}). Auto-reconnecting in background...`);
           this.updateState({
             status: 'disconnected',
             connectedCount: 0,
@@ -1345,6 +1446,7 @@ class P2PSyncManager {
           } catch {
             // ignore
           }
+          this.addLog('error', `Peer client error (${err?.type || 'network_error'}): ${err?.message || err}`);
           reject(err);
         }
       });
@@ -1360,18 +1462,7 @@ class P2PSyncManager {
       this.setupConnectionHandlers(conn);
       this.updateState({ connectedCount: this.connections.size });
 
-      // Record incoming connection initially as 'connection_established'
-      this.connectedStations.set(conn.peer, {
-        peerId: conn.peer,
-        stationName: 'Register Station',
-        platform: 'PC',
-        browser: 'Browser',
-        databaseName: this.state.storeName,
-        isPrimaryHub: false,
-        syncStage: 'connection_established',
-        lastSeen: Date.now(),
-        isThisDevice: false,
-      });
+      this.addLog('info', `New register node connected (${conn.peer}). Exchanging presence & sync payload...`);
 
       // Send Hub station info + all connected stations
       if (conn.open) {
@@ -1554,6 +1645,7 @@ class P2PSyncManager {
           existing.lastSeen = Date.now();
         }
       }
+      this.addLog('success', `Database synchronized! (${msg.shifts?.length || 0} shifts, ${msg.users?.length || 0} staff accounts)`);
       this.broadcastStationPresence('in_sync');
       this.notifyData('SYNC_COMPLETED', msg);
     } else if (msg.type === 'SHIFT_UPSERT' && msg.shift) {
@@ -1743,19 +1835,22 @@ class P2PSyncManager {
       this.notifyData('DATABASE_RESTORED', msg);
       this.relayIfHub(msg, relayFromPeerId);
     } else if (msg.type === 'STATION_PRESENCE' && msg.station) {
-      const sender = msg.station.peerId || msg.senderId;
-      if (sender && sender !== this.myClientId) {
-        this.connectedStations.set(sender, {
+      const devId = msg.station.deviceId || msg.station.peerId || msg.senderId;
+      if (devId && devId !== this.myDeviceId && devId !== this.myClientId) {
+        this.connectedStations.set(devId, {
           ...msg.station,
+          deviceId: devId,
           isThisDevice: false,
           lastSeen: Date.now(),
         });
       }
       if (Array.isArray(msg.allStations)) {
         for (const st of msg.allStations) {
-          if (st && st.peerId && st.peerId !== this.myClientId) {
-            this.connectedStations.set(st.peerId, {
+          const remoteDevId = st?.deviceId || st?.peerId;
+          if (remoteDevId && remoteDevId !== this.myDeviceId && remoteDevId !== this.myClientId) {
+            this.connectedStations.set(remoteDevId, {
               ...st,
+              deviceId: remoteDevId,
               isThisDevice: false,
               lastSeen: Date.now(),
             });
@@ -1785,7 +1880,12 @@ class P2PSyncManager {
 
     conn.on('close', () => {
       this.connections.delete(conn.peer);
-      this.connectedStations.delete(conn.peer);
+      this.connectedStations.forEach((st, devId) => {
+        if (st.peerId === conn.peer) {
+          this.connectedStations.delete(devId);
+        }
+      });
+      this.addLog('warn', `Connection closed with peer register (${conn.peer})`);
       this.notifyData('STATION_PRESENCE_UPDATED', this.getConnectedStations());
       this.updateState({ connectedCount: this.connections.size });
       if (this.state.role === 'client') {
@@ -1795,9 +1895,14 @@ class P2PSyncManager {
       }
     });
 
-    conn.on('error', () => {
+    conn.on('error', (err) => {
       this.connections.delete(conn.peer);
-      this.connectedStations.delete(conn.peer);
+      this.connectedStations.forEach((st, devId) => {
+        if (st.peerId === conn.peer) {
+          this.connectedStations.delete(devId);
+        }
+      });
+      this.addLog('error', `Connection error with peer register (${conn.peer}): ${err?.message || err}`);
       this.notifyData('STATION_PRESENCE_UPDATED', this.getConnectedStations());
       this.updateState({ connectedCount: this.connections.size });
       if (this.state.role === 'client') {
@@ -1866,6 +1971,7 @@ class P2PSyncManager {
 
       if ((isClientAndOrphan || isDisconnected || isPeerDown) && !this.isConnecting) {
         console.debug(`[P2P Sync Watchdog] Reconnecting to remembered register: "${rememberedStore}"...`);
+        this.addLog('warn', `Watchdog detected disconnection. Auto-reconnecting to "${rememberedStore}"...`);
         this.autoConnect(rememberedStore);
       } else if (this.peer && this.peer.disconnected && !this.peer.destroyed) {
         try {
