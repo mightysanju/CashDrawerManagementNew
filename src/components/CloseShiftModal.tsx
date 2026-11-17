@@ -1,17 +1,21 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Coins,
   CheckCircle2,
   X,
   ShieldAlert,
+  FileText,
+  Printer,
 } from 'lucide-react';
-import { ShiftRecord } from '../types';
+import { ShiftRecord, ShiftLogEntry, AppSettings } from '../types';
 
 interface CloseShiftModalProps {
   isOpen: boolean;
   onClose: () => void;
   shift: ShiftRecord | null;
   currentBalance: number;
+  shiftLogs?: ShiftLogEntry[];
+  appSettings?: AppSettings | null;
   onConfirmClose: (finalDrop: number, closingNotes: string) => Promise<void>;
 }
 
@@ -20,11 +24,51 @@ export const CloseShiftModal: React.FC<CloseShiftModalProps> = ({
   onClose,
   shift,
   currentBalance,
+  shiftLogs = [],
+  appSettings,
   onConfirmClose,
 }) => {
   const [finalDrop, setFinalDrop] = useState<number>(0);
   const [closingNotes, setClosingNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Pre-fill handover notes from shift logs created during this shift
+  useEffect(() => {
+    if (!isOpen || !shift) return;
+    setFinalDrop(0);
+
+    if (shiftLogs && shiftLogs.length > 0) {
+      const shiftStartTime = new Date(shift.openTime).getTime();
+      const currentShiftLogs = shiftLogs.filter((log) => {
+        if (log.shiftId === shift.id) return true;
+        const logTime = new Date(log.createdAt).getTime();
+        return log.clerkId === shift.cashierId && logTime >= shiftStartTime;
+      });
+
+      if (currentShiftLogs.length > 0) {
+        const bulletList = currentShiftLogs
+          .map((l) => {
+            const cat = l.category + (l.subCategory ? ` - ${l.subCategory}` : '');
+            const title = l.name || l.topic || 'Note';
+            const extra =
+              l.category === 'Sales' && (l.actualClosedRevenue || l.potentialRevenue)
+                ? ` (${l.roomRequirement || 1} rooms, $${(l.actualClosedRevenue || l.potentialRevenue || 0).toLocaleString()})`
+                : l.category === 'Complaint' && l.roomNumber
+                ? ` (Rm ${l.roomNumber})`
+                : '';
+            const note = l.clerkNotes ? `: "${l.clerkNotes}"` : '';
+            return `• [${cat}] ${title}${extra}${note}`;
+          })
+          .join('\n');
+
+        setClosingNotes(
+          `Shift Handover Logs Summary (${currentShiftLogs.length} items):\n${bulletList}\n\nCashier Balancing & Handover Notes:\n`
+        );
+        return;
+      }
+    }
+    setClosingNotes(shift.closingNotes || '');
+  }, [isOpen, shift, shiftLogs]);
 
   if (!isOpen || !shift) return null;
 
@@ -134,15 +178,18 @@ export const CloseShiftModal: React.FC<CloseShiftModalProps> = ({
 
           {/* Closing & Handover Notes */}
           <div>
-            <label className="font-semibold text-gray-700 block mb-1">
-              Closing & Shift Handover Notes
-            </label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="font-semibold text-gray-700 dark:text-gray-300">
+                Closing & Shift Handover Notes
+              </label>
+              <span className="text-[10px] text-blue-600 font-medium">Pre-filled from Shift Logs</span>
+            </div>
             <textarea
-              rows={2}
+              rows={4}
               value={closingNotes}
               onChange={(e) => setClosingNotes(e.target.value)}
               placeholder="Add till balancing notes, drop envelope #, or handoff notes for next clerk..."
-              className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
+              className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-xs text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono resize-y"
             />
           </div>
 
@@ -151,10 +198,14 @@ export const CloseShiftModal: React.FC<CloseShiftModalProps> = ({
             <button
               type="submit"
               disabled={isSubmitting}
-              className="w-full py-2.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-bold rounded-xl shadow-sm transition flex items-center justify-center space-x-2 text-xs"
+              className="w-full py-2.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-bold rounded-xl shadow-sm transition flex items-center justify-center space-x-2 text-xs cursor-pointer"
             >
               <CheckCircle2 className="w-4 h-4" />
-              <span>Confirm & Close Shift (Generate Audit PDF)</span>
+              <span>
+                Confirm & Close Shift
+                {appSettings?.autoPrintPdfOnClose !== false ? ' (Auto-PDF)' : ''}
+                {appSettings?.autoPrintReceiptOnClose ? ' (Auto-Receipt)' : ''}
+              </span>
             </button>
 
             <button

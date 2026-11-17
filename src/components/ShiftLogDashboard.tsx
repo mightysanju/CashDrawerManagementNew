@@ -34,6 +34,7 @@ import {
   ComplaintStatus,
   UserAccount,
   PrimaryCategory,
+  LogCategoryConfig,
 } from '../types';
 import { DatabaseManager } from '../utils/database';
 import { p2pSyncManager } from '../utils/p2pSyncManager';
@@ -51,7 +52,7 @@ interface ShiftLogDashboardProps {
 
 const db = new DatabaseManager();
 
-type ActiveView = 'overview' | 'sales-kanban' | 'complaints' | 'misc';
+type ActiveView = 'overview' | 'sales-kanban' | 'complaints' | 'misc' | string;
 
 export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
   logs,
@@ -64,6 +65,8 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
   const [activeView, setActiveView] = useState<ActiveView>('overview');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('All');
+  const [subCategoryFilter, setSubCategoryFilter] = useState<string>('All');
+  const [categories, setCategories] = useState<LogCategoryConfig[]>([]);
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [replyText, setReplyText] = useState('');
@@ -80,13 +83,64 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
   type ActivityFeedFilterType = 'All' | 'Replies' | 'Status' | 'Reminders' | 'Created';
   const [activityFeedFilter, setActivityFeedFilter] = useState<ActivityFeedFilterType>('All');
 
+  // Load Categories for dynamic subcategory filtering & custom category dashboard boxes
+  useEffect(() => {
+    db.getCategories().then((cats) => {
+      if (cats && cats.length > 0) {
+        setCategories(cats);
+      }
+    });
+  }, [logs]);
+
+  const complaintSubcategories = useMemo(() => {
+    return categories.find((c) => c.name.toLowerCase() === 'complaint')?.subcategories || [
+      'Room Maintenance',
+      'Noise / Disturbance',
+      'Billing & Folio',
+      'Housekeeping / Cleanliness',
+      'Staff / Service',
+      'Other',
+    ];
+  }, [categories]);
+
+  const miscSubcategories = useMemo(() => {
+    return categories.find((c) => c.name.toLowerCase() === 'miscellaneous')?.subcategories || [
+      'Shift Handover',
+      'Package Delivery',
+      'Lost & Found',
+      'Maintenance Request',
+      'Manager Note',
+    ];
+  }, [categories]);
+
+  const salesSubcategories = useMemo(() => {
+    return categories.find((c) => c.name.toLowerCase() === 'sales')?.subcategories || [
+      'Group',
+      'Wedding',
+      'Sports team',
+      'Company',
+      'Bus Tour',
+      'Family Reunion',
+    ];
+  }, [categories]);
+
+  const customCategories = useMemo(() => {
+    return categories.filter(
+      (c) => c.name !== 'Sales' && c.name !== 'Complaint' && c.name !== 'Miscellaneous'
+    );
+  }, [categories]);
+
+  const activeCustomCategory = useMemo(() => {
+    return customCategories.find((c) => c.name === activeView);
+  }, [customCategories, activeView]);
+
   /* ----- Metrics ----- */
   const salesMetrics = useMemo(() => {
     const sl = logs.filter((l) => l.category === 'Sales');
     let totalRoomNights = 0, totalRevenue = 0, wonCount = 0, lostCount = 0;
     sl.forEach((l) => {
       totalRoomNights += l.totalRoomNights || 0;
-      totalRevenue += l.potentialRevenue || 0;
+      totalRevenue += (l.actualClosedRevenue || l.potentialRevenue || 0);
       if (l.salesStatus === 'Closed Definite') wonCount++;
       else if (l.salesStatus === 'Lost') lostCount++;
     });
@@ -104,16 +158,23 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
   }, [logs]);
 
   const miscMetrics = useMemo(() => ({
-    total: logs.filter((l) => l.category !== 'Sales' && l.category !== 'Complaint').length,
+    total: logs.filter((l) => l.category === 'Miscellaneous').length,
   }), [logs]);
 
   /* ----- Filtered lists ----- */
-  const salesLeads = useMemo(() => logs.filter((l) => l.category === 'Sales'), [logs]);
+  const salesLeads = useMemo(() => {
+    return logs.filter((l) => {
+      if (l.category !== 'Sales') return false;
+      if (subCategoryFilter !== 'All' && l.subCategory !== subCategoryFilter) return false;
+      return true;
+    });
+  }, [logs, subCategoryFilter]);
 
   const filteredComplaints = useMemo(() => {
     return logs.filter((l) => {
       if (l.category !== 'Complaint') return false;
       if (statusFilter !== 'All' && l.complaintStatus !== statusFilter) return false;
+      if (subCategoryFilter !== 'All' && l.subCategory !== subCategoryFilter) return false;
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         return (
@@ -122,23 +183,46 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
           l.roomNumber?.toLowerCase().includes(q) ||
           l.reservationNumber?.toLowerCase().includes(q) ||
           l.clerkNotes?.toLowerCase().includes(q) ||
+          l.subCategory?.toLowerCase().includes(q) ||
           false
         );
       }
       return true;
     });
-  }, [logs, statusFilter, searchQuery]);
+  }, [logs, statusFilter, subCategoryFilter, searchQuery]);
 
   const filteredMisc = useMemo(() => {
     return logs.filter((l) => {
-      if (l.category === 'Sales' || l.category === 'Complaint') return false;
+      if (l.category !== 'Miscellaneous') return false;
+      if (subCategoryFilter !== 'All' && l.subCategory !== subCategoryFilter) return false;
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
-        return l.topic?.toLowerCase().includes(q) || l.clerkNotes?.toLowerCase().includes(q);
+        return (
+          l.topic?.toLowerCase().includes(q) ||
+          l.clerkNotes?.toLowerCase().includes(q) ||
+          l.subCategory?.toLowerCase().includes(q)
+        );
       }
       return true;
     });
-  }, [logs, searchQuery]);
+  }, [logs, subCategoryFilter, searchQuery]);
+
+  const filteredCustomCategoryLogs = useMemo(() => {
+    if (!activeCustomCategory) return [];
+    return logs.filter((l) => {
+      if (l.category !== activeCustomCategory.name) return false;
+      if (subCategoryFilter !== 'All' && l.subCategory !== subCategoryFilter) return false;
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        return (
+          l.topic?.toLowerCase().includes(q) ||
+          l.clerkNotes?.toLowerCase().includes(q) ||
+          l.subCategory?.toLowerCase().includes(q)
+        );
+      }
+      return true;
+    });
+  }, [logs, activeCustomCategory, subCategoryFilter, searchQuery]);
 
   /* ----- Actions ----- */
   const handleUpdateComplaintStatus = async (entry: ShiftLogEntry, status: ComplaintStatus) => {
@@ -151,7 +235,7 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
   const handleAddReply = async (entry: ShiftLogEntry) => {
     if (!replyText.trim()) return;
     const newResp = {
-      id: `resp_${Date.now()}`,
+      id: `resp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       authorId: currentUser.id,
       authorName: currentUser.fullName,
       authorRole: currentUser.role,
@@ -189,7 +273,7 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
     const text = (activityReplyText[entry.id] || '').trim();
     if (!text) return;
     const newResp = {
-      id: `resp_${Date.now()}`,
+      id: `resp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       authorId: currentUser.id,
       authorName: currentUser.fullName,
       authorRole: currentUser.role,
@@ -584,8 +668,8 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
         </button>
       </div>
 
-      {/* 3 Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* Summary Cards Grid (Sales, Complaints, Shift Notes + Any Custom Categories) */}
+      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
         {/* SALES CARD */}
         <button
           onClick={() => setActiveView('sales-kanban')}
@@ -678,6 +762,52 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
             <span className="font-extrabold text-emerald-700">Active</span>
           </div>
         </button>
+
+        {/* DYNAMIC CUSTOM CATEGORIES BOXES */}
+        {customCategories.map((cat) => {
+          const catLogs = logs.filter((l) => l.category === cat.name);
+          return (
+            <button
+              key={cat.id}
+              onClick={() => {
+                setActiveView(cat.name);
+                setSubCategoryFilter('All');
+              }}
+              className="text-left w-full group bg-white border border-gray-200 hover:border-purple-300 rounded-2xl p-5 shadow-sm hover:shadow-md transition-all duration-200 flex flex-col justify-between cursor-pointer"
+            >
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center space-x-2">
+                    <div className="w-8 h-8 rounded-xl bg-purple-100 flex items-center justify-center">
+                      <Tag className="w-4 h-4 text-purple-700" />
+                    </div>
+                    <span className="text-xs font-bold uppercase tracking-wider text-purple-700">{cat.name}</span>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-purple-500 group-hover:translate-x-0.5 transition-transform" />
+                </div>
+                <p className="text-3xl font-extrabold text-gray-900">{catLogs.length}</p>
+                <p className="text-xs text-gray-500 mt-0.5">Logged {cat.name.toLowerCase()} entries</p>
+                <div className="flex flex-wrap items-center gap-1 mt-3">
+                  {cat.subcategories.slice(0, 3).map((sub) => (
+                    <span
+                      key={sub}
+                      className="text-[10px] font-semibold bg-purple-50 border border-purple-200 text-purple-700 px-2 py-0.5 rounded-full"
+                    >
+                      {sub}
+                    </span>
+                  ))}
+                  {cat.subcategories.length > 3 && (
+                    <span className="text-[10px] text-gray-400">+{cat.subcategories.length - 3}</span>
+                  )}
+                </div>
+              </div>
+              <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between text-xs">
+                <span className="text-gray-400 font-medium">Subcategories</span>
+                <span className="font-extrabold text-purple-700">{cat.subcategories.length}</span>
+              </div>
+            </button>
+          );
+        })}
       </div>
 
       {/* -------------------- SIDE-BY-SIDE: SHIFT LOGS FEED (LEFT) & RECENT ACTIVITY (RIGHT) -------------------- */}
@@ -1127,19 +1257,38 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
   ================================================================ */
   const renderSalesKanban = () => (
     <div>
-      <div className="flex items-center space-x-3 mb-5">
-        <button
-          onClick={() => setActiveView('overview')}
-          className="text-xs text-gray-500 hover:text-gray-700 font-medium inline-flex items-center space-x-1"
-        >
-          <ChevronRight className="w-3.5 h-3.5 rotate-180" />
-          <span>Back to Overview</span>
-        </button>
-        <span className="text-gray-300">/</span>
-        <span className="text-xs font-bold text-gray-700 flex items-center space-x-1.5">
-          <LayoutGrid className="w-3.5 h-3.5 text-blue-600" />
-          <span>Sales Pipeline — Kanban Board</span>
-        </span>
+      <div className="flex items-center justify-between mb-5 flex-wrap gap-2">
+        <div className="flex items-center space-x-3">
+          <button
+            onClick={() => setActiveView('overview')}
+            className="text-xs text-gray-500 hover:text-gray-700 font-medium inline-flex items-center space-x-1"
+          >
+            <ChevronRight className="w-3.5 h-3.5 rotate-180" />
+            <span>Back to Overview</span>
+          </button>
+          <span className="text-gray-300">/</span>
+          <span className="text-xs font-bold text-gray-700 flex items-center space-x-1.5">
+            <LayoutGrid className="w-3.5 h-3.5 text-blue-600" />
+            <span>Sales Pipeline — Kanban Board</span>
+          </span>
+        </div>
+
+        {/* Subcategory Filter for Sales */}
+        <div className="flex items-center space-x-2">
+          <span className="text-[11px] text-gray-500 font-semibold">Subcategory:</span>
+          <select
+            value={subCategoryFilter}
+            onChange={(e) => setSubCategoryFilter(e.target.value)}
+            className="px-2.5 py-1 text-xs bg-white border border-gray-200 rounded-lg text-gray-700 font-medium focus:outline-none focus:ring-1 focus:ring-blue-500"
+          >
+            <option value="All">All Lead Types</option>
+            {salesSubcategories.map((sub) => (
+              <option key={sub} value={sub}>
+                {sub}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
       <SalesKanban
         leads={salesLeads}
@@ -1171,7 +1320,7 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
             <span>Guest Complaints ({filteredComplaints.length})</span>
           </span>
         </div>
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-2 flex-wrap">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
             <input
@@ -1179,7 +1328,7 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
               placeholder="Search..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-8 pr-3 py-2 text-xs bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-400 w-48"
+              className="pl-8 pr-3 py-2 text-xs bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-400 w-44"
             />
           </div>
           <select
@@ -1191,6 +1340,19 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
             <option value="Open">Open</option>
             <option value="In Progress">In Progress</option>
             <option value="Resolved">Resolved</option>
+          </select>
+          {/* Subcategory Filter */}
+          <select
+            value={subCategoryFilter}
+            onChange={(e) => setSubCategoryFilter(e.target.value)}
+            className="px-2.5 py-2 text-xs bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-400"
+          >
+            <option value="All">All Subcategories</option>
+            {complaintSubcategories.map((sub) => (
+              <option key={sub} value={sub}>
+                {sub}
+              </option>
+            ))}
           </select>
           <button
             onClick={() => onOpenNewModal('Complaint')}
@@ -1514,7 +1676,7 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
   ================================================================ */
   const renderMisc = () => (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div className="flex items-center space-x-3">
           <button
             onClick={() => setActiveView('overview')}
@@ -1528,13 +1690,37 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
             <span>Shift Notes & Misc ({filteredMisc.length})</span>
           </span>
         </div>
-        <button
-          onClick={() => onOpenNewModal('Miscellaneous')}
-          className="inline-flex items-center space-x-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl transition shadow-sm"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          <span>Add Note</span>
-        </button>
+        <div className="flex items-center space-x-2 flex-wrap">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-8 pr-3 py-2 text-xs bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-400 w-44"
+            />
+          </div>
+          <select
+            value={subCategoryFilter}
+            onChange={(e) => setSubCategoryFilter(e.target.value)}
+            className="px-2.5 py-2 text-xs bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-400"
+          >
+            <option value="All">All Subcategories</option>
+            {miscSubcategories.map((sub) => (
+              <option key={sub} value={sub}>
+                {sub}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={() => onOpenNewModal('Miscellaneous')}
+            className="inline-flex items-center space-x-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl transition shadow-sm"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Add Note</span>
+          </button>
+        </div>
       </div>
 
       {filteredMisc.length === 0 ? (
@@ -1672,12 +1858,129 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
     </div>
   );
 
+  /* ================================================================
+     CUSTOM CATEGORY DETAIL VIEW
+  ================================================================ */
+  const renderCustomCategory = (cat: LogCategoryConfig) => {
+    return (
+      <div className="space-y-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div className="flex items-center space-x-3">
+            <button
+              onClick={() => setActiveView('overview')}
+              className="text-xs text-gray-500 hover:text-gray-700 font-medium inline-flex items-center space-x-1"
+            >
+              <ChevronRight className="w-3.5 h-3.5 rotate-180" />
+              <span>Back</span>
+            </button>
+            <span className="text-sm font-bold text-gray-900 flex items-center space-x-2">
+              <Tag className="w-4 h-4 text-purple-600" />
+              <span>{cat.name} ({filteredCustomCategoryLogs.length})</span>
+            </span>
+          </div>
+
+          <div className="flex items-center space-x-2 flex-wrap">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-8 pr-3 py-2 text-xs bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-400 w-44"
+              />
+            </div>
+            {/* Subcategory Filter */}
+            <select
+              value={subCategoryFilter}
+              onChange={(e) => setSubCategoryFilter(e.target.value)}
+              className="px-2.5 py-2 text-xs bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-400"
+            >
+              <option value="All">All Subcategories</option>
+              {cat.subcategories.map((sub) => (
+                <option key={sub} value={sub}>
+                  {sub}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={() => onOpenNewModal(cat.name)}
+              className="inline-flex items-center space-x-1.5 px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold rounded-xl transition shadow-sm"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Add {cat.name}</span>
+            </button>
+          </div>
+        </div>
+
+        {filteredCustomCategoryLogs.length === 0 ? (
+          <div className="bg-white border border-gray-200 rounded-2xl p-10 text-center">
+            <List className="w-10 h-10 mx-auto text-gray-300 mb-3" />
+            <p className="text-sm font-semibold text-gray-500">No {cat.name} entries logged yet</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {filteredCustomCategoryLogs.map((entry) => {
+              const isExpanded = expandedCards.has(entry.id);
+              return (
+                <div key={entry.id} className="bg-white border border-gray-200 rounded-2xl shadow-sm hover:shadow-md transition-all">
+                  <div className="p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center space-x-2 mb-1">
+                          <span className="text-xs font-bold text-gray-900">{entry.topic || 'Untitled'}</span>
+                          {entry.subCategory && (
+                            <span className="text-[10px] font-semibold bg-purple-50 text-purple-700 border border-purple-200 px-1.5 py-0.5 rounded">
+                              {entry.subCategory}
+                            </span>
+                          )}
+                        </div>
+                        {entry.clerkNotes && (
+                          <p className="text-xs text-gray-600 line-clamp-2 mt-1">{entry.clerkNotes}</p>
+                        )}
+                        <div className="flex items-center space-x-3 mt-2 text-[11px] text-gray-400">
+                          <span>By {entry.clerkName}</span>
+                          <span>•</span>
+                          <span>{formatFullTimestamp(entry.createdAt)}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center space-x-1">
+                        <button
+                          onClick={() => onEditLog(entry)}
+                          className="p-1.5 text-gray-400 hover:text-blue-600 rounded-lg hover:bg-blue-50 transition"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                        {(currentUser.role === 'manager' || currentUser.id === entry.clerkId) && (
+                          <button
+                            onClick={() => {
+                              if (window.confirm('Delete this entry?')) onDeleteLog(entry.id);
+                            }}
+                            className="p-1.5 text-gray-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div>
       {activeView === 'overview' && renderOverview()}
       {activeView === 'sales-kanban' && renderSalesKanban()}
       {activeView === 'complaints' && renderComplaints()}
       {activeView === 'misc' && renderMisc()}
+      {activeCustomCategory && renderCustomCategory(activeCustomCategory)}
     </div>
   );
 };

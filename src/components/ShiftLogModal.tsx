@@ -285,6 +285,7 @@ export const ShiftLogModal: React.FC<ShiftLogModalProps> = ({
       newLog.reservationNumber = reservationNumber.trim() || undefined;
       newLog.roomNumber = roomNumber.trim() || undefined;
       newLog.complaintStatus = complaintStatus;
+      newLog.subCategory = subCategory;
     } else {
       // Miscellaneous / Custom
       newLog.topic = topic.trim();
@@ -588,7 +589,22 @@ export const ShiftLogModal: React.FC<ShiftLogModalProps> = ({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-rose-900 dark:text-rose-200 mb-1">
+                      Subcategory *
+                    </label>
+                    <select
+                      value={subCategory}
+                      onChange={(e) => setSubCategory(e.target.value)}
+                      className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-rose-300 dark:border-rose-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-rose-500"
+                    >
+                      {subcategories.map((sub) => (
+                        <option key={sub} value={sub}>{sub}</option>
+                      ))}
+                    </select>
+                  </div>
+
                   <div>
                     <label className="block text-xs font-medium text-rose-900 dark:text-rose-200 mb-1">
                       Reservation # (Optional)
@@ -643,18 +659,78 @@ export const ShiftLogModal: React.FC<ShiftLogModalProps> = ({
                   <span>Miscellaneous Shift Note</span>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-medium text-indigo-900 dark:text-indigo-200 mb-1">
-                    Topic / Subject *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Keycard encoder firmware updated, Lost & Found item handed to housekeeping"
-                    value={topic}
-                    onChange={(e) => setTopic(e.target.value)}
-                    className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-indigo-300 dark:border-indigo-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-indigo-900 dark:text-indigo-200 mb-1">
+                      Topic / Subject *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Keycard encoder firmware updated, Lost & Found item handed to housekeeping"
+                      value={topic}
+                      onChange={(e) => setTopic(e.target.value)}
+                      className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-indigo-300 dark:border-indigo-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-indigo-900 dark:text-indigo-200 mb-1">
+                      Subcategory *
+                    </label>
+                    <select
+                      value={subCategory}
+                      onChange={(e) => setSubCategory(e.target.value)}
+                      className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-indigo-300 dark:border-indigo-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      {subcategories.map((sub) => (
+                        <option key={sub} value={sub}>{sub}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* -------------------- CUSTOM CATEGORY FORM -------------------- */}
+          {category !== 'Sales' && category !== 'Complaint' && category !== 'Miscellaneous' && (
+            <div className="space-y-4 pt-1 animate-fade-in">
+              <div className="bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800/50 rounded-xl p-4">
+                <div className="flex items-center space-x-2 text-purple-800 dark:text-purple-300 font-semibold text-sm mb-3">
+                  <Tag className="w-4 h-4" />
+                  <span>{category} Note</span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-purple-900 dark:text-purple-200 mb-1">
+                      Title / Reference *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder={`e.g. ${category} record / activity`}
+                      value={topic}
+                      onChange={(e) => setTopic(e.target.value)}
+                      className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-purple-300 dark:border-purple-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-purple-900 dark:text-purple-200 mb-1">
+                      Subcategory *
+                    </label>
+                    <select
+                      value={subCategory}
+                      onChange={(e) => setSubCategory(e.target.value)}
+                      className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-purple-300 dark:border-purple-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    >
+                      {subcategories.map((sub) => (
+                        <option key={sub} value={sub}>{sub}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
               </div>
             </div>

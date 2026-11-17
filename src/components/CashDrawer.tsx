@@ -517,6 +517,22 @@ export function CashDrawer() {
       return;
     }
 
+    // Check maximum open drawers setting
+    try {
+      const allShifts = await db.getAllShifts();
+      const currentSettings = await db.getSettings();
+      const openShifts = allShifts.filter((s) => s.status === 'open');
+      const maxAllowed = currentSettings.maxOpenDrawers || 1;
+      if (openShifts.length >= maxAllowed) {
+        alert(
+          `Maximum open drawer limit (${maxAllowed}) reached.\n\nThere ${openShifts.length === 1 ? 'is already 1 drawer' : `are already ${openShifts.length} drawers`} active. Please close an active drawer before opening a new one, or have a manager increase the limit in Manager Console Settings.`
+        );
+        return;
+      }
+    } catch (e) {
+      console.warn('Error checking drawer limit:', e);
+    }
+
     try {
       const newShift: ShiftRecord = {
         id: Date.now().toString(),
@@ -586,10 +602,27 @@ export function CashDrawer() {
       shiftDrop: totalDrop,
       entries: [...entries],
       status: 'closed',
+      closingNotes: closingNotes,
+      handoverNotes: closingNotes,
     };
 
     await db.saveShift(closedShift);
     p2pSyncManager.broadcastShift(closedShift);
+
+    // Remember closing till count breakdown for the next drawer open
+    try {
+      localStorage.setItem('cdm_last_closed_till', JSON.stringify(entries));
+      const currentSettings = await db.getSettings();
+      const updatedSettings = {
+        ...currentSettings,
+        lastClosedTillEntries: entries,
+      };
+      await db.saveSettings(updatedSettings);
+      p2pSyncManager.broadcastSettings(updatedSettings);
+      setAppSettings(updatedSettings);
+    } catch (e) {
+      console.warn('Error remembering till entries:', e);
+    }
 
     // Auto-create a shift log handover note in Recent Activity
     const handoverLog: ShiftLogEntry = {
@@ -607,10 +640,20 @@ export function CashDrawer() {
     await db.saveShiftLog(handoverLog);
     p2pSyncManager.broadcastShiftLog(handoverLog);
 
-    // Download PDF audit report
-    setTimeout(() => {
-      generatePDF(closedShift);
-    }, 100);
+    // Check Manager Console automation settings:
+    // 1. Auto-Print Executive PDF Audit Report (Default: true)
+    if (appSettings?.autoPrintPdfOnClose !== false) {
+      setTimeout(() => {
+        generatePDF(closedShift);
+      }, 100);
+    }
+
+    // 2. Auto-Print Thermal Receipt (Default: false)
+    if (appSettings?.autoPrintReceiptOnClose === true) {
+      setTimeout(() => {
+        handlePrintReceipt();
+      }, 250);
+    }
 
     localStorage.removeItem('cdm_local_active_shift_id');
     setSelectedShift(null);
@@ -1331,6 +1374,7 @@ export function CashDrawer() {
         onRemindLater={handleRemindLater}
         defaultDrawerNumber={selectedShift?.drawerNumber || nextSuggestedDrawerNumber}
         cashierName={currentUser?.fullName || 'Front Desk Staff'}
+        rememberedTillEntries={appSettings?.lastClosedTillEntries}
       />
 
       {/* Auto-Prompt: Close Shift Drawer Modal */}
@@ -1339,6 +1383,8 @@ export function CashDrawer() {
         onClose={() => setIsCloseShiftModalOpen(false)}
         shift={selectedShift}
         currentBalance={currentTotal}
+        shiftLogs={shiftLogs}
+        appSettings={appSettings}
         onConfirmClose={handleConfirmCloseShift}
       />
 

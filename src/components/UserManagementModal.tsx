@@ -26,7 +26,8 @@ import {
   RotateCcw,
   Lock,
   AlertTriangle,
-  Archive
+  Archive,
+  Printer
 } from 'lucide-react';
 import { UserAccount, UserRole, LogCategoryConfig, AppSettings, ShiftLogEntry, DatabaseArchive } from '../types';
 import { DatabaseManager } from '../utils/database';
@@ -79,6 +80,8 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
   const [rateMultiplierInput, setRateMultiplierInput] = useState<number>(120);
   const [orgNameInput, setOrgNameInput] = useState('');
   const [maxOpenDrawersInput, setMaxOpenDrawersInput] = useState<number>(1);
+  const [autoPrintPdfInput, setAutoPrintPdfInput] = useState<boolean>(true);
+  const [autoPrintReceiptInput, setAutoPrintReceiptInput] = useState<boolean>(false);
   const [settingsSuccess, setSettingsSuccess] = useState(false);
 
   // Reports state
@@ -128,6 +131,8 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
       setRateMultiplierInput(loadedSettings.salesRateMultiplier || 120);
       setOrgNameInput(loadedSettings.organizationName || 'Grand Hotel & Suites');
       setMaxOpenDrawersInput(loadedSettings.maxOpenDrawers || 1);
+      setAutoPrintPdfInput(loadedSettings.autoPrintPdfOnClose !== false);
+      setAutoPrintReceiptInput(loadedSettings.autoPrintReceiptOnClose === true);
       setAllShiftLogs(loadedLogs);
       setDbCounts(counts);
       setArchives(db.getDatabaseArchives());
@@ -472,6 +477,18 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
     setCategories((prev) => prev.map((c) => (c.id === cat.id ? updated : c)));
   };
 
+  const handleDeleteCategory = async (cat: LogCategoryConfig) => {
+    if (!confirm(`Are you sure you want to delete the "${cat.name}" category? All existing logs will be preserved.`)) return;
+    try {
+      await db.deleteCategory(cat.id);
+      p2pSyncManager.broadcastCategoryDelete(cat.id);
+      setCategories((prev) => prev.filter((c) => c.id !== cat.id));
+    } catch (err) {
+      console.error('Failed to delete category:', err);
+      alert('Failed to delete category');
+    }
+  };
+
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     const rate = Math.max(1, Number(rateMultiplierInput) || 120);
@@ -483,6 +500,8 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
       salesRateMultiplier: rate,
       organizationName: org,
       maxOpenDrawers: maxDrawers,
+      autoPrintPdfOnClose: autoPrintPdfInput,
+      autoPrintReceiptOnClose: autoPrintReceiptInput,
     };
 
     await db.saveSettings(updated);
@@ -981,9 +1000,21 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                           {cat.name}
                         </h4>
                       </div>
-                      <span className="text-[10px] text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full font-semibold">
-                        {cat.subcategories.length} subcategories
-                      </span>
+                      <div className="flex items-center space-x-2">
+                        <span className="text-[10px] text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full font-semibold">
+                          {cat.subcategories.length} subcategories
+                        </span>
+                        {cat.id !== 'cat_sales' && cat.id !== 'cat_complaint' && cat.id !== 'cat_misc' && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteCategory(cat)}
+                            className="p-1 text-gray-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition cursor-pointer"
+                            title="Delete this custom category"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
                     </div>
 
                     <div className="flex flex-wrap gap-1.5 mb-3">
@@ -1706,6 +1737,57 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                     <span className="text-[11px] text-gray-400 mt-1 block">
                       Default: $120.00 / night. Example: 10 rooms × 3 nights × $120 = $3,600 potential revenue.
                     </span>
+                  </div>
+
+                  {/* Shift Close Automation Toggles */}
+                  <div className="pt-3 border-t border-gray-200 dark:border-gray-700 space-y-3">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300">
+                      Shift Close Automation
+                    </label>
+
+                    {/* Auto-Print PDF Toggle */}
+                    <div className="flex items-center justify-between p-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+                      <div className="space-y-0.5 pr-2">
+                        <div className="text-xs font-bold text-gray-900 dark:text-white flex items-center space-x-1.5">
+                          <FileText className="w-4 h-4 text-rose-600" />
+                          <span>Auto-Print Executive PDF Audit Report</span>
+                        </div>
+                        <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                          Automatically generates and downloads the formal shift reconciliation audit PDF with till breakdown, drops, handover logs, and signature lines when cashier closes shift.
+                        </p>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                        <input
+                          type="checkbox"
+                          checked={autoPrintPdfInput}
+                          onChange={(e) => setAutoPrintPdfInput(e.target.checked)}
+                          className="sr-only peer"
+                        />
+                        <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                      </label>
+                    </div>
+
+                    {/* Auto-Print Thermal Receipt Toggle */}
+                    <div className="flex items-center justify-between p-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+                      <div className="space-y-0.5 pr-2">
+                        <div className="text-xs font-bold text-gray-900 dark:text-white flex items-center space-x-1.5">
+                          <Printer className="w-4 h-4 text-blue-600" />
+                          <span>Auto-Print POS Thermal Receipt</span>
+                        </div>
+                        <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                          Automatically prints compact shift closing slip to connected thermal receipt printer.
+                        </p>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                        <input
+                          type="checkbox"
+                          checked={autoPrintReceiptInput}
+                          onChange={(e) => setAutoPrintReceiptInput(e.target.checked)}
+                          className="sr-only peer"
+                        />
+                        <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                      </label>
+                    </div>
                   </div>
 
                   <button

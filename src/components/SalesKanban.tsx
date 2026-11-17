@@ -15,10 +15,11 @@ import {
   Clock,
   GripVertical,
 } from 'lucide-react';
-import { ShiftLogEntry, SalesLeadStatus, UserAccount } from '../types';
+import { ShiftLogEntry, SalesLeadStatus, UserAccount, RoomBookingItem } from '../types';
 import { DatabaseManager } from '../utils/database';
 import { p2pSyncManager } from '../utils/p2pSyncManager';
 import { formatFullTimestamp } from '../utils/dateUtils';
+import { Trophy, CheckCircle2, X } from 'lucide-react';
 
 interface SalesKanbanProps {
   leads: ShiftLogEntry[];
@@ -80,6 +81,11 @@ export const SalesKanban: React.FC<SalesKanbanProps> = ({
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [replyText, setReplyText] = useState('');
 
+  // Closed Definite multi-row room rate modal state
+  const [closingDefiniteLead, setClosingDefiniteLead] = useState<ShiftLogEntry | null>(null);
+  const [bookingNights, setBookingNights] = useState<number>(1);
+  const [bookingRows, setBookingRows] = useState<RoomBookingItem[]>([]);
+
   const getLeadsForCol = (colId: SalesLeadStatus) => {
     if (colId === 'Processing') {
       return leads.filter(
@@ -113,6 +119,30 @@ export const SalesKanban: React.FC<SalesKanbanProps> = ({
       return;
     }
 
+    // When moving to Closed Definite, prompt for Offered Rate, Room Type, Room Count (multi-row)
+    if (colId === 'Closed Definite') {
+      const start = lead.checkInDate ? new Date(lead.checkInDate).getTime() : 0;
+      const end = lead.checkOutDate ? new Date(lead.checkOutDate).getTime() : 0;
+      const calcNights = (start && end && end > start) ? Math.max(1, Math.round((end - start) / (1000 * 60 * 60 * 24))) : 1;
+      setBookingNights(calcNights);
+      setBookingRows(
+        lead.roomBookings && lead.roomBookings.length > 0
+          ? lead.roomBookings
+          : [
+              {
+                id: '1',
+                roomType: 'Standard King',
+                roomCount: lead.roomRequirement || 5,
+                offeredRate: 119,
+              },
+            ]
+      );
+      setClosingDefiniteLead(lead);
+      setDraggedId(null);
+      setDragOverCol(null);
+      return;
+    }
+
     const updated: ShiftLogEntry = {
       ...lead,
       salesStatus: colId,
@@ -123,6 +153,38 @@ export const SalesKanban: React.FC<SalesKanbanProps> = ({
     p2pSyncManager.broadcastShiftLog(updated);
     setDraggedId(null);
     setDragOverCol(null);
+    onRefresh();
+  };
+
+  const handleConfirmClosedDefinite = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!closingDefiniteLead) return;
+
+    const nights = Math.max(1, bookingNights || 1);
+    const validRows = bookingRows.filter((r) => r.roomCount > 0 && r.offeredRate > 0);
+    if (validRows.length === 0) {
+      alert('Please specify at least one room booking row with quantity and offered rate.');
+      return;
+    }
+
+    const totalRooms = validRows.reduce((sum, r) => sum + r.roomCount, 0);
+    const totalRoomNights = totalRooms * nights;
+    const actualRevenue = validRows.reduce((sum, r) => sum + (r.roomCount * nights * r.offeredRate), 0);
+
+    const updated: ShiftLogEntry = {
+      ...closingDefiniteLead,
+      salesStatus: 'Closed Definite',
+      roomRequirement: totalRooms,
+      totalRoomNights,
+      potentialRevenue: actualRevenue,
+      actualClosedRevenue: actualRevenue,
+      roomBookings: validRows,
+      updatedAt: new Date().toISOString(),
+    };
+
+    await db.saveShiftLog(updated);
+    p2pSyncManager.broadcastShiftLog(updated);
+    setClosingDefiniteLead(null);
     onRefresh();
   };
 
@@ -144,7 +206,7 @@ export const SalesKanban: React.FC<SalesKanbanProps> = ({
     if (!replyText.trim()) return;
 
     const newResponse = {
-      id: `resp_${Date.now()}`,
+      id: `resp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       authorId: currentUser.id,
       authorName: currentUser.fullName,
       authorRole: currentUser.role,
@@ -301,6 +363,27 @@ export const SalesKanban: React.FC<SalesKanbanProps> = ({
                           </div>
                         )}
 
+                        {/* Closed Definite Multi-Row Breakdown Preview */}
+                        {lead.salesStatus === 'Closed Definite' && lead.roomBookings && lead.roomBookings.length > 0 && (
+                          <div className="mt-2 p-2 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-lg text-xs space-y-1">
+                            <div className="flex items-center justify-between font-bold text-emerald-800 dark:text-emerald-300">
+                              <span className="flex items-center space-x-1">
+                                <Trophy className="w-3.5 h-3.5 text-amber-500" />
+                                <span>Actual: ${(lead.actualClosedRevenue || lead.potentialRevenue || 0).toLocaleString()}</span>
+                              </span>
+                              <span className="text-[10px] text-emerald-600 dark:text-emerald-400">{lead.totalRoomNights} room-nights</span>
+                            </div>
+                            <div className="space-y-0.5 text-[11px] text-emerald-700 dark:text-emerald-300">
+                              {lead.roomBookings.map((b, idx) => (
+                                <div key={b.id || idx} className="flex justify-between">
+                                  <span>{b.roomCount}x {b.roomType}</span>
+                                  <span className="font-semibold">${b.offeredRate}/nt</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
                         {/* Dates */}
                         {lead.checkInDate && (
                           <div className="mt-1.5 flex items-center space-x-1 text-[11px] text-gray-500">
@@ -441,6 +524,198 @@ export const SalesKanban: React.FC<SalesKanbanProps> = ({
           );
         })}
       </div>
+      {/* Closed Definite Room Breakdown & Rate Modal */}
+      {closingDefiniteLead && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-gray-100 dark:border-gray-700 flex flex-col">
+            <div className="bg-emerald-700 px-5 py-4 text-white flex items-center justify-between">
+              <div className="flex items-center space-x-2.5">
+                <div className="p-2 bg-emerald-800 rounded-xl">
+                  <Trophy className="w-5 h-5 text-amber-300" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm">Close Definite — Confirm Room Rates</h3>
+                  <p className="text-[11px] text-emerald-100 truncate max-w-xs">{closingDefiniteLead.name}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setClosingDefiniteLead(null)}
+                className="text-emerald-200 hover:text-white p-1 rounded-lg transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmClosedDefinite} className="p-5 space-y-4 text-xs">
+              {/* Stay Duration / Nights */}
+              <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/40 rounded-xl border border-gray-200 dark:border-gray-600">
+                <div>
+                  <span className="font-semibold text-gray-700 dark:text-gray-300 block">Number of Nights</span>
+                  <span className="text-[11px] text-gray-400">
+                    {closingDefiniteLead.checkInDate && closingDefiniteLead.checkOutDate
+                      ? `${closingDefiniteLead.checkInDate} to ${closingDefiniteLead.checkOutDate}`
+                      : 'Calculated length of stay'}
+                  </span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="number"
+                    min={1}
+                    required
+                    value={bookingNights}
+                    onChange={(e) => setBookingNights(Math.max(1, parseInt(e.target.value) || 1))}
+                    className="w-16 px-2.5 py-1.5 text-center font-bold text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white"
+                  />
+                  <span className="text-gray-500 font-medium">night{bookingNights === 1 ? '' : 's'}</span>
+                </div>
+              </div>
+
+              {/* Multi-Row Room Booking Table */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold uppercase tracking-wider text-[11px] text-gray-600 dark:text-gray-400">
+                    Room Types & Offered Rates
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBookingRows([
+                        ...bookingRows,
+                        {
+                          id: Date.now().toString(),
+                          roomType: 'Double Queen',
+                          roomCount: 2,
+                          offeredRate: 119,
+                        },
+                      ]);
+                    }}
+                    className="text-blue-600 hover:text-blue-700 font-bold flex items-center space-x-1"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Add Room Type</span>
+                  </button>
+                </div>
+
+                <div className="space-y-2 max-h-60 overflow-y-auto">
+                  {bookingRows.map((row, idx) => {
+                    const rowSubtotal = row.roomCount * (bookingNights || 1) * row.offeredRate;
+                    return (
+                      <div
+                        key={row.id || idx}
+                        className="p-2.5 bg-gray-50 dark:bg-gray-700/50 rounded-xl border border-gray-200 dark:border-gray-600 flex items-center gap-2"
+                      >
+                        <div className="flex-1">
+                          <label className="text-[10px] text-gray-500 block mb-0.5">Room Type</label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="e.g. Standard King, Suite"
+                            value={row.roomType}
+                            onChange={(e) => {
+                              const updated = [...bookingRows];
+                              updated[idx].roomType = e.target.value;
+                              setBookingRows(updated);
+                            }}
+                            className="w-full px-2 py-1 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white"
+                          />
+                        </div>
+
+                        <div className="w-20">
+                          <label className="text-[10px] text-gray-500 block mb-0.5">Rooms</label>
+                          <input
+                            type="number"
+                            min={1}
+                            required
+                            value={row.roomCount}
+                            onChange={(e) => {
+                              const updated = [...bookingRows];
+                              updated[idx].roomCount = Math.max(1, parseInt(e.target.value) || 1);
+                              setBookingRows(updated);
+                            }}
+                            className="w-full px-2 py-1 text-center font-bold text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white"
+                          />
+                        </div>
+
+                        <div className="w-24">
+                          <label className="text-[10px] text-gray-500 block mb-0.5">Rate ($/nt)</label>
+                          <input
+                            type="number"
+                            min={1}
+                            step="0.01"
+                            required
+                            value={row.offeredRate}
+                            onChange={(e) => {
+                              const updated = [...bookingRows];
+                              updated[idx].offeredRate = parseFloat(e.target.value) || 0;
+                              setBookingRows(updated);
+                            }}
+                            className="w-full px-2 py-1 text-right font-bold text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white"
+                          />
+                        </div>
+
+                        <div className="w-24 text-right pr-1">
+                          <span className="text-[10px] text-gray-400 block mb-0.5">Subtotal</span>
+                          <span className="font-extrabold text-emerald-700 dark:text-emerald-400 text-xs">
+                            ${rowSubtotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        </div>
+
+                        {bookingRows.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setBookingRows(bookingRows.filter((_, i) => i !== idx));
+                            }}
+                            className="p-1 text-gray-400 hover:text-rose-600 rounded mt-3.5 transition"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Total Calculation Strip */}
+              <div className="p-3.5 bg-emerald-50 dark:bg-emerald-950/30 rounded-xl border border-emerald-200 dark:border-emerald-800 flex items-center justify-between">
+                <div>
+                  <span className="text-[11px] text-emerald-800 dark:text-emerald-300 font-semibold block">
+                    Total: {bookingRows.reduce((sum, r) => sum + r.roomCount, 0)} rooms × {bookingNights} night{bookingNights === 1 ? '' : 's'} ({bookingRows.reduce((sum, r) => sum + r.roomCount, 0) * bookingNights} room-nights)
+                  </span>
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400">
+                    Actual Closed Revenue Calculation
+                  </span>
+                </div>
+                <div className="text-right">
+                  <span className="text-sm font-black text-emerald-800 dark:text-emerald-200">
+                    ${bookingRows.reduce((sum, r) => sum + (r.roomCount * (bookingNights || 1) * r.offeredRate), 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="pt-2 flex items-center space-x-2">
+                <button
+                  type="button"
+                  onClick={() => setClosingDefiniteLead(null)}
+                  className="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-xs transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs shadow-sm transition flex items-center justify-center space-x-1.5 cursor-pointer"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Confirm & Win Definite</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

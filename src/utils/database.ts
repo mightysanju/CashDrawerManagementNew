@@ -328,8 +328,8 @@ export class DatabaseManager {
   /**
    * Intelligently merges an incoming shift log with any existing shift log in the store.
    * - Preserves and unions all threaded replies/responses by ID so no reply is ever lost.
-   * - Keeps the latest reminder date, notes, and completion status.
-   * - Respects the latest updatedAt timestamp.
+   * - Adopts incoming fields if newer (including cleared/completed reminders).
+   * - Keeps responses even if local record has newer timestamp.
    */
   private mergeShiftLogRecords(existing: ShiftLogEntry, incoming: ShiftLogEntry): ShiftLogEntry {
     const respMap = new Map<string, ShiftLogResponse>();
@@ -346,23 +346,51 @@ export class DatabaseManager {
 
     const existingTime = new Date(existing.updatedAt || existing.createdAt || 0).getTime();
     const incomingTime = new Date(incoming.updatedAt || incoming.createdAt || 0).getTime();
-    const base = incomingTime >= existingTime ? incoming : existing;
 
-    return {
-      ...base,
-      responses: mergedResponses,
-      hasReminder: incomingTime >= existingTime ? (incoming.hasReminder ?? existing.hasReminder) : (existing.hasReminder ?? incoming.hasReminder),
-      reminderDate: incomingTime >= existingTime ? (incoming.reminderDate ?? existing.reminderDate) : (existing.reminderDate ?? incoming.reminderDate),
-      reminderNote: incomingTime >= existingTime ? (incoming.reminderNote ?? existing.reminderNote) : (existing.reminderNote ?? incoming.reminderNote),
-      isReminderCompleted: incomingTime >= existingTime ? (incoming.isReminderCompleted ?? existing.isReminderCompleted) : (existing.isReminderCompleted ?? incoming.isReminderCompleted),
-      updatedAt: new Date(Math.max(existingTime, incomingTime, Date.now())).toISOString(),
-    };
+    if (incomingTime >= existingTime) {
+      return {
+        ...existing,
+        ...incoming,
+        responses: mergedResponses,
+        updatedAt: incoming.updatedAt || new Date().toISOString(),
+      };
+    } else {
+      return {
+        ...incoming,
+        ...existing,
+        responses: mergedResponses,
+        updatedAt: existing.updatedAt || new Date().toISOString(),
+      };
+    }
   }
 
   async saveShiftLog(log: ShiftLogEntry): Promise<void> {
     const db = await this.dbPromise;
     const existing = await db.get(STORES.SHIFT_LOGS, log.id);
-    const finalLog = existing ? this.mergeShiftLogRecords(existing, log) : log;
+    if (!existing) {
+      await db.put(STORES.SHIFT_LOGS, log);
+      return;
+    }
+
+    // Union threaded responses so local edits/replies preserve concurrent replies
+    const respMap = new Map<string, ShiftLogResponse>();
+    (existing.responses || []).forEach((r) => {
+      if (r && r.id) respMap.set(r.id, r);
+    });
+    (log.responses || []).forEach((r) => {
+      if (r && r.id) respMap.set(r.id, r);
+    });
+
+    const mergedResponses = Array.from(respMap.values()).sort(
+      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    );
+
+    const finalLog: ShiftLogEntry = {
+      ...existing,
+      ...log,
+      responses: mergedResponses,
+      updatedAt: log.updatedAt || new Date().toISOString(),
+    };
     await db.put(STORES.SHIFT_LOGS, finalLog);
   }
 

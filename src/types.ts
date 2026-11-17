@@ -19,6 +19,8 @@ export interface ShiftRecord {
   entries: CashEntry[];
   status: 'open' | 'closed';
   isSelected?: boolean;
+  closingNotes?: string;
+  handoverNotes?: string;
 }
 
 export interface DrawerState {
@@ -63,6 +65,13 @@ export type SalesLeadStatus =
   | 'Closed Definite' 
   | 'Lost';
 
+export interface RoomBookingItem {
+  id: string;
+  roomType: string;
+  roomCount: number;
+  offeredRate: number;
+}
+
 export type ComplaintStatus = 'Open' | 'In Progress' | 'Resolved';
 
 export interface ShiftLogEntry {
@@ -90,6 +99,8 @@ export interface ShiftLogEntry {
   totalRoomNights?: number; // Auto-generated: roomRequirement * (nights)
   potentialRevenue?: number; // Auto-generated: totalRoomNights * rateMultiplier
   salesStatus?: SalesLeadStatus;
+  roomBookings?: RoomBookingItem[]; // Multi-row room breakdown when Closed Definite
+  actualClosedRevenue?: number; // Actual revenue calculated: sum(rooms * nights * offeredRate)
 
   // Complaint-Specific Fields
   reservationNumber?: string;
@@ -129,6 +140,9 @@ export interface AppSettings {
   salesRateMultiplier: number; // Default multiplier for potential revenue (e.g. $120.00)
   organizationName: string;
   maxOpenDrawers?: number; // Maximum simultaneous open cash drawers allowed across the property (Default: 1)
+  autoPrintPdfOnClose?: boolean; // Automatically print executive PDF report on shift close (Default: true)
+  autoPrintReceiptOnClose?: boolean; // Automatically print receipt on shift close (Default: false)
+  lastClosedTillEntries?: CashEntry[]; // Remembered till count breakdown from last closed drawer for next open
   databaseEpoch?: number; // Unique timestamp of database creation/reset to prevent resurrected deleted databases
   databaseId?: string; // Unique database ID
   isRestoredArchive?: boolean; // Whether database was restored from an archive rather than freshly initialized

@@ -4,72 +4,138 @@ import { ShiftRecord, ShiftLogEntry } from '../types';
 import { format } from 'date-fns';
 
 /**
- * Downloads a formatted PDF shift report
+ * Downloads a formatted executive PDF shift reconciliation and audit report
  */
 export const generatePDF = (shift: ShiftRecord) => {
   const doc = new jsPDF();
   const orgName = shift.organizationName || 'Cash Drawer Management';
   const pageWidth = doc.internal.pageSize.width;
+  const pageHeight = doc.internal.pageSize.height;
+
+  // Header Banner Box
+  doc.setFillColor(15, 23, 42); // slate-900
+  doc.rect(0, 0, pageWidth, 28, 'F');
 
   // Title with Organization Name
-  doc.setFontSize(20);
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(14);
   doc.setFont('helvetica', 'bold');
-  doc.text(orgName, pageWidth / 2, 15, { align: 'center' });
+  doc.text(orgName.toUpperCase(), pageWidth / 2, 11, { align: 'center' });
 
   // Subtitle
-  doc.setFontSize(16);
+  doc.setFontSize(10);
   doc.setFont('helvetica', 'normal');
-  doc.text('Shift Report', pageWidth / 2, 25, { align: 'center' });
+  doc.setTextColor(203, 213, 225); // slate-300
+  doc.text('EXECUTIVE CASH DRAWER AUDIT & RECONCILIATION REPORT', pageWidth / 2, 18, { align: 'center' });
 
-  // Shift Details
-  doc.setFontSize(12);
-  doc.text(`Drawer Number: ${shift.drawerNumber}`, 20, 40);
-  doc.text(`Cashier: ${shift.cashierName}`, 20, 50);
-  doc.text(`Open Time: ${format(new Date(shift.openTime), 'PPpp')}`, 20, 60);
+  doc.setFontSize(7.5);
+  doc.setTextColor(148, 163, 184); // slate-400
+  doc.text(`Official Audit Generated: ${format(new Date(), 'PPpp')}`, pageWidth / 2, 24, { align: 'center' });
 
-  if (shift.closeTime) {
-    doc.text(
-      `Close Time: ${format(new Date(shift.closeTime), 'PPpp')}`,
-      20,
-      70
-    );
-  }
+  // Reset text color
+  doc.setTextColor(15, 23, 42);
 
-  // Financial Summary
-  const yStart = shift.closeTime ? 85 : 75;
-  doc.text(`Opening Balance: $${shift.openingBalance.toFixed(2)}`, 20, yStart);
+  // Shift Metadata Card
+  doc.setFillColor(248, 250, 252); // slate-50
+  doc.setDrawColor(226, 232, 240); // slate-200
+  doc.roundedRect(14, 32, pageWidth - 28, 22, 2, 2, 'FD');
 
-  if (shift.closingBalance !== undefined) {
-    doc.text(
-      `Closing Balance: $${shift.closingBalance.toFixed(2)}`,
-      20,
-      yStart + 10
-    );
+  doc.setFontSize(8.5);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Shift ID:', 18, 38);
+  doc.text('Drawer / Till #:', 18, 44);
+  doc.text('Cashier on Duty:', 18, 50);
 
-    // Calculate and display balance difference
-    const difference = shift.closingBalance - shift.openingBalance;
-    const differenceText = `Balance Difference: ${
-      difference >= 0 ? '+' : ''
-    }$${difference.toFixed(2)}`;
+  doc.setFont('helvetica', 'normal');
+  doc.text(shift.id, 45, 38);
+  doc.text(`Drawer ${shift.drawerNumber}`, 45, 44);
+  doc.text(`${shift.cashierName} ${shift.cashierId ? `(ID: ${shift.cashierId})` : ''}`, 45, 50);
 
-    doc.setTextColor(
-      difference === 0 ? 0 : difference > 0 ? 0 : 220,
-      difference === 0 ? 0 : difference > 0 ? 128 : 38,
-      difference === 0 ? 0 : difference > 0 ? 0 : 38
-    );
+  doc.setFont('helvetica', 'bold');
+  doc.text('Open Time:', pageWidth / 2 + 5, 38);
+  doc.text('Close Time:', pageWidth / 2 + 5, 44);
+  doc.text('Shift Status:', pageWidth / 2 + 5, 50);
+
+  doc.setFont('helvetica', 'normal');
+  doc.text(format(new Date(shift.openTime), 'PPpp'), pageWidth / 2 + 30, 38);
+  doc.text(shift.closeTime ? format(new Date(shift.closeTime), 'PPpp') : 'Still Open / Active', pageWidth / 2 + 30, 44);
+  
+  if (shift.status === 'closed') {
+    doc.setTextColor(5, 150, 105); // emerald-600
     doc.setFont('helvetica', 'bold');
-    doc.text(differenceText, 20, yStart + 20);
-    doc.setTextColor(0, 0, 0);
-    doc.setFont('helvetica', 'normal');
+    doc.text('CLOSED & RECONCILED', pageWidth / 2 + 30, 50);
+  } else {
+    doc.setTextColor(37, 99, 235); // blue-600
+    doc.setFont('helvetica', 'bold');
+    doc.text('OPEN / IN PROGRESS', pageWidth / 2 + 30, 50);
   }
+  doc.setTextColor(15, 23, 42);
 
-  if (shift.shiftDrop !== undefined) {
-    doc.text(`Shift Drop: $${shift.shiftDrop.toFixed(2)}`, 20, yStart + 30);
-  }
+  // Financial Reconciliation Summary
+  const yFin = 58;
+  const colWidth = (pageWidth - 28 - 9) / 4;
 
-  // Create table data
+  const openingFloat = shift.openingBalance;
+  const shiftDrop = shift.shiftDrop || 0;
+  const closingBalance = shift.closingBalance !== undefined ? shift.closingBalance : shift.openingBalance;
+  const variance = closingBalance - openingFloat;
+
+  // Box 1: Opening Float
+  doc.setFillColor(241, 245, 249);
+  doc.roundedRect(14, yFin, colWidth, 16, 1.5, 1.5, 'F');
+  doc.setFontSize(7);
+  doc.setTextColor(100, 116, 139);
+  doc.text('OPENING FLOAT', 14 + colWidth / 2, yFin + 5, { align: 'center' });
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text(`$${openingFloat.toFixed(2)}`, 14 + colWidth / 2, yFin + 12, { align: 'center' });
+
+  // Box 2: Total Drops
+  const xBox2 = 14 + colWidth + 3;
+  doc.setFillColor(254, 242, 242);
+  doc.roundedRect(xBox2, yFin, colWidth, 16, 1.5, 1.5, 'F');
+  doc.setFontSize(7);
+  doc.setTextColor(185, 28, 28);
+  doc.text('SAFE DEPOSIT DROPS', xBox2 + colWidth / 2, yFin + 5, { align: 'center' });
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(185, 28, 28);
+  doc.text(`$${shiftDrop.toFixed(2)}`, xBox2 + colWidth / 2, yFin + 12, { align: 'center' });
+
+  // Box 3: Counted Till Balance
+  const xBox3 = xBox2 + colWidth + 3;
+  doc.setFillColor(239, 246, 255);
+  doc.roundedRect(xBox3, yFin, colWidth, 16, 1.5, 1.5, 'F');
+  doc.setFontSize(7);
+  doc.setTextColor(29, 78, 216);
+  doc.text('COUNTED TILL CASH', xBox3 + colWidth / 2, yFin + 5, { align: 'center' });
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(29, 78, 216);
+  doc.text(`$${closingBalance.toFixed(2)}`, xBox3 + colWidth / 2, yFin + 12, { align: 'center' });
+
+  // Box 4: Shift Variance (Over / Short / Balanced)
+  const xBox4 = xBox3 + colWidth + 3;
+  const isBalanced = Math.abs(variance) < 0.01;
+  const isShort = variance < -0.01;
+  doc.setFillColor(isBalanced ? 236 : isShort ? 254 : 254, isBalanced ? 253 : isShort ? 242 : 243, isBalanced ? 245 : isShort ? 242 : 199);
+  doc.roundedRect(xBox4, yFin, colWidth, 16, 1.5, 1.5, 'F');
+  doc.setFontSize(7);
+  doc.setTextColor(isBalanced ? 4 : isShort ? 185 : 180, isBalanced ? 120 : isShort ? 28 : 83, isBalanced ? 87 : isShort ? 28 : 9);
+  doc.text(isBalanced ? 'BALANCE STATUS' : isShort ? 'VARIANCE (SHORT)' : 'VARIANCE (OVER)', xBox4 + colWidth / 2, yFin + 5, { align: 'center' });
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'bold');
+  doc.text(
+    isBalanced ? '$0.00 (Balanced)' : `${variance > 0 ? '+' : ''}$${variance.toFixed(2)}`,
+    xBox4 + colWidth / 2,
+    yFin + 12,
+    { align: 'center' }
+  );
+
+  // Till Breakdown Table
   const tableData: RowInput[] = [];
-  let grandTotal = 0;
+  let calculatedTillTotal = 0;
 
   shift.entries.forEach((entry) => {
     tableData.push([
@@ -78,49 +144,104 @@ export const generatePDF = (shift: ShiftRecord) => {
       entry.quantity.toString(),
       `$${entry.total.toFixed(2)}`,
     ]);
-    grandTotal += entry.total;
+    calculatedTillTotal += entry.total;
   });
 
-  // Add grand total
   tableData.push([
     {
-      content: 'Grand Total',
+      content: 'TOTAL COUNTED TILL CASH',
       colSpan: 3,
-      styles: { fillColor: [37, 99, 235], textColor: 255, fontStyle: 'bold' },
+      styles: { fillColor: [15, 23, 42], textColor: 255, fontStyle: 'bold', halign: 'left' },
     },
     {
-      content: `$${grandTotal.toFixed(2)}`,
-      styles: { fillColor: [37, 99, 235], textColor: 255, fontStyle: 'bold' },
+      content: `$${calculatedTillTotal.toFixed(2)}`,
+      styles: { fillColor: [15, 23, 42], textColor: 255, fontStyle: 'bold', halign: 'right' },
     },
   ]);
 
-  // Generate table
   autoTable(doc, {
-    startY: yStart + 40,
-    head: [['Type', 'Denomination', 'Quantity', 'Total']],
+    startY: yFin + 20,
+    head: [['Denomination Category', 'Unit Value', 'Count / Quantity', 'Total Amount']],
     body: tableData,
     theme: 'grid',
     headStyles: {
-      fillColor: [37, 99, 235],
+      fillColor: [30, 41, 59], // slate-800
       textColor: 255,
       fontStyle: 'bold',
+      fontSize: 8,
     },
     styles: {
-      fontSize: 10,
-      cellPadding: 2,
+      fontSize: 8,
+      cellPadding: 1.8,
       lineWidth: 0.1,
+      lineColor: [226, 232, 240],
     },
     columnStyles: {
-      0: { cellWidth: 45 },
-      1: { cellWidth: 45, halign: 'right' },
-      2: { cellWidth: 35, halign: 'right' },
-      3: { cellWidth: 45, halign: 'right' },
+      0: { cellWidth: 50 },
+      1: { cellWidth: 40, halign: 'right' },
+      2: { cellWidth: 40, halign: 'right' },
+      3: { cellWidth: 'auto', halign: 'right' },
     },
-    margin: { left: 20 },
+    margin: { left: 14, right: 14 },
   });
 
-  // Safe file download - avoids popup blocker issues and data URI security blocks
-  const filename = `shift-report-drawer-${shift.drawerNumber}-${format(new Date(shift.openTime), 'yyyyMMdd-HHmm')}.pdf`;
+  // End of table position
+  const finalY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY || 160;
+
+  // Shift Handover Notes & Shift Logs Box
+  const notesY = Math.min(finalY + 6, pageHeight - 65);
+  doc.setDrawColor(203, 213, 225);
+  doc.setFillColor(248, 250, 252);
+  doc.roundedRect(14, notesY, pageWidth - 28, 22, 1.5, 1.5, 'FD');
+
+  doc.setFontSize(7.5);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(30, 41, 59);
+  doc.text('SHIFT HANDOVER NOTES & OPERATIONAL LOGS:', 18, notesY + 5);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7);
+  doc.setTextColor(71, 85, 105);
+  const notesText = shift.closingNotes || shift.handoverNotes || 'No specific handover notes recorded for this shift.';
+  const splitNotes = doc.splitTextToSize(notesText, pageWidth - 36);
+  doc.text(splitNotes.slice(0, 3), 18, notesY + 10);
+
+  // Dual Formal Verification & Signatures Section
+  const sigY = notesY + 28;
+  doc.setDrawColor(148, 163, 184); // slate-400
+  doc.setLineWidth(0.4);
+
+  // Cashier Signature Line
+  doc.line(18, sigY + 12, 90, sigY + 12);
+  doc.setFontSize(7.5);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text('CASHIER SIGNATURE', 18, sigY + 16);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`Printed: ${shift.cashierName}`, 18, sigY + 20);
+  doc.text(`Date: ${shift.closeTime ? format(new Date(shift.closeTime), 'PP') : format(new Date(), 'PP')}`, 18, sigY + 24);
+
+  // Manager Signature Line
+  const mgrLineX = pageWidth / 2 + 10;
+  doc.line(mgrLineX, sigY + 12, mgrLineX + 72, sigY + 12);
+  doc.setFont('helvetica', 'bold');
+  doc.text('MANAGER / SUPERVISOR SIGNATURE', mgrLineX, sigY + 16);
+  doc.setFont('helvetica', 'normal');
+  doc.text('Printed: _________________________________', mgrLineX, sigY + 20);
+  doc.text(`Date: ${shift.closeTime ? format(new Date(shift.closeTime), 'PP') : format(new Date(), 'PP')}`, mgrLineX, sigY + 24);
+
+  // Footer Audit Trail
+  doc.setFontSize(7);
+  doc.setTextColor(148, 163, 184);
+  doc.text(
+    `Official Property Audit Record • FrontDesk Pro Cash Drawer Management System • Shift ID: ${shift.id}`,
+    pageWidth / 2,
+    pageHeight - 6,
+    { align: 'center' }
+  );
+
+  // Safe file download
+  const filename = `shift-reconciliation-drawer-${shift.drawerNumber}-${format(new Date(shift.openTime), 'yyyyMMdd-HHmm')}.pdf`;
   doc.save(filename);
 };
 

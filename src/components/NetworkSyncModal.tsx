@@ -200,6 +200,32 @@ export function NetworkSyncModal({ isOpen, onClose, onSyncTriggered, onRequestCr
 
         {/* Modal Body */}
         <div className="p-6 space-y-4 overflow-y-auto">
+          {/* Always Available Option 2 Quick Action Banner at Top */}
+          <div className="flex items-center justify-between p-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl text-white shadow-sm">
+            <div className="space-y-0.5">
+              <div className="font-bold text-xs flex items-center space-x-1.5">
+                <Plus size={14} className="text-white" />
+                <span>Create New Account / Database (Option 2)</span>
+              </div>
+              <div className="text-[11px] text-blue-100">
+                Option 2 is always available: create a new hotel account and database anytime.
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                if (onRequestCreateNewHotel) {
+                  onRequestCreateNewHotel();
+                } else {
+                  setIsAddingNew(true);
+                }
+              }}
+              className="px-3.5 py-1.5 bg-white text-blue-700 hover:bg-blue-50 font-bold rounded-lg text-xs transition shadow-xs shrink-0 cursor-pointer ml-3"
+            >
+              Start Option 2
+            </button>
+          </div>
+
           {syncState.errorMessage && (
             <div className="p-3 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 rounded-lg flex items-start space-x-2 text-xs text-red-700 dark:text-red-300">
               <AlertCircle size={15} className="shrink-0 mt-0.5" />
@@ -231,7 +257,7 @@ export function NetworkSyncModal({ isOpen, onClose, onSyncTriggered, onRequestCr
                       : 'bg-slate-400'
                 }`}></span>
                 {syncState.status === 'connected' && (
-                  syncState.role === 'hub' ? 'Primary Hotel Hub' : 'Connected to Hotel Hub'
+                  syncState.role === 'hub' ? 'Primary Hotel Hub' : syncState.role === 'standalone' ? 'Online (Local Ready)' : 'Connected to Hotel Hub'
                 )}
                 {syncState.status === 'scanning' && 'Scanning Network'}
                 {syncState.status === 'disconnected' && 'Sync Paused'}
@@ -259,6 +285,8 @@ export function NetworkSyncModal({ isOpen, onClose, onSyncTriggered, onRequestCr
                     syncState.connectedCount === 0
                       ? 'Active as Primary Hotel Hub for this database'
                       : `Syncing with ${syncState.connectedCount} other register${syncState.connectedCount > 1 ? 's' : ''}`
+                  ) : syncState.role === 'standalone' ? (
+                    'Online (Local Database Active • Auto-Discovery Ready)'
                   ) : (
                     'Synchronized with Primary Register'
                   )
@@ -408,7 +436,7 @@ export function NetworkSyncModal({ isOpen, onClose, onSyncTriggered, onRequestCr
 
                     {/* Right: Sync Status Badge (Connection Established vs In Sync) */}
                     <div className="shrink-0 text-right">
-                      {st.syncStage === 'in_sync' ? (
+                      {st.syncStage === 'in_sync' || st.isThisDevice ? (
                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1 animate-pulse"></span>
                           In Sync

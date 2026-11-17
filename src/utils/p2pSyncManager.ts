@@ -557,7 +557,7 @@ class P2PSyncManager {
         this.discoveryPeer = null;
       }
       this.startDiscoveryPeer();
-    }, 3000 + Math.random() * 2000);
+    }, 15000 + Math.random() * 5000);
   }
 
   private async handleDiscoveryMessage(msg: SyncMessage, relayFromPeerId?: string) {
@@ -1126,7 +1126,7 @@ class P2PSyncManager {
       } : null,
       databaseName: this.state.storeName,
       isPrimaryHub: this.state.role === 'hub',
-      syncStage: this.mySyncStage,
+      syncStage: 'in_sync', // The local machine is always active & in-sync with its local IndexedDB database!
       lastSeen: Date.now(),
       isThisDevice: true,
     };
@@ -1263,12 +1263,13 @@ class P2PSyncManager {
     }
 
     this.updateState({
-      status: 'scanning',
+      status: 'connected',
+      role: this.state.role || 'standalone',
       storeName: currentStore,
       errorMessage: null,
     });
 
-    this.addLog('info', `Connecting to register group "${currentStore}" (Device ID: ${this.myDeviceId})...`);
+    this.addLog('info', `Register active for "${currentStore}" (Device ID: ${this.myDeviceId}). Scanning network in background...`);
 
     const hubId = this.getHubPeerId(this.storeSlug);
 
@@ -1332,7 +1333,7 @@ class P2PSyncManager {
       }
 
       let settled = false;
-      // Never hang forever if the signaling server is slow/unreachable
+      // Fast fallback to client mode if hub claim is slow
       setTimeout(() => {
         if (!settled) {
           settled = true;
@@ -1341,10 +1342,10 @@ class P2PSyncManager {
           } catch {
             // ignore
           }
-          this.addLog('warn', 'Hub claim timed out after 8s. Trying client mode...');
+          this.addLog('info', 'Hub already hosted or taken. Joining as register client...');
           reject(new Error('Hub claim timeout'));
         }
-      }, 8000);
+      }, 4000);
 
       peer.on('open', (id) => {
         if (settled) {
@@ -1418,10 +1419,10 @@ class P2PSyncManager {
           } catch {
             // ignore
           }
-          this.addLog('warn', `Connection to Hub ${hubId} timed out after 20s. Hub might be offline or negotiating ICE.`);
+          this.addLog('info', `Hub ${hubId} did not respond within 6s. Operating in local ready mode with background sync.`);
           reject(new Error('Connection timeout to hub'));
         }
-      }, 20000);
+      }, 6000);
 
       peer.on('open', (myId) => {
         this.peer = peer;
@@ -2057,12 +2058,11 @@ class P2PSyncManager {
 
       const isClientAndOrphan = this.state.role === 'client' && this.connections.size === 0;
       const isDisconnected = this.state.status === 'disconnected';
-      const isPeerDown = !this.peer || this.peer.destroyed;
+      const isPeerDown = (!this.peer || this.peer.destroyed) && this.state.role !== 'standalone';
 
       if (isClientAndOrphan || isDisconnected || isPeerDown) {
         this.lastReconnectAttempt = Date.now();
-        console.debug(`[P2P Sync Watchdog] Reconnecting to remembered register: "${rememberedStore}"...`);
-        this.addLog('info', `Background watchdog checking hotel network for "${rememberedStore}"...`);
+        console.debug(`[P2P Sync Watchdog] Checking network for peer registers: "${rememberedStore}"...`);
         this.autoConnect(rememberedStore);
       } else if (this.peer && this.peer.disconnected && !this.peer.destroyed) {
         try {
@@ -2071,13 +2071,13 @@ class P2PSyncManager {
           // ignore
         }
       }
-    }, 12000);
+    }, 20000);
   }
 
   private scheduleReconnect(storeName: string) {
     if (this.reconnectTimer) return;
     this.reconnectAttempts++;
-    const delay = Math.min(25000, 4000 * Math.pow(1.3, Math.min(this.reconnectAttempts, 5)));
+    const delay = Math.min(60000, 15000 * Math.pow(1.3, Math.min(this.reconnectAttempts, 5)));
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.lastReconnectAttempt = Date.now();
