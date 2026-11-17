@@ -22,6 +22,7 @@ import { UserAccount, AppSettings } from '../types';
 
 interface NewHotelSetupModalProps {
   isOpen: boolean;
+  initialTab?: 'sync' | 'create';
   onSetupComplete: (manager?: UserAccount) => void;
 }
 
@@ -46,10 +47,23 @@ const formatCreatedTime = (timestamp?: string | number) => {
 
 export const NewHotelSetupModal: React.FC<NewHotelSetupModalProps> = ({
   isOpen,
+  initialTab = 'sync',
   onSetupComplete,
 }) => {
-  const [activeTab, setActiveTab] = useState<'sync' | 'create'>('sync');
-  const userSelectedTabRef = useRef(false);
+  const [activeTab, setActiveTab] = useState<'sync' | 'create'>(initialTab);
+  const userSelectedTabRef = useRef(initialTab === 'create');
+
+  useEffect(() => {
+    if (isOpen) {
+      if (initialTab === 'create') {
+        userSelectedTabRef.current = true;
+        setActiveTab('create');
+      } else {
+        userSelectedTabRef.current = false;
+        setActiveTab('sync');
+      }
+    }
+  }, [isOpen, initialTab]);
   const [availableDbs, setAvailableDbs] = useState<AvailableNetworkDatabase[]>([]);
   const [isScanning, setIsScanning] = useState(false);
   const [syncingDbName, setSyncingDbName] = useState<string | null>(null);

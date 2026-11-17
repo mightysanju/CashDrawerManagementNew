@@ -86,6 +86,7 @@ export function CashDrawer() {
   const [isUserMgmtModalOpen, setIsUserMgmtModalOpen] = useState(false);
   const [isChangePasswordModalOpen, setIsChangePasswordModalOpen] = useState(false);
   const [isNewHotelSetupModalOpen, setIsNewHotelSetupModalOpen] = useState(false);
+  const [newHotelInitialTab, setNewHotelInitialTab] = useState<'sync' | 'create'>('sync');
   const [isSignOutModalOpen, setIsSignOutModalOpen] = useState(false);
   const [welcomeToast, setWelcomeToast] = useState<string | null>(null);
   const [syncState, setSyncState] = useState<SyncState>(p2pSyncManager.getState());
@@ -1416,6 +1417,7 @@ export function CashDrawer() {
         }}
         onRequestCreateNewHotel={() => {
           setIsSyncModalOpen(false);
+          setNewHotelInitialTab('create');
           setIsNewHotelSetupModalOpen(true);
         }}
       />
@@ -1497,7 +1499,11 @@ export function CashDrawer() {
       {/* New Hotel Network Setup Modal (When no database exists) */}
       <NewHotelSetupModal
         isOpen={isNewHotelSetupModalOpen}
-        onSetupComplete={handleSetupComplete}
+        initialTab={newHotelInitialTab}
+        onSetupComplete={(mgr) => {
+          setNewHotelInitialTab('sync');
+          handleSetupComplete(mgr);
+        }}
       />
 
       {/* Welcome Toast Notification */}
