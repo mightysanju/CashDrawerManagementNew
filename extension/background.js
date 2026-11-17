@@ -74,4 +74,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sendResponse({ received: true });
     return true;
   }
+
+  if (request && request.type === 'FDP_CATEGORIES_CHANGED') {
+    chrome.tabs.query({}, (tabs) => {
+      for (const tab of tabs) {
+        if (tab.id && tab.id !== sender?.tab?.id) {
+          chrome.tabs.sendMessage(tab.id, {
+            type: 'FDP_CATEGORIES_CHANGED',
+            categories: request.categories,
+          }).catch(() => {});
+        }
+      }
+    });
+    sendResponse({ received: true });
+    return true;
+  }
 });

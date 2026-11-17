@@ -15,8 +15,11 @@ export function ReceiptsSection({ entries, onUpdate, onUpdateEntry }: ReceiptsSe
 
   const totalReceipts = receiptEntries.reduce((sum, e) => sum + e.total, 0);
 
-  const handleAddReceipt = (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
+  const handleAddReceipt = (e?: React.MouseEvent | React.KeyboardEvent | React.FormEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     const amount = parseFloat(newReceiptAmount);
     if (!isNaN(amount) && amount > 0) {
       handler?.('receipt', amount, 1);
@@ -24,7 +27,11 @@ export function ReceiptsSection({ entries, onUpdate, onUpdateEntry }: ReceiptsSe
     }
   };
 
-  const handleRemoveReceipt = (denomination: number) => {
+  const handleRemoveReceipt = (denomination: number, e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     handler?.('receipt', denomination, 0);
   };
 
@@ -57,7 +64,7 @@ export function ReceiptsSection({ entries, onUpdate, onUpdateEntry }: ReceiptsSe
         </div>
 
         {/* Input Form */}
-        <form onSubmit={handleAddReceipt} className="flex items-center gap-2 mb-3">
+        <div className="flex items-center gap-2 mb-3">
           <div className="relative flex-1">
             <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 font-mono text-xs">
               $
@@ -69,18 +76,30 @@ export function ReceiptsSection({ entries, onUpdate, onUpdateEntry }: ReceiptsSe
               placeholder="0.00"
               value={newReceiptAmount}
               onChange={(e) => setNewReceiptAmount(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleAddReceipt(e);
+                }
+              }}
               className="w-full pl-6 pr-3 py-1 text-xs font-mono tabular-nums bg-white dark:bg-slate-900 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
           </div>
           <button
-            type="submit"
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              handleAddReceipt(e);
+            }}
             disabled={!newReceiptAmount || parseFloat(newReceiptAmount) <= 0}
-            className="px-3 py-1 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:opacity-30 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors flex items-center space-x-1"
+            className="px-3 py-1 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:opacity-30 disabled:cursor-not-allowed text-white rounded-lg text-xs font-medium transition-colors flex items-center space-x-1 cursor-pointer"
           >
             <Plus size={13} />
             <span>Add</span>
           </button>
-        </form>
+        </div>
 
         {/* Receipts List */}
         <div className="space-y-1.5 max-h-[160px] overflow-y-auto pr-0.5">
@@ -102,8 +121,8 @@ export function ReceiptsSection({ entries, onUpdate, onUpdateEntry }: ReceiptsSe
                 </div>
                 <button
                   type="button"
-                  onClick={() => handleRemoveReceipt(entry.denomination)}
-                  className="text-slate-400 hover:text-red-500 p-1 rounded transition-colors"
+                  onClick={(e) => handleRemoveReceipt(entry.denomination, e)}
+                  className="text-slate-400 hover:text-red-500 p-1 rounded transition-colors cursor-pointer"
                   title="Remove voucher"
                 >
                   <Trash2 size={13} />

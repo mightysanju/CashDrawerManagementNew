@@ -27,14 +27,32 @@ import {
   Lock,
   AlertTriangle,
   Archive,
-  Printer
+  Printer,
+  ListChecks,
+  ToggleLeft,
+  ToggleRight,
+  Edit3
 } from 'lucide-react';
-import { UserAccount, UserRole, LogCategoryConfig, AppSettings, ShiftLogEntry, DatabaseArchive } from '../types';
+import { 
+  UserAccount, 
+  UserRole, 
+  LogCategoryConfig, 
+  CategoryQuestionItem,
+  getDefaultQuestionnaireForCategory,
+  AppSettings, 
+  ShiftLogEntry, 
+  DatabaseArchive,
+  FormFieldKey,
+  FormFieldSetting,
+  FormFieldSettingsMap,
+  DEFAULT_FORM_FIELD_SETTINGS
+} from '../types';
 import { DatabaseManager } from '../utils/database';
 import { authManager } from '../utils/authManager';
 import { p2pSyncManager } from '../utils/p2pSyncManager';
 import { generateShiftLogAuditPDF, exportShiftLogsToCSV } from '../utils/pdfGenerator';
 import { formatFullTimestamp } from '../utils/dateUtils';
+import { CATEGORY_ICON_OPTIONS, getCategoryIconComponent } from '../utils/categoryIcons';
 
 interface UserManagementModalProps {
   isOpen: boolean;
@@ -67,8 +85,24 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
   const [categories, setCategories] = useState<LogCategoryConfig[]>([]);
   const [newCatName, setNewCatName] = useState('');
   const [newCatSubcats, setNewCatSubcats] = useState('');
+  const [newCatIcon, setNewCatIcon] = useState('Tag');
+  const [iconPickerCatId, setIconPickerCatId] = useState<string | null>(null);
   const [editingCatId, setEditingCatId] = useState<string | null>(null);
   const [newSubcatInput, setNewSubcatInput] = useState('');
+  const [activeQuestionPickerCatId, setActiveQuestionPickerCatId] = useState<string | null>(null);
+  const [newCatQuestionnaire, setNewCatQuestionnaire] = useState<CategoryQuestionItem[]>([
+    { id: 'topic', label: 'Topic / Headline', required: true, enabled: true },
+    { id: 'roomNumber', label: 'Room / Area #', required: false, enabled: true },
+    { id: 'guestName', label: 'Guest / Staff Contact', required: false, enabled: true },
+    { id: 'phoneNumber', label: 'Phone Number', required: false, enabled: true },
+    { id: 'email', label: 'Email Address', required: false, enabled: false },
+    { id: 'clerkNotes', label: 'Handover / Clerk Notes', required: true, enabled: true },
+    { id: 'reminder', label: 'Follow-up Due Date', required: false, enabled: true },
+  ]);
+  const [newCatCustomQuestionLabel, setNewCatCustomQuestionLabel] = useState('');
+  const [newCatCustomQuestionRequired, setNewCatCustomQuestionRequired] = useState(false);
+  const [cardCustomQuestionLabel, setCardCustomQuestionLabel] = useState('');
+  const [cardCustomQuestionRequired, setCardCustomQuestionRequired] = useState(false);
 
   // Settings state
   const [settings, setSettings] = useState<AppSettings>({
@@ -82,6 +116,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
   const [maxOpenDrawersInput, setMaxOpenDrawersInput] = useState<number>(1);
   const [autoPrintPdfInput, setAutoPrintPdfInput] = useState<boolean>(true);
   const [autoPrintReceiptInput, setAutoPrintReceiptInput] = useState<boolean>(false);
+  const [formFieldSettings, setFormFieldSettings] = useState<FormFieldSettingsMap>(DEFAULT_FORM_FIELD_SETTINGS);
   const [settingsSuccess, setSettingsSuccess] = useState(false);
 
   // Reports state
@@ -133,6 +168,10 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
       setMaxOpenDrawersInput(loadedSettings.maxOpenDrawers || 1);
       setAutoPrintPdfInput(loadedSettings.autoPrintPdfOnClose !== false);
       setAutoPrintReceiptInput(loadedSettings.autoPrintReceiptOnClose === true);
+      setFormFieldSettings({
+        ...DEFAULT_FORM_FIELD_SETTINGS,
+        ...(loadedSettings.formFieldSettings || {}),
+      });
       setAllShiftLogs(loadedLogs);
       setDbCounts(counts);
       setArchives(db.getDatabaseArchives());
@@ -439,7 +478,9 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
     const newCat: LogCategoryConfig = {
       id: `cat_${Date.now()}`,
       name: newCatName.trim(),
+      icon: newCatIcon,
       subcategories: subs.length > 0 ? subs : ['General'],
+      questionnaire: newCatQuestionnaire,
     };
 
     await db.saveCategory(newCat);
@@ -447,8 +488,177 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
     setCategories((prev) => [...prev, newCat]);
     setNewCatName('');
     setNewCatSubcats('');
+    setNewCatIcon('Tag');
+    setNewCatQuestionnaire([
+      { id: 'topic', label: 'Topic / Headline', required: true, enabled: true },
+      { id: 'roomNumber', label: 'Room / Area #', required: false, enabled: true },
+      { id: 'guestName', label: 'Guest / Staff Contact', required: false, enabled: true },
+      { id: 'phoneNumber', label: 'Phone Number', required: false, enabled: true },
+      { id: 'email', label: 'Email Address', required: false, enabled: false },
+      { id: 'clerkNotes', label: 'Handover / Clerk Notes', required: true, enabled: true },
+      { id: 'reminder', label: 'Follow-up Due Date', required: false, enabled: true },
+    ]);
     const counts = await db.getStoreCounts();
     setDbCounts(counts);
+  };
+
+  const handleToggleNewCatQuestionRequired = (id: string) => {
+    setNewCatQuestionnaire((prev) =>
+      prev.map((q) => (q.id === id ? { ...q, required: !q.required } : q))
+    );
+  };
+
+  const handleToggleNewCatQuestionEnabled = (id: string) => {
+    setNewCatQuestionnaire((prev) =>
+      prev.map((q) => (q.id === id ? { ...q, enabled: !q.enabled } : q))
+    );
+  };
+
+  const handleAddNewCatCustomQuestion = (label: string, required: boolean) => {
+    const clean = label.trim();
+    if (!clean) return;
+    const cleanId = `custom_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    setNewCatQuestionnaire((prev) => [
+      ...prev,
+      { id: cleanId, label: clean, required, enabled: true },
+    ]);
+    setNewCatCustomQuestionLabel('');
+    setNewCatCustomQuestionRequired(false);
+  };
+
+  const handleRemoveNewCatQuestion = (id: string) => {
+    setNewCatQuestionnaire((prev) => prev.filter((q) => q.id !== id));
+  };
+
+  const handleAddCustomQuestionToCategory = async (cat: LogCategoryConfig, label: string, required: boolean) => {
+    const clean = label.trim();
+    if (!clean) return;
+    const existing = cat.questionnaire && cat.questionnaire.length > 0
+      ? [...cat.questionnaire]
+      : getDefaultQuestionnaireForCategory(cat.name);
+
+    const cleanId = `custom_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const updatedCat: LogCategoryConfig = {
+      ...cat,
+      questionnaire: [
+        ...existing,
+        { id: cleanId, label: clean, required, enabled: true },
+      ],
+    };
+
+    await db.saveCategory(updatedCat);
+    p2pSyncManager.broadcastCategory(updatedCat);
+    setCategories((prev) => prev.map((c) => (c.id === cat.id ? updatedCat : c)));
+    setCardCustomQuestionLabel('');
+    setCardCustomQuestionRequired(false);
+    setActiveQuestionPickerCatId(null);
+  };
+
+  const handleRemoveQuestionFromCategory = async (cat: LogCategoryConfig, questionId: string) => {
+    const existing = cat.questionnaire && cat.questionnaire.length > 0
+      ? [...cat.questionnaire]
+      : getDefaultQuestionnaireForCategory(cat.name);
+
+    const updated = existing.filter((q) => q.id !== questionId);
+    const updatedCat: LogCategoryConfig = {
+      ...cat,
+      questionnaire: updated,
+    };
+
+    await db.saveCategory(updatedCat);
+    p2pSyncManager.broadcastCategory(updatedCat);
+    setCategories((prev) => prev.map((c) => (c.id === cat.id ? updatedCat : c)));
+  };
+
+  const handleToggleCategoryQuestionRequired = async (cat: LogCategoryConfig, questionId: string) => {
+    const existing = cat.questionnaire && cat.questionnaire.length > 0
+      ? [...cat.questionnaire]
+      : getDefaultQuestionnaireForCategory(cat.name);
+
+    const updated = existing.map((q) =>
+      q.id === questionId ? { ...q, required: !q.required } : q
+    );
+
+    const updatedCat: LogCategoryConfig = {
+      ...cat,
+      questionnaire: updated,
+    };
+
+    await db.saveCategory(updatedCat);
+    p2pSyncManager.broadcastCategory(updatedCat);
+    setCategories((prev) => prev.map((c) => (c.id === cat.id ? updatedCat : c)));
+  };
+
+  const handleToggleCategoryQuestionEnabled = async (cat: LogCategoryConfig, questionId: string) => {
+    const existing = cat.questionnaire && cat.questionnaire.length > 0
+      ? [...cat.questionnaire]
+      : getDefaultQuestionnaireForCategory(cat.name);
+
+    const updated = existing.map((q) =>
+      q.id === questionId ? { ...q, enabled: !q.enabled } : q
+    );
+
+    const updatedCat: LogCategoryConfig = {
+      ...cat,
+      questionnaire: updated,
+    };
+
+    await db.saveCategory(updatedCat);
+    p2pSyncManager.broadcastCategory(updatedCat);
+    setCategories((prev) => prev.map((c) => (c.id === cat.id ? updatedCat : c)));
+  };
+
+  const handleAddQuestionToCategory = async (cat: LogCategoryConfig, questionId: string) => {
+    const templates = [
+      { id: 'topic', label: 'Topic / Headline', defaultRequired: true },
+      { id: 'roomNumber', label: 'Room / Area #', defaultRequired: false },
+      { id: 'guestName', label: 'Guest / Staff Contact', defaultRequired: true },
+      { id: 'phoneNumber', label: 'Phone Number', defaultRequired: true },
+      { id: 'email', label: 'Email Address', defaultRequired: false },
+      { id: 'reservationNumber', label: 'Reservation / Folio #', defaultRequired: false },
+      { id: 'dates', label: 'Duration / Stay Dates', defaultRequired: false },
+      { id: 'roomRequirement', label: 'Room Count Needed', defaultRequired: false },
+      { id: 'clerkNotes', label: 'Handover / Clerk Notes', defaultRequired: true },
+      { id: 'reminder', label: 'Follow-up Due Date', defaultRequired: false },
+    ];
+    const template = templates.find((t) => t.id === questionId);
+    if (!template) return;
+
+    const existing = cat.questionnaire && cat.questionnaire.length > 0
+      ? [...cat.questionnaire]
+      : getDefaultQuestionnaireForCategory(cat.name);
+
+    if (existing.some((q) => q.id === template.id)) {
+      // If already exists but disabled, enable it
+      const updated = existing.map((q) => q.id === template.id ? { ...q, enabled: true } : q);
+      const updatedCat = { ...cat, questionnaire: updated };
+      await db.saveCategory(updatedCat);
+      p2pSyncManager.broadcastCategory(updatedCat);
+      setCategories((prev) => prev.map((c) => (c.id === cat.id ? updatedCat : c)));
+      setActiveQuestionPickerCatId(null);
+      return;
+    }
+
+    const updatedCat: LogCategoryConfig = {
+      ...cat,
+      questionnaire: [
+        ...existing,
+        { id: template.id, label: template.label, required: template.defaultRequired, enabled: true },
+      ],
+    };
+
+    await db.saveCategory(updatedCat);
+    p2pSyncManager.broadcastCategory(updatedCat);
+    setCategories((prev) => prev.map((c) => (c.id === cat.id ? updatedCat : c)));
+    setActiveQuestionPickerCatId(null);
+  };
+
+  const handleUpdateCategoryIcon = async (cat: LogCategoryConfig, newIconId: string) => {
+    const updated: LogCategoryConfig = { ...cat, icon: newIconId };
+    await db.saveCategory(updated);
+    p2pSyncManager.broadcastCategory(updated);
+    setCategories((prev) => prev.map((c) => (c.id === cat.id ? updated : c)));
+    setIconPickerCatId(null);
   };
 
   const handleAddSubcatToCat = async (cat: LogCategoryConfig) => {
@@ -502,6 +712,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
       maxOpenDrawers: maxDrawers,
       autoPrintPdfOnClose: autoPrintPdfInput,
       autoPrintReceiptOnClose: autoPrintReceiptInput,
+      formFieldSettings,
     };
 
     await db.saveSettings(updated);
@@ -509,6 +720,45 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
     setSettings(updated);
     setSettingsSuccess(true);
     setTimeout(() => setSettingsSuccess(false), 3000);
+  };
+
+  const handleToggleFieldRequired = (key: FormFieldKey) => {
+    setFormFieldSettings((prev) => {
+      const merged = { ...DEFAULT_FORM_FIELD_SETTINGS, ...(prev || {}) };
+      const current = merged[key] || DEFAULT_FORM_FIELD_SETTINGS[key];
+      const updatedField = { ...current, required: !current.required };
+      const nextSettings = { ...merged, [key]: updatedField };
+      
+      // Auto-save and broadcast instantly
+      db.saveSettings({ ...settings, formFieldSettings: nextSettings }).then(() => {
+        p2pSyncManager.broadcastSettings({ ...settings, formFieldSettings: nextSettings });
+      });
+      return nextSettings;
+    });
+  };
+
+  const handleToggleFieldEnabled = (key: FormFieldKey) => {
+    setFormFieldSettings((prev) => {
+      const merged = { ...DEFAULT_FORM_FIELD_SETTINGS, ...(prev || {}) };
+      const current = merged[key] || DEFAULT_FORM_FIELD_SETTINGS[key];
+      const updatedField = { ...current, enabled: !current.enabled };
+      const nextSettings = { ...merged, [key]: updatedField };
+
+      // Auto-save and broadcast instantly
+      db.saveSettings({ ...settings, formFieldSettings: nextSettings }).then(() => {
+        p2pSyncManager.broadcastSettings({ ...settings, formFieldSettings: nextSettings });
+      });
+      return nextSettings;
+    });
+  };
+
+  const handleUpdateFieldLabel = (key: FormFieldKey, newLabel: string) => {
+    setFormFieldSettings((prev) => {
+      const merged = { ...DEFAULT_FORM_FIELD_SETTINGS, ...(prev || {}) };
+      const current = merged[key] || DEFAULT_FORM_FIELD_SETTINGS[key];
+      const updatedField = { ...current, label: newLabel };
+      return { ...merged, [key]: updatedField };
+    });
   };
 
   // Date range presets helper
@@ -948,7 +1198,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                   <Tag className="w-4 h-4 text-blue-600" />
                   <span>Create Custom Category</span>
                 </h3>
-                <form onSubmit={handleAddCategory} className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <form onSubmit={handleAddCategory} className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                   <div>
                     <label className="block text-[11px] font-semibold text-gray-600 dark:text-gray-400 mb-1">
                       Category Name *
@@ -961,6 +1211,22 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                       onChange={(e) => setNewCatName(e.target.value)}
                       className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-xs text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-gray-600 dark:text-gray-400 mb-1">
+                      Icon
+                    </label>
+                    <select
+                      value={newCatIcon}
+                      onChange={(e) => setNewCatIcon(e.target.value)}
+                      className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-xs text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      {CATEGORY_ICON_OPTIONS.map((opt) => (
+                        <option key={opt.id} value={opt.id}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                   <div className="sm:col-span-2">
                     <label className="block text-[11px] font-semibold text-gray-600 dark:text-gray-400 mb-1">
@@ -976,10 +1242,124 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                       />
                       <button
                         type="submit"
-                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition flex items-center space-x-1 shadow-sm whitespace-nowrap"
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition flex items-center space-x-1 shadow-sm whitespace-nowrap cursor-pointer"
                       >
                         <PlusCircle className="w-3.5 h-3.5" />
                         <span>Add Category</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Category Questionnaire Configuration on Creation */}
+                  <div className="sm:col-span-4 pt-3 border-t border-gray-200 dark:border-gray-700/80">
+                    <div className="flex items-center justify-between mb-2">
+                      <div>
+                        <div className="flex items-center space-x-1.5">
+                          <ListChecks className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                          <span className="text-xs font-bold text-gray-800 dark:text-gray-200">
+                            Category Questionnaire Fields & Required / Optional Settings
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
+                          Select the fields enabled for this category and mark each as Required (*) or Optional. You can change toggles anytime later.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                      {newCatQuestionnaire.map((q) => (
+                        <div
+                          key={q.id}
+                          className={`p-2 rounded-lg border text-xs flex items-center justify-between transition ${
+                            q.enabled
+                              ? 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 shadow-2xs'
+                              : 'bg-gray-100 dark:bg-gray-850 border-dashed border-gray-300 dark:border-gray-700 opacity-60'
+                          }`}
+                        >
+                          <div className="flex items-center space-x-2 overflow-hidden pr-1">
+                            <input
+                              type="checkbox"
+                              checked={q.enabled}
+                              onChange={() => handleToggleNewCatQuestionEnabled(q.id)}
+                              id={`newcat-field-${q.id}`}
+                              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                            />
+                            <label
+                              htmlFor={`newcat-field-${q.id}`}
+                              className={`text-[11px] cursor-pointer select-none truncate ${
+                                q.enabled ? 'font-medium text-gray-900 dark:text-white' : 'text-gray-400'
+                              }`}
+                            >
+                              {q.label}
+                            </label>
+                          </div>
+
+                          <div className="flex items-center space-x-1.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleNewCatQuestionRequired(q.id)}
+                              disabled={!q.enabled}
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold shrink-0 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                                q.required
+                                  ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-200 border border-amber-300 dark:border-amber-700 shadow-2xs'
+                                  : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-600 hover:bg-slate-200'
+                              }`}
+                              title="Click to toggle Required vs Optional"
+                            >
+                              {q.required ? 'Required *' : 'Optional'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveNewCatQuestion(q.id)}
+                              className="p-1 text-gray-400 hover:text-rose-600 rounded transition cursor-pointer"
+                              title="Remove this question"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Add Custom Question Field */}
+                    <div className="mt-3 p-2 bg-blue-50/50 dark:bg-blue-950/20 rounded-xl border border-blue-100 dark:border-blue-900/40 flex flex-wrap items-center gap-2">
+                      <span className="text-[11px] font-bold text-blue-900 dark:text-blue-300 flex items-center gap-1">
+                        <PlusCircle className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                        <span>Add Custom Field:</span>
+                      </span>
+                      <input
+                        type="text"
+                        placeholder="e.g. License Plate #, Keycard ID, Deposit Ref, Package #"
+                        value={newCatCustomQuestionLabel}
+                        onChange={(e) => setNewCatCustomQuestionLabel(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleAddNewCatCustomQuestion(newCatCustomQuestionLabel, newCatCustomQuestionRequired);
+                          }
+                        }}
+                        className="flex-1 min-w-[200px] px-2.5 py-1 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setNewCatCustomQuestionRequired(!newCatCustomQuestionRequired)}
+                        className={`px-2 py-1 rounded text-[10px] font-bold cursor-pointer transition ${
+                          newCatCustomQuestionRequired
+                            ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-200 border border-amber-300 dark:border-amber-700'
+                            : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-600 hover:bg-slate-200'
+                        }`}
+                        title="Set whether this custom question is Required or Optional"
+                      >
+                        {newCatCustomQuestionRequired ? 'Required *' : 'Optional'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleAddNewCatCustomQuestion(newCatCustomQuestionLabel, newCatCustomQuestionRequired)}
+                        disabled={!newCatCustomQuestionLabel.trim()}
+                        className="px-3 py-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white rounded-lg text-xs font-bold transition flex items-center space-x-1 cursor-pointer"
+                      >
+                        <PlusCircle className="w-3.5 h-3.5" />
+                        <span>Add Custom Field</span>
                       </button>
                     </div>
                   </div>
@@ -988,34 +1368,82 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
 
               {/* Categories Cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {categories.map((cat) => (
-                  <div
-                    key={cat.id}
-                    className="p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-xs"
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center space-x-2">
-                        <Tag className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                        <h4 className="font-bold text-xs text-gray-900 dark:text-white">
-                          {cat.name}
-                        </h4>
+                {categories.map((cat) => {
+                  const fallbackIcon = cat.id === 'cat_sales' ? 'Building2' : cat.id === 'cat_complaint' ? 'AlertTriangle' : 'Tag';
+                  const IconComp = getCategoryIconComponent(cat.icon, fallbackIcon);
+
+                  return (
+                    <div
+                      key={cat.id}
+                      className="p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-xs"
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center space-x-2">
+                          <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/50 flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0">
+                            <IconComp className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <h4 className="font-bold text-xs text-gray-900 dark:text-white">
+                              {cat.name}
+                            </h4>
+                            <span className="text-[10px] text-gray-400">
+                              Icon: {cat.icon || fallbackIcon}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          {/* Change Icon Button / Selector */}
+                          <div className="relative">
+                            <button
+                              type="button"
+                              onClick={() => setIconPickerCatId(iconPickerCatId === cat.id ? null : cat.id)}
+                              className="px-2 py-1 text-[11px] font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 rounded-md transition flex items-center space-x-1 cursor-pointer"
+                              title="Change Icon"
+                            >
+                              <span>Change Icon</span>
+                              <ChevronDown className="w-3 h-3" />
+                            </button>
+
+                            {iconPickerCatId === cat.id && (
+                              <div className="absolute right-0 top-8 z-30 w-60 p-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl animate-in fade-in zoom-in-95 grid grid-cols-4 gap-2">
+                                {CATEGORY_ICON_OPTIONS.map((opt) => {
+                                  const OptIcon = opt.icon;
+                                  const isCurrent = (cat.icon || fallbackIcon) === opt.id;
+                                  return (
+                                    <button
+                                      key={opt.id}
+                                      type="button"
+                                      onClick={() => handleUpdateCategoryIcon(cat, opt.id)}
+                                      title={opt.label}
+                                      className={`p-2 rounded-lg flex flex-col items-center justify-center transition cursor-pointer ${
+                                        isCurrent
+                                          ? 'bg-blue-600 text-white'
+                                          : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300'
+                                      }`}
+                                    >
+                                      <OptIcon className="w-4 h-4" />
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+
+                          <span className="text-[10px] text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full font-semibold">
+                            {cat.subcategories.length} subcategories
+                          </span>
+                          {cat.id !== 'cat_sales' && cat.id !== 'cat_complaint' && cat.id !== 'cat_misc' && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteCategory(cat)}
+                              className="p-1 text-gray-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition cursor-pointer"
+                              title="Delete this custom category"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
                       </div>
-                      <div className="flex items-center space-x-2">
-                        <span className="text-[10px] text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full font-semibold">
-                          {cat.subcategories.length} subcategories
-                        </span>
-                        {cat.id !== 'cat_sales' && cat.id !== 'cat_complaint' && cat.id !== 'cat_misc' && (
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteCategory(cat)}
-                            className="p-1 text-gray-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition cursor-pointer"
-                            title="Delete this custom category"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </div>
-                    </div>
 
                     <div className="flex flex-wrap gap-1.5 mb-3">
                       {cat.subcategories.map((sub) => (
@@ -1077,9 +1505,171 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                         <span>Add Subcategory</span>
                       </button>
                     )}
+
+                    {/* Form Questionnaire Configuration per Category */}
+                    {(() => {
+                      const catQuestions = (cat.questionnaire && cat.questionnaire.length > 0)
+                        ? cat.questionnaire
+                        : getDefaultQuestionnaireForCategory(cat.name);
+
+                      return (
+                        <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center space-x-1.5">
+                              <ListChecks className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                              <span className="text-[11px] font-bold text-gray-800 dark:text-gray-200">
+                                Form Questionnaire ({catQuestions.filter(q => q.enabled).length} Active)
+                              </span>
+                            </div>
+
+                            <div className="relative">
+                              <button
+                                type="button"
+                                onClick={() => setActiveQuestionPickerCatId(activeQuestionPickerCatId === cat.id ? null : cat.id)}
+                                className="text-[10px] text-blue-600 dark:text-blue-400 hover:underline font-semibold flex items-center space-x-1 cursor-pointer"
+                              >
+                                <PlusCircle className="w-3 h-3" />
+                                <span>Add Field</span>
+                              </button>
+
+                              {activeQuestionPickerCatId === cat.id && (
+                                <div className="absolute right-0 top-6 z-30 w-64 p-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl space-y-2">
+                                  {/* Custom Field Input */}
+                                  <div className="p-2 bg-blue-50/60 dark:bg-blue-950/40 rounded-lg border border-blue-100 dark:border-blue-900/50 space-y-1.5">
+                                    <div className="text-[10px] font-bold text-blue-900 dark:text-blue-300 flex items-center justify-between">
+                                      <span>Create Custom Field</span>
+                                      <button
+                                        type="button"
+                                        onClick={() => setCardCustomQuestionRequired(!cardCustomQuestionRequired)}
+                                        className={`px-1.5 py-0.2 rounded text-[9px] font-bold cursor-pointer ${
+                                          cardCustomQuestionRequired
+                                            ? 'bg-amber-200 text-amber-900'
+                                            : 'bg-white text-slate-600 border border-slate-200'
+                                        }`}
+                                      >
+                                        {cardCustomQuestionRequired ? 'Req *' : 'Opt'}
+                                      </button>
+                                    </div>
+                                    <div className="flex gap-1">
+                                      <input
+                                        type="text"
+                                        placeholder="e.g. License Plate #"
+                                        value={cardCustomQuestionLabel}
+                                        onChange={(e) => setCardCustomQuestionLabel(e.target.value)}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            handleAddCustomQuestionToCategory(cat, cardCustomQuestionLabel, cardCustomQuestionRequired);
+                                          }
+                                        }}
+                                        className="flex-1 px-2 py-1 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded text-gray-900 dark:text-white"
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => handleAddCustomQuestionToCategory(cat, cardCustomQuestionLabel, cardCustomQuestionRequired)}
+                                        disabled={!cardCustomQuestionLabel.trim()}
+                                        className="px-2 py-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white text-xs font-bold rounded cursor-pointer"
+                                      >
+                                        Add
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  <div className="text-[10px] font-bold text-gray-500 uppercase px-1 pb-1 border-b border-gray-100 dark:border-gray-700">
+                                    Standard Form Fields
+                                  </div>
+                                  <div className="max-h-36 overflow-y-auto space-y-0.5">
+                                    {[
+                                      { id: 'topic', label: 'Topic / Headline' },
+                                      { id: 'guestName', label: 'Guest / Contact Name' },
+                                      { id: 'phoneNumber', label: 'Phone Number' },
+                                      { id: 'email', label: 'Email Address' },
+                                      { id: 'roomNumber', label: 'Room / Area #' },
+                                      { id: 'reservationNumber', label: 'Reservation / Folio #' },
+                                      { id: 'dates', label: 'Stay Duration Dates' },
+                                      { id: 'roomRequirement', label: 'Room Count Needed' },
+                                      { id: 'clerkNotes', label: 'Handover / Clerk Notes' },
+                                      { id: 'reminder', label: 'Follow-up Due Date' },
+                                    ].map((item) => (
+                                      <button
+                                        key={item.id}
+                                        type="button"
+                                        onClick={() => handleAddQuestionToCategory(cat, item.id)}
+                                        className="w-full text-left px-2 py-1 text-xs rounded hover:bg-blue-50 dark:hover:bg-blue-900/30 text-gray-700 dark:text-gray-200 flex items-center justify-between cursor-pointer"
+                                      >
+                                        <span>{item.label}</span>
+                                        {catQuestions.some((q) => q.id === item.id && q.enabled) && (
+                                          <Check className="w-3 h-3 text-emerald-600" />
+                                        )}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="space-y-1.5 max-h-48 overflow-y-auto pr-0.5">
+                            {catQuestions.map((q) => (
+                              <div
+                                key={q.id}
+                                className={`px-2 py-1.5 rounded-lg border text-xs flex items-center justify-between transition ${
+                                  q.enabled
+                                    ? 'bg-gray-50/80 dark:bg-gray-750 border-gray-200 dark:border-gray-700'
+                                    : 'bg-gray-100 dark:bg-gray-800 border-dashed border-gray-300 dark:border-gray-700 opacity-50'
+                                }`}
+                              >
+                                <div className="flex items-center space-x-1.5 overflow-hidden pr-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleCategoryQuestionEnabled(cat, q.id)}
+                                    className="text-gray-400 hover:text-gray-600 cursor-pointer"
+                                    title={q.enabled ? 'Enabled in Form (click to hide)' : 'Hidden (click to show)'}
+                                  >
+                                    {q.enabled ? (
+                                      <ToggleRight className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                                    ) : (
+                                      <ToggleLeft className="w-4 h-4 text-gray-400" />
+                                    )}
+                                  </button>
+                                  <span className={`text-[11px] truncate ${q.enabled ? 'font-medium text-gray-800 dark:text-gray-200' : 'text-gray-400 line-through'}`}>
+                                    {q.label}
+                                  </span>
+                                </div>
+
+                                <div className="flex items-center space-x-1.5 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleCategoryQuestionRequired(cat, q.id)}
+                                    disabled={!q.enabled}
+                                    className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider shrink-0 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                                      q.required
+                                        ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-200 border border-amber-300 dark:border-amber-700 shadow-2xs'
+                                        : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-600 hover:bg-slate-200'
+                                    }`}
+                                    title="Click to toggle Required vs Optional"
+                                  >
+                                    {q.required ? 'Required *' : 'Optional'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveQuestionFromCategory(cat, q.id)}
+                                    className="p-1 text-gray-400 hover:text-rose-600 rounded transition cursor-pointer"
+                                    title="Remove this question from category"
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
-                ))}
-              </div>
+                );
+              })}
+            </div>
             </div>
           )}
 
@@ -1670,8 +2260,8 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
 
           {/* -------------------- TAB 5: SETTINGS -------------------- */}
           {activeTab === 'settings' && (
-            <div className="space-y-6 animate-fade-in max-w-lg">
-              <div className="bg-gray-50 dark:bg-gray-700/40 rounded-xl p-5 border border-gray-200 dark:border-gray-700">
+            <div className="space-y-6 animate-fade-in max-w-2xl mx-auto">
+              <div className="bg-gray-50 dark:bg-gray-700/40 rounded-xl p-5 border border-gray-200 dark:border-gray-700 shadow-xs">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-3 flex items-center space-x-1.5">
                   <Settings className="w-4 h-4 text-blue-600" />
                   <span>Platform & Multiplier Settings</span>
@@ -1713,7 +2303,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                       className="w-full px-3.5 py-2.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-xl text-sm font-semibold text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 tabular-nums"
                     />
                     <span className="text-[11px] text-gray-400 mt-1 block">
-                      Maximum number of cash drawers that can be open simultaneously across the property. When 1 drawer is open and the limit is 1, additional staff logging in will not be prompted to open a new drawer.
+                      Maximum number of cash drawers that can be open simultaneously across the property.
                     </span>
                   </div>
 
@@ -1735,7 +2325,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                       />
                     </div>
                     <span className="text-[11px] text-gray-400 mt-1 block">
-                      Default: $120.00 / night. Example: 10 rooms × 3 nights × $120 = $3,600 potential revenue.
+                      Default: $120.00 / night for pipeline calculations.
                     </span>
                   </div>
 
@@ -1750,10 +2340,10 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                       <div className="space-y-0.5 pr-2">
                         <div className="text-xs font-bold text-gray-900 dark:text-white flex items-center space-x-1.5">
                           <FileText className="w-4 h-4 text-rose-600" />
-                          <span>Auto-Print Executive PDF Audit Report</span>
+                          <span>Auto-Print PDF Report</span>
                         </div>
-                        <p className="text-[11px] text-gray-500 dark:text-gray-400">
-                          Automatically generates and downloads the formal shift reconciliation audit PDF with till breakdown, drops, handover logs, and signature lines when cashier closes shift.
+                        <p className="text-[10px] text-gray-500 dark:text-gray-400">
+                          Generate reconciliation report on close.
                         </p>
                       </div>
                       <label className="relative inline-flex items-center cursor-pointer shrink-0">
@@ -1772,10 +2362,10 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                       <div className="space-y-0.5 pr-2">
                         <div className="text-xs font-bold text-gray-900 dark:text-white flex items-center space-x-1.5">
                           <Printer className="w-4 h-4 text-blue-600" />
-                          <span>Auto-Print POS Thermal Receipt</span>
+                          <span>Auto-Print POS Receipt</span>
                         </div>
-                        <p className="text-[11px] text-gray-500 dark:text-gray-400">
-                          Automatically prints compact shift closing slip to connected thermal receipt printer.
+                        <p className="text-[10px] text-gray-500 dark:text-gray-400">
+                          Print closing slip to POS receipt printer.
                         </p>
                       </div>
                       <label className="relative inline-flex items-center cursor-pointer shrink-0">
@@ -1792,7 +2382,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
 
                   <button
                     type="submit"
-                    className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center space-x-2 cursor-pointer"
+                    className="w-full px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center justify-center space-x-2 cursor-pointer"
                   >
                     <Check className="w-4 h-4" />
                     <span>Save & Broadcast Settings</span>

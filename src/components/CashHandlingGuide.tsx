@@ -43,6 +43,14 @@ const FAQS: FAQItem[] = [
   {
     question: "How can cashiers avoid common counting errors?",
     answer: "Best practices include: 1) Count bills sorted in the same direction and face-up; 2) Double-count new or crisp bills that easily stick together; 3) Separate rolled coins from loose change; 4) Ensure all manual paper payout receipts or voucher slips are entered under the receipts section before finalizing the count."
+  },
+  {
+    question: "How do managers customize shift log questionnaire fields and add custom questions?",
+    answer: "Managers can navigate to Manager Console > Shift Log Categories. In this tab, managers can customize questions for each category (Sales, Complaint, Miscellaneous, or custom categories). Each field can be toggled between 'Required *' (mandatory submission) and 'Optional'. Furthermore, managers can type custom question prompts (e.g., 'Inspected By', 'Callback Time') and click '+ Add Question' to dynamically attach tailored questions to any category."
+  },
+  {
+    question: "How does the Browser Extension DOM Script Runner work for PMS reservation autofill?",
+    answer: "The FrontDesk Pro Browser Extension features a built-in DOM Script Runner under the '⚡ Script Runner & DOM Autofill' tab. Managers can upload or paste a JavaScript snippet that targets the DOM selectors of your Property Management System (PMS) or booking portal (e.g., Opera, Cloudbeds, WebRezPro). When triggered, the script extracts guest name, phone, room number, and reservation folio, instantly transferring them to the FrontDesk Pro log form without manual re-entry."
   }
 ];
 
@@ -177,6 +185,70 @@ export function CashHandlingGuide() {
                   </li>
                 </ul>
               </div>
+            </div>
+          </section>
+
+          {/* Step 4 */}
+          <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
+            <div className="flex items-center space-x-3 mb-4">
+              <span className="flex items-center justify-center w-8 h-8 rounded-full bg-blue-600 text-white font-bold text-sm">
+                4
+              </span>
+              <h2 className="text-2xl font-bold text-gray-900">
+                Customizing Shift Log Categories & Questionnaires
+              </h2>
+            </div>
+            <p className="text-gray-600 mb-4 leading-relaxed">
+              Every property has unique operational standards. Managers can customize each shift log category questionnaire to enforce data completeness and eliminate missed handoff information.
+            </p>
+            <div className="grid md:grid-cols-2 gap-4 bg-gray-50 p-4 rounded-lg border border-gray-100">
+              <div>
+                <h4 className="font-semibold text-gray-800 mb-2 flex items-center">
+                  <CheckCircle2 size={16} className="text-green-600 mr-1.5" />
+                  Mandatory vs. Optional Requirements
+                </h4>
+                <p className="text-sm text-gray-600 mb-2">
+                  In <strong>Manager Console &gt; Shift Log Categories</strong>, every standard and custom question has an interactive <strong>Required * / Optional</strong> toggle.
+                </p>
+                <ul className="text-sm text-gray-600 space-y-1">
+                  <li>• <strong>Required *:</strong> Blocks log creation until clerks provide essential operational data.</li>
+                  <li>• <strong>Optional:</strong> Displayed for convenience when details are available.</li>
+                </ul>
+              </div>
+              <div>
+                <h4 className="font-semibold text-gray-800 mb-2 flex items-center">
+                  <BookOpen size={16} className="text-blue-600 mr-1.5" />
+                  Adding Dynamic Custom Questions
+                </h4>
+                <p className="text-sm text-gray-600">
+                  Type any custom question label (e.g. <em>"Inspected By"</em>, <em>"Maintenance Priority"</em>, <em>"Callback Time"</em>) into the category card or creation panel and click <strong>+ Add Question</strong>. Custom questions immediately sync to the in-app log dialog and floating extension drawer.
+                </p>
+              </div>
+            </div>
+          </section>
+
+          {/* Step 5 */}
+          <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
+            <div className="flex items-center space-x-3 mb-4">
+              <span className="flex items-center justify-center w-8 h-8 rounded-full bg-blue-600 text-white font-bold text-sm">
+                5
+              </span>
+              <h2 className="text-2xl font-bold text-gray-900">
+                PMS Integration & DOM Script Runner
+              </h2>
+            </div>
+            <p className="text-gray-600 mb-4 leading-relaxed">
+              Front desk agents can capture guest complaints, shift notes, and group sales directly from the active reservation screen without switching windows or typing guest names and phone numbers manually.
+            </p>
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-l-4 border-indigo-600 p-5 rounded-r-lg space-y-3">
+              <h4 className="font-semibold text-indigo-950">Script Runner Procedure:</h4>
+              <ol className="text-sm text-indigo-900 list-decimal list-inside space-y-1.5">
+                <li>Install the FrontDesk Pro Browser Extension from the <strong>Extension</strong> button in the top navigation bar.</li>
+                <li>Open the <strong>⚡ Script Runner &amp; DOM Autofill</strong> tab in the extension modal or extension popup.</li>
+                <li>Upload or paste your PMS extractor JavaScript snippet (compatible with Opera, Cloudbeds, WebRezPro, and web reservation engines).</li>
+                <li>When viewing an active guest folio or reservation in your PMS tab, trigger <strong>Run Script Now</strong> or enable automatic execution.</li>
+                <li>The script parses the guest name, telephone, room number, and folio into the floating extension drawer instantly for fast 1-click submission.</li>
+              </ol>
             </div>
           </section>
         </div>

@@ -798,9 +798,11 @@ export function CashDrawer() {
         {/* -------------------- MAIN APP HEADER & USER PROFILE BAR -------------------- */}
         <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-5">
           <div>
-            <div className="flex items-center space-x-2">
-              <h1 className="text-xl sm:text-2xl font-semibold text-gray-900 dark:text-white tracking-tight">
-                FrontDesk Operations Platform
+            <div className="flex items-center space-x-2.5">
+              <img src="/favicon.png" alt="FrontDesk Pro" className="h-7 w-7 sm:h-8 sm:w-8 rounded-lg object-cover shadow-xs" />
+              <h1 className="text-xl sm:text-2xl font-black text-gray-900 dark:text-white tracking-tight flex items-center">
+                FrontDesk&nbsp;<span className="text-blue-600 dark:text-blue-500 font-black">Pro</span>
+                <span className="text-gray-600 dark:text-gray-300 font-bold ml-1.5 text-base sm:text-xl">Operations Platform</span>
               </h1>
               {selectedShift && (
                 <span className="hidden sm:inline-flex items-center space-x-1.5 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-xs font-medium px-2 py-0.5 rounded-md">

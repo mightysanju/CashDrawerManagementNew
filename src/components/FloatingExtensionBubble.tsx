@@ -8,9 +8,21 @@ import {
   ShieldCheck,
   User,
 } from 'lucide-react';
-import { ShiftLogEntry, UserAccount, PrimaryCategory, SalesLeadStatus, ComplaintStatus } from '../types';
-import { DatabaseManager } from '../utils/database';
+import { 
+  ShiftLogEntry, 
+  UserAccount, 
+  PrimaryCategory, 
+  SalesLeadStatus, 
+  ComplaintStatus,
+  LogCategoryConfig,
+  getDefaultQuestionnaireForCategory,
+  AppSettings,
+  FormFieldKey,
+  DEFAULT_FORM_FIELD_SETTINGS
+} from '../types';
+import { DatabaseManager, syncCategoriesToExtensionStorage } from '../utils/database';
 import { p2pSyncManager } from '../utils/p2pSyncManager';
+import { getCategoryIconComponent } from '../utils/categoryIcons';
 
 interface FloatingExtensionBubbleProps {
   currentUser: UserAccount | null;
@@ -44,6 +56,116 @@ export const FloatingExtensionBubble: React.FC<FloatingExtensionBubbleProps> = (
   const [clerkNotes, setClerkNotes] = useState('');
   const [hasReminder, setHasReminder] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [categories, setCategories] = useState<LogCategoryConfig[]>([]);
+  const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>({});
+  const [autofillToast, setAutofillToast] = useState<string | null>(null);
+
+  // Listen for Reservation DOM Script Runner Autofill Messages
+  useEffect(() => {
+    const handleAutofillMessage = (event: MessageEvent) => {
+      if (event.data && event.data.type === 'FRONTDESK_AUTOFILL_LOG' && event.data.data) {
+        const d = event.data.data;
+        if (d.category) setActiveCategory(d.category);
+        if (d.name) setName(d.name);
+        if (d.phoneNumber || d.phone) setPhone(d.phoneNumber || d.phone);
+        if (d.email) setEmail(d.email);
+        if (d.roomNumber) setRoomNumber(d.roomNumber);
+        if (d.reservationNumber) setReservationNumber(d.reservationNumber);
+        if (d.topic) setTopic(d.topic);
+        if (d.subCategory) setSubCategory(d.subCategory);
+        if (d.clerkNotes) setClerkNotes(d.clerkNotes);
+        if (d.customFields) setCustomFieldValues(d.customFields);
+        if (!isOpen) onToggle();
+        setAutofillToast('Autofilled from Reservation Page DOM Script!');
+        setTimeout(() => setAutofillToast(null), 4000);
+      }
+    };
+
+    window.addEventListener('message', handleAutofillMessage);
+    return () => window.removeEventListener('message', handleAutofillMessage);
+  }, [isOpen, onToggle]);
+
+  // Load categories and settings from DB and subscribe to peer sync
+  useEffect(() => {
+    const loadCategoriesAndSettings = async () => {
+      try {
+        const [cats, appSettings] = await Promise.all([
+          db.getCategories(),
+          db.getSettings(),
+        ]);
+        if (cats && cats.length > 0) {
+          setCategories(cats);
+          syncCategoriesToExtensionStorage(cats);
+        }
+        if (appSettings) {
+          setSettings(appSettings);
+        }
+      } catch (err) {
+        console.error('Failed to load extension bubble data:', err);
+      }
+    };
+
+    loadCategoriesAndSettings();
+
+    const unsubscribe = p2pSyncManager.subscribeData(() => {
+      loadCategoriesAndSettings();
+    });
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [isOpen]);
+
+  const currentCategoryConfig = useMemo(() => {
+    return categories.find((c) => c.name.toLowerCase() === activeCategory.toLowerCase());
+  }, [categories, activeCategory]);
+
+  const currentCategoryQuestionnaire = useMemo(() => {
+    if (currentCategoryConfig?.questionnaire && currentCategoryConfig.questionnaire.length > 0) {
+      return currentCategoryConfig.questionnaire;
+    }
+    return getDefaultQuestionnaireForCategory(activeCategory);
+  }, [currentCategoryConfig, activeCategory]);
+
+  const isFieldRequired = (key: string, defaultRequired: boolean = false): boolean => {
+    const item = currentCategoryQuestionnaire.find((q) => q.id === key);
+    if (item) {
+      return item.enabled !== false && item.required;
+    }
+    return defaultRequired;
+  };
+
+  const isFieldEnabled = (key: string, defaultEnabled: boolean = true): boolean => {
+    const item = currentCategoryQuestionnaire.find((q) => q.id === key);
+    if (item) {
+      return item.enabled !== false;
+    }
+    return defaultEnabled;
+  };
+
+  const getFieldLabel = (key: string, defaultLabel: string): string => {
+    const item = currentCategoryQuestionnaire.find((q) => q.id === key);
+    return item?.label || defaultLabel;
+  };
+
+  const standardQuestionIds = useMemo(() => new Set([
+    'guestName', 'phoneNumber', 'email', 'roomRequirement', 'dates',
+    'clerkNotes', 'reminder', 'roomNumber', 'reservationNumber', 'topic', 'subCategory'
+  ]), []);
+
+  const customQuestions = useMemo(() => {
+    return currentCategoryQuestionnaire.filter((q) => !standardQuestionIds.has(q.id) && q.enabled !== false);
+  }, [currentCategoryQuestionnaire, standardQuestionIds]);
+
+  const activeSubcategories = useMemo(() => {
+    if (currentCategoryConfig?.subcategories && currentCategoryConfig.subcategories.length > 0) {
+      return currentCategoryConfig.subcategories;
+    }
+    if (activeCategory === 'Sales') return ['Group', 'Wedding', 'Sports team', 'Company', 'Other'];
+    if (activeCategory === 'Complaint') return ['Room Maintenance', 'Noise / Disturbance', 'Billing & Folio', 'Housekeeping / Cleanliness', 'Staff / Service', 'Other'];
+    return ['General', 'Maintenance', 'Shift Handover', 'Front Desk', 'Other'];
+  }, [currentCategoryConfig, activeCategory]);
 
   // Movable Bubble State
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
@@ -242,8 +364,16 @@ export const FloatingExtensionBubble: React.FC<FloatingExtensionBubbleProps> = (
     } else {
       entry = {
         ...entry,
-        topic: topic.trim() || 'Shift Note',
+        topic: topic.trim() || `${activeCategory} Log`,
+        subCategory,
+        name: name.trim() || undefined,
+        phoneNumber: phone.trim() || undefined,
+        roomNumber: roomNumber.trim() || undefined,
       };
+    }
+
+    if (Object.keys(customFieldValues).length > 0) {
+      entry.customFields = customFieldValues;
     }
 
     await db.saveShiftLog(entry);
@@ -266,7 +396,7 @@ export const FloatingExtensionBubble: React.FC<FloatingExtensionBubbleProps> = (
 
   return (
     <>
-      {/* Floating Trigger Button (Movable Anywhere on Screen — Animated Log Book) */}
+      {/* Floating Trigger Button (Movable Anywhere on Screen — Free Floating Animated Log Book) */}
       <button
         id="fdp-inapp-bubble"
         data-fdp-inapp-bubble="true"
@@ -275,13 +405,13 @@ export const FloatingExtensionBubble: React.FC<FloatingExtensionBubbleProps> = (
         onClick={handleButtonClick}
         style={triggerStyle}
         title="FrontDesk Pro — Floating Shift Log Book (Drag to move anywhere)"
-        className={`group fixed ${!position ? 'bottom-6 right-6' : ''} w-13 h-14 p-1 rounded-2xl bg-slate-900/90 dark:bg-slate-900/95 hover:bg-slate-800 text-white shadow-xl flex items-center justify-center transition-all duration-200 z-50 border border-slate-700/70 backdrop-blur-md select-none ${
+        className={`group fixed ${!position ? 'bottom-6 right-6' : ''} p-0 bg-transparent hover:scale-105 active:scale-95 text-white flex items-center justify-center transition-all duration-200 z-50 select-none drop-shadow-2xl ${
           isDragging ? 'cursor-grabbing scale-105 rotate-3' : 'cursor-grab animate-logbook-float'
-        }`}
+        } ${isOpen ? 'book-open' : ''}`}
       >
         <svg
           viewBox="0 0 44 48"
-          className="w-10 h-11 pointer-events-none logbook-stack-3d transition-transform duration-300"
+          className="w-12 h-13 pointer-events-none logbook-stack-3d transition-transform duration-300"
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
         >
@@ -309,7 +439,7 @@ export const FloatingExtensionBubble: React.FC<FloatingExtensionBubbleProps> = (
             className="animate-ribbon-wave"
           />
 
-          {/* 3D Animated Front Cover (opens on hover) */}
+          {/* 3D Animated Front Cover (opens on hover and opens wide when form is open) */}
           <g className="logbook-cover-3d">
             {/* Front Leather Cover */}
             <rect x="5" y="4" width="32" height="39" rx="3.5" fill="url(#inapp-logbook-leather)" stroke="#334155" strokeWidth="0.8" />
@@ -324,10 +454,10 @@ export const FloatingExtensionBubble: React.FC<FloatingExtensionBubbleProps> = (
 
             {/* Debossed Gold/Navy Ledger Label Plate */}
             <rect x="13.5" y="12" width="18" height="15" rx="2" fill="#0f172a" stroke="#f59e0b" strokeWidth="0.75" />
-            {/* Front Desk Shift Log Header Icon / Emblem */}
-            <line x1="16" y1="16" x2="28" y2="16" stroke="#38bdf8" strokeWidth="1.2" strokeLinecap="round" />
-            <line x1="16" y1="19.5" x2="25.5" y2="19.5" stroke="#f1f5f9" strokeWidth="1" strokeLinecap="round" />
-            <line x1="16" y1="23" x2="27" y2="23" stroke="#94a3b8" strokeWidth="0.8" strokeLinecap="round" />
+            {/* Front Desk Shift Log Header Icon / Emblem with Blinking Text Lines */}
+            <line x1="16" y1="16" x2="28" y2="16" stroke="#38bdf8" strokeWidth="1.2" strokeLinecap="round" className="animate-book-text-blink" />
+            <line x1="16" y1="19.5" x2="25.5" y2="19.5" stroke="#f1f5f9" strokeWidth="1" strokeLinecap="round" className="animate-book-text-blink" style={{ animationDelay: '300ms' }} />
+            <line x1="16" y1="23" x2="27" y2="23" stroke="#94a3b8" strokeWidth="0.8" strokeLinecap="round" className="animate-book-text-blink" style={{ animationDelay: '600ms' }} />
 
             {/* Metal Corner Accent Protectors */}
             <path d="M33 4.5 L36.5 4.5 L36.5 8 Z" fill="#94a3b8" opacity="0.6" />
@@ -342,27 +472,24 @@ export const FloatingExtensionBubble: React.FC<FloatingExtensionBubbleProps> = (
             </linearGradient>
           </defs>
         </svg>
-
-        {/* Live Network Beacon (Pulsing Emerald) */}
-        <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5 pointer-events-none">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-          <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-emerald-500 border-2 border-white dark:border-slate-900"></span>
-        </span>
       </button>
 
-      {/* Floating Modal Panel (Dynamically Positioned Relative to Bubble) */}
+      {/* Floating Modal Panel (Emerges smoothly from Open Book) */}
       {isOpen && (
         <div 
           style={modalStyle}
-          className={`fixed ${!position ? 'bottom-20 right-6' : ''} w-96 max-w-[calc(100vw-32px)] max-h-[calc(100vh-120px)] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-lg overflow-hidden z-50 flex flex-col animate-in fade-in duration-100`}
+          className={`fixed ${!position ? 'bottom-20 right-6' : ''} w-96 max-w-[calc(100vw-32px)] max-h-[calc(100vh-120px)] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl overflow-hidden z-50 flex flex-col animate-in zoom-in-75 fade-in duration-200 origin-bottom-right`}
         >
           {/* Header */}
           <div className="bg-slate-900 text-white p-3 flex items-center justify-between border-b border-slate-800">
-            <div className="flex items-center space-x-2">
-              <img src="/favicon.png" alt="FrontDesk Pro" className="w-4 h-4 rounded" />
+            <div className="flex items-center space-x-2.5">
+              <img src="/favicon.png" alt="FrontDesk Pro" className="w-5 h-5 rounded-md object-cover shadow-xs" />
               <div>
-                <h4 className="text-xs font-semibold tracking-tight">FrontDesk Pro — Quick Log</h4>
-                <p className="text-[10px] text-slate-400">Shift Notes & Lead Capture</p>
+                <h4 className="text-sm font-black tracking-tight text-white flex items-center">
+                  FrontDesk&nbsp;<span className="text-blue-400">Pro</span>
+                  <span className="text-slate-400 font-normal text-xs ml-1.5">— Quick Log</span>
+                </h4>
+                <p className="text-[10px] text-slate-400">Shift Notes, Complaints & Lead Capture</p>
               </div>
             </div>
             <button
@@ -372,6 +499,14 @@ export const FloatingExtensionBubble: React.FC<FloatingExtensionBubbleProps> = (
               <X className="w-3.5 h-3.5" />
             </button>
           </div>
+
+          {/* Autofill Notification Banner */}
+          {autofillToast && (
+            <div className="bg-emerald-600 text-white px-3 py-1.5 text-xs font-semibold flex items-center space-x-1.5 animate-in fade-in">
+              <Check className="w-3.5 h-3.5 shrink-0" />
+              <span>{autofillToast}</span>
+            </div>
+          )}
 
           {/* Staff Login Indicator */}
           {currentUser ? (
@@ -436,38 +571,38 @@ export const FloatingExtensionBubble: React.FC<FloatingExtensionBubbleProps> = (
             </div>
           ) : (
             <>
-              {/* Category Tabs */}
-              <div className="flex p-1 m-3 bg-gray-100 rounded-xl gap-1 text-xs">
-                <button
-                  type="button"
-                  onClick={() => setActiveCategory('Sales')}
-                  className={`flex-1 py-1.5 px-2 rounded-lg font-semibold flex items-center justify-center space-x-1 transition ${
-                    activeCategory === 'Sales' ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-600 hover:text-gray-900'
-                  }`}
-                >
-                  <Building2 className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Sales</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveCategory('Complaint')}
-                  className={`flex-1 py-1.5 px-2 rounded-lg font-semibold flex items-center justify-center space-x-1 transition ${
-                    activeCategory === 'Complaint' ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-600 hover:text-gray-900'
-                  }`}
-                >
-                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-                  <span>Complaint</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveCategory('Miscellaneous')}
-                  className={`flex-1 py-1.5 px-2 rounded-lg font-semibold flex items-center justify-center space-x-1 transition ${
-                    activeCategory === 'Miscellaneous' ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-600 hover:text-gray-900'
-                  }`}
-                >
-                  <Tag className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>Note</span>
-                </button>
+              {/* Category Tabs (Dynamically Synced with Manager Created Categories) */}
+              <div className="flex p-1 m-3 bg-gray-100 dark:bg-gray-800 rounded-xl gap-1 text-xs overflow-x-auto no-scrollbar">
+                {(categories.length > 0 ? categories : [
+                  { id: 'cat_sales', name: 'Sales', icon: 'Building2' },
+                  { id: 'cat_complaint', name: 'Complaint', icon: 'AlertTriangle' },
+                  { id: 'cat_misc', name: 'Miscellaneous', icon: 'Tag' }
+                ]).map((cat) => {
+                  const isSelected = activeCategory.toLowerCase() === cat.name.toLowerCase();
+                  const IconComp = getCategoryIconComponent(cat.icon);
+                  return (
+                    <button
+                      key={cat.id || cat.name}
+                      type="button"
+                      onClick={() => {
+                        setActiveCategory(cat.name);
+                        if (cat.subcategories && cat.subcategories.length > 0) {
+                          setSubCategory(cat.subcategories[0]);
+                        }
+                      }}
+                      className={`flex-1 min-w-[72px] py-1.5 px-2 rounded-lg font-semibold flex items-center justify-center space-x-1 whitespace-nowrap transition cursor-pointer ${
+                        isSelected 
+                          ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-xs' 
+                          : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                      }`}
+                    >
+                      <IconComp className={`w-3.5 h-3.5 shrink-0 ${
+                        cat.name === 'Sales' ? 'text-emerald-600' : cat.name === 'Complaint' ? 'text-rose-600' : 'text-indigo-600'
+                      }`} />
+                      <span className="truncate">{cat.name}</span>
+                    </button>
+                  );
+                })}
               </div>
 
           {/* Form Body */}
@@ -476,24 +611,27 @@ export const FloatingExtensionBubble: React.FC<FloatingExtensionBubbleProps> = (
             {activeCategory === 'Sales' && (
               <>
                 <div>
-                  <label className="font-semibold text-gray-700 block mb-1">Subcategory</label>
+                  <label className="font-semibold text-gray-700 block mb-1">
+                    {getFieldLabel('subCategory', 'Subcategory')} {isFieldRequired('subCategory', true) ? '*' : '(Optional)'}
+                  </label>
                   <select
                     value={subCategory}
                     onChange={(e) => setSubCategory(e.target.value)}
                     className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
                   >
-                    <option value="Group">Group Booking</option>
-                    <option value="Wedding">Wedding Party</option>
-                    <option value="Sports team">Sports Team</option>
-                    <option value="Company">Company / Corporate</option>
+                    {activeSubcategories.map((sub) => (
+                      <option key={sub} value={sub}>{sub}</option>
+                    ))}
                   </select>
                 </div>
 
                 <div>
-                  <label className="font-semibold text-gray-700 block mb-1">Lead / Contact Name *</label>
+                  <label className="font-semibold text-gray-700 block mb-1">
+                    {getFieldLabel('guestName', 'Lead / Contact Name')} {isFieldRequired('guestName', true) ? '*' : '(Optional)'}
+                  </label>
                   <input
                     type="text"
-                    required
+                    required={isFieldRequired('guestName', true)}
                     placeholder="e.g. Acme Tech Conference"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
@@ -503,10 +641,12 @@ export const FloatingExtensionBubble: React.FC<FloatingExtensionBubbleProps> = (
 
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="font-semibold text-gray-700 block mb-1">Phone *</label>
+                    <label className="font-semibold text-gray-700 block mb-1">
+                      {getFieldLabel('phoneNumber', 'Phone')} {isFieldRequired('phoneNumber', true) ? '*' : '(Optional)'}
+                    </label>
                     <input
                       type="text"
-                      required
+                      required={isFieldRequired('phoneNumber', true)}
                       placeholder="(555) 000-0000"
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
@@ -514,10 +654,12 @@ export const FloatingExtensionBubble: React.FC<FloatingExtensionBubbleProps> = (
                     />
                   </div>
                   <div>
-                    <label className="font-semibold text-gray-700 block mb-1">Email *</label>
+                    <label className="font-semibold text-gray-700 block mb-1">
+                      {getFieldLabel('email', 'Email')} {isFieldRequired('email', false) ? '*' : '(Optional)'}
+                    </label>
                     <input
                       type="email"
-                      required
+                      required={isFieldRequired('email', false)}
                       placeholder="name@domain.com"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
@@ -528,18 +670,24 @@ export const FloatingExtensionBubble: React.FC<FloatingExtensionBubbleProps> = (
 
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="font-semibold text-gray-700 block mb-1">Check-in</label>
+                    <label className="font-semibold text-gray-700 block mb-1">
+                      Target Check-In {isFieldRequired('dates', false) ? '*' : '(Optional)'}
+                    </label>
                     <input
                       type="date"
+                      required={isFieldRequired('dates', false)}
                       value={checkInDate}
                       onChange={(e) => setCheckInDate(e.target.value)}
                       className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
                     />
                   </div>
                   <div>
-                    <label className="font-semibold text-gray-700 block mb-1">Check-out</label>
+                    <label className="font-semibold text-gray-700 block mb-1">
+                      Target Check-Out {isFieldRequired('dates', false) ? '*' : '(Optional)'}
+                    </label>
                     <input
                       type="date"
+                      required={isFieldRequired('dates', false)}
                       value={checkOutDate}
                       onChange={(e) => setCheckOutDate(e.target.value)}
                       className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
@@ -549,10 +697,13 @@ export const FloatingExtensionBubble: React.FC<FloatingExtensionBubbleProps> = (
 
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="font-semibold text-gray-700 block mb-1">Rooms</label>
+                    <label className="font-semibold text-gray-700 block mb-1">
+                      {getFieldLabel('roomRequirement', 'Rooms')} {isFieldRequired('roomRequirement', true) ? '*' : '(Optional)'}
+                    </label>
                     <input
                       type="number"
                       min="1"
+                      required={isFieldRequired('roomRequirement', true)}
                       value={roomRequirement}
                       onChange={(e) => setRoomRequirement(parseInt(e.target.value, 10) || 1)}
                       className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
@@ -585,10 +736,27 @@ export const FloatingExtensionBubble: React.FC<FloatingExtensionBubbleProps> = (
             {activeCategory === 'Complaint' && (
               <>
                 <div>
-                  <label className="font-semibold text-gray-700 block mb-1">Guest Name *</label>
+                  <label className="font-semibold text-gray-700 block mb-1">
+                    {getFieldLabel('subCategory', 'Issue Type')} {isFieldRequired('subCategory', true) ? '*' : '(Optional)'}
+                  </label>
+                  <select
+                    value={subCategory}
+                    onChange={(e) => setSubCategory(e.target.value)}
+                    className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 mb-2"
+                  >
+                    {activeSubcategories.map((sub) => (
+                      <option key={sub} value={sub}>{sub}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="font-semibold text-gray-700 block mb-1">
+                    {getFieldLabel('guestName', 'Guest Name')} {isFieldRequired('guestName', true) ? '*' : '(Optional)'}
+                  </label>
                   <input
                     type="text"
-                    required
+                    required={isFieldRequired('guestName', true)}
                     placeholder="Guest Full Name"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
@@ -598,10 +766,12 @@ export const FloatingExtensionBubble: React.FC<FloatingExtensionBubbleProps> = (
 
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="font-semibold text-gray-700 block mb-1">Phone *</label>
+                    <label className="font-semibold text-gray-700 block mb-1">
+                      {getFieldLabel('phoneNumber', 'Phone')} {isFieldRequired('phoneNumber', true) ? '*' : '(Optional)'}
+                    </label>
                     <input
                       type="text"
-                      required
+                      required={isFieldRequired('phoneNumber', true)}
                       placeholder="(555) 000-0000"
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
@@ -609,9 +779,12 @@ export const FloatingExtensionBubble: React.FC<FloatingExtensionBubbleProps> = (
                     />
                   </div>
                   <div>
-                    <label className="font-semibold text-gray-700 block mb-1">Room #</label>
+                    <label className="font-semibold text-gray-700 block mb-1">
+                      {getFieldLabel('roomNumber', 'Room #')} {isFieldRequired('roomNumber', false) ? '*' : '(Optional)'}
+                    </label>
                     <input
                       type="text"
+                      required={isFieldRequired('roomNumber', false)}
                       placeholder="e.g. 214"
                       value={roomNumber}
                       onChange={(e) => setRoomNumber(e.target.value)}
@@ -621,9 +794,12 @@ export const FloatingExtensionBubble: React.FC<FloatingExtensionBubbleProps> = (
                 </div>
 
                 <div>
-                  <label className="font-semibold text-gray-700 block mb-1">Reservation # (Optional)</label>
+                  <label className="font-semibold text-gray-700 block mb-1">
+                    {getFieldLabel('reservationNumber', 'Reservation #')} {isFieldRequired('reservationNumber', false) ? '*' : '(Optional)'}
+                  </label>
                   <input
                     type="text"
+                    required={isFieldRequired('reservationNumber', false)}
                     placeholder="e.g. RES-49102"
                     value={reservationNumber}
                     onChange={(e) => setReservationNumber(e.target.value)}
@@ -633,26 +809,104 @@ export const FloatingExtensionBubble: React.FC<FloatingExtensionBubbleProps> = (
               </>
             )}
 
-            {/* MISC FIELDS */}
-            {activeCategory === 'Miscellaneous' && (
-              <div>
-                <label className="font-semibold text-gray-700 block mb-1">Topic / Subject *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Parking gate key, Luggage drop"
-                  value={topic}
-                  onChange={(e) => setTopic(e.target.value)}
-                  className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
+            {/* CUSTOM CATEGORY OR MISCELLANEOUS FIELDS */}
+            {activeCategory !== 'Sales' && activeCategory !== 'Complaint' && (
+              <>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="font-semibold text-gray-700 block mb-1">
+                      {getFieldLabel('topic', 'Topic / Subject')} {isFieldRequired('topic', false) ? '*' : '(Optional)'}
+                    </label>
+                    <input
+                      type="text"
+                      required={isFieldRequired('topic', false)}
+                      placeholder={`e.g. ${activeCategory} note`}
+                      value={topic}
+                      onChange={(e) => setTopic(e.target.value)}
+                      className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-semibold text-gray-700 block mb-1">
+                      {getFieldLabel('subCategory', 'Subcategory')} {isFieldRequired('subCategory', true) ? '*' : '(Optional)'}
+                    </label>
+                    <select
+                      value={subCategory}
+                      onChange={(e) => setSubCategory(e.target.value)}
+                      className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    >
+                      {activeSubcategories.map((sub) => (
+                        <option key={sub} value={sub}>{sub}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="font-semibold text-gray-700 block mb-1">
+                      {getFieldLabel('guestName', 'Contact / Guest')} {isFieldRequired('guestName', false) ? '*' : '(Optional)'}
+                    </label>
+                    <input
+                      type="text"
+                      required={isFieldRequired('guestName', false)}
+                      placeholder="e.g. Staff or guest"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-semibold text-gray-700 block mb-1">
+                      {getFieldLabel('roomNumber', 'Room #')} {isFieldRequired('roomNumber', false) ? '*' : '(Optional)'}
+                    </label>
+                    <input
+                      type="text"
+                      required={isFieldRequired('roomNumber', false)}
+                      placeholder="e.g. 102"
+                      value={roomNumber}
+                      onChange={(e) => setRoomNumber(e.target.value)}
+                      className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Custom Category Questionnaire Questions */}
+            {customQuestions.length > 0 && (
+              <div className="p-2.5 bg-blue-50/70 border border-blue-200 rounded-xl space-y-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-blue-900 block">
+                  Additional Fields ({customQuestions.length})
+                </span>
+                <div className="grid grid-cols-2 gap-2">
+                  {customQuestions.map((q) => (
+                    <div key={q.id}>
+                      <label className="font-semibold text-gray-700 block mb-1 text-[11px] truncate">
+                        {q.label} {q.required ? <span className="text-rose-500 font-bold">*</span> : <span className="text-gray-400 font-normal text-[10px]">(Opt)</span>}
+                      </label>
+                      <input
+                        type="text"
+                        required={q.required}
+                        placeholder={`Enter ${q.label}...`}
+                        value={customFieldValues[q.id] || ''}
+                        onChange={(e) => setCustomFieldValues({ ...customFieldValues, [q.id]: e.target.value })}
+                        className="w-full px-2.5 py-1.5 text-xs bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      />
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
             {/* Notes */}
             <div>
-              <label className="font-semibold text-gray-700 block mb-1">Clerk Notes / Context</label>
+              <label className="font-semibold text-gray-700 block mb-1">
+                {getFieldLabel('clerkNotes', 'Clerk Notes / Context')} {isFieldRequired('clerkNotes', false) ? '*' : '(Optional)'}
+              </label>
               <textarea
                 rows={2}
+                required={isFieldRequired('clerkNotes', false)}
                 placeholder="Details, special requests, or handover notes..."
                 value={clerkNotes}
                 onChange={(e) => setClerkNotes(e.target.value)}

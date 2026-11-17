@@ -64,7 +64,37 @@
     checkAndSyncSession();
     setInterval(checkAndSyncSession, 1500);
 
-    // Listen for direct postMessage from React main world (e.g. from authManager)
+    // Sync categories from web app to chrome.storage
+    function syncCategoriesToExtension(cats) {
+      if (!Array.isArray(cats) || cats.length === 0) return;
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+        chrome.storage.local.set({ frontdesk_categories: cats });
+        if (chrome.runtime && chrome.runtime.sendMessage) {
+          chrome.runtime.sendMessage({ type: 'FDP_CATEGORIES_CHANGED', categories: cats }).catch(() => {});
+        }
+      }
+    }
+
+    let lastCategoriesCache = null;
+    function checkAndSyncCategories() {
+      try {
+        const raw = localStorage.getItem('frontdesk_categories_cache');
+        if (raw && raw !== lastCategoriesCache) {
+          lastCategoriesCache = raw;
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            syncCategoriesToExtension(parsed);
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    checkAndSyncCategories();
+    setInterval(checkAndSyncCategories, 1500);
+
+    // Listen for direct postMessage from React main world (e.g. from authManager or database)
     window.addEventListener('message', (event) => {
       if (event.source !== window || !event.data || typeof event.data !== 'object') return;
 
@@ -72,6 +102,14 @@
         const user = event.data.user;
         lastSyncedUserId = user ? user.id : null;
         syncUserToExtension(user);
+      }
+
+      if (event.data.type === 'FDP_CATEGORIES_SYNC') {
+        const cats = event.data.categories;
+        if (Array.isArray(cats) && cats.length > 0) {
+          lastCategoriesCache = JSON.stringify(cats);
+          syncCategoriesToExtension(cats);
+        }
       }
 
       // Purge extension log storage when requested by app during database reset
@@ -143,7 +181,7 @@
   root.innerHTML = `
     <!-- Floating Circle Trigger (Animated Log Book) -->
     <div class="fdp-floating-trigger" id="fdp-trigger" title="FrontDesk Pro — Quick Log Shift & Sales Lead">
-      <svg class="fdp-logbook-svg logbook-stack-3d" viewBox="0 0 44 48" width="36" height="40" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <svg class="fdp-logbook-svg logbook-stack-3d" viewBox="0 0 44 48" width="44" height="48" fill="none" xmlns="http://www.w3.org/2000/svg">
         <ellipse cx="22" cy="45" rx="14" ry="2" fill="rgba(0,0,0,0.35)" />
         <rect x="7" y="5" width="31" height="37" rx="3" fill="#0b1120" />
         <rect x="9" y="6" width="30" height="35" rx="2" fill="#f8fafc" stroke="#cbd5e1" stroke-width="0.75" />
@@ -162,9 +200,9 @@
           <line x1="6.5" y1="23.5" x2="9.5" y2="23.5" stroke="#f59e0b" stroke-width="1.2" stroke-linecap="round" />
           <line x1="6.5" y1="36" x2="9.5" y2="36" stroke="#f59e0b" stroke-width="1.2" stroke-linecap="round" />
           <rect x="13.5" y="12" width="18" height="15" rx="2" fill="#0f172a" stroke="#f59e0b" stroke-width="0.75" />
-          <line x1="16" y1="16" x2="28" y2="16" stroke="#38bdf8" stroke-width="1.2" stroke-linecap="round" />
-          <line x1="16" y1="19.5" x2="25.5" y2="19.5" stroke="#f1f5f9" stroke-width="1" stroke-linecap="round" />
-          <line x1="16" y1="23" x2="27" y2="23" stroke="#94a3b8" stroke-width="0.8" stroke-linecap="round" />
+          <line x1="16" y1="16" x2="28" y2="16" stroke="#38bdf8" stroke-width="1.2" stroke-linecap="round" class="fdp-book-text-line fdp-line-1" />
+          <line x1="16" y1="19.5" x2="25.5" y2="19.5" stroke="#f1f5f9" stroke-width="1" stroke-linecap="round" class="fdp-book-text-line fdp-line-2" />
+          <line x1="16" y1="23" x2="27" y2="23" stroke="#94a3b8" stroke-width="0.8" stroke-linecap="round" class="fdp-book-text-line fdp-line-3" />
           <path d="M33 4.5 L36.5 4.5 L36.5 8 Z" fill="#94a3b8" opacity="0.6" />
           <path d="M33 42.5 L36.5 42.5 L36.5 39 Z" fill="#94a3b8" opacity="0.6" />
         </g>
@@ -176,7 +214,6 @@
           </linearGradient>
         </defs>
       </svg>
-      <div class="fdp-trigger-badge" id="fdp-badge" title="Status"></div>
     </div>
 
     <!-- Floating Form Modal -->
@@ -218,20 +255,7 @@
 
       <!-- Form Content (Shown only when user IS logged in) -->
       <div id="fdp-form-container" style="display: none;">
-        <div class="fdp-tabs">
-          <button class="fdp-tab active" data-cat="Sales">
-            <span class="fdp-tab-dot fdp-dot-sales"></span>
-            <span>Sales Lead</span>
-          </button>
-          <button class="fdp-tab" data-cat="Complaint">
-            <span class="fdp-tab-dot fdp-dot-complaint"></span>
-            <span>Complaint</span>
-          </button>
-          <button class="fdp-tab" data-cat="Miscellaneous">
-            <span class="fdp-tab-dot fdp-dot-misc"></span>
-            <span>Shift Note</span>
-          </button>
-        </div>
+        <div class="fdp-tabs" id="fdp-tabs-bar"></div>
 
         <form class="fdp-body" id="fdp-form">
           <!-- SALES FIELDS -->
@@ -322,17 +346,41 @@
             </div>
           </div>
 
-          <!-- MISCELLANEOUS / SHIFT NOTES -->
+          <!-- MISCELLANEOUS / CUSTOM CATEGORY FIELDS -->
           <div id="fdp-misc-fields" style="display: none;">
-            <div class="fdp-field">
-              <label class="fdp-label">Topic / Subject *</label>
-              <input type="text" class="fdp-input" id="fdp-misc-topic" placeholder="e.g. Package delivery for Rm 204" />
+            <div class="fdp-grid-2">
+              <div class="fdp-field">
+                <label class="fdp-label" id="fdp-misc-topic-label">Task / Item Summary *</label>
+                <input type="text" class="fdp-input" id="fdp-misc-topic" placeholder="e.g. Maintenance note" />
+              </div>
+              <div class="fdp-field">
+                <label class="fdp-label">Subcategory *</label>
+                <select class="fdp-select" id="fdp-custom-subcat">
+                  <option value="General">General</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="fdp-grid-2" style="margin-top:6px;">
+              <div class="fdp-field">
+                <label class="fdp-label">Staff / Guest Contact (Optional)</label>
+                <input type="text" class="fdp-input" id="fdp-custom-name" placeholder="e.g. Staff or guest" />
+              </div>
+              <div class="fdp-field">
+                <label class="fdp-label">Room / Area (Optional)</label>
+                <input type="text" class="fdp-input" id="fdp-custom-room" placeholder="e.g. 102" />
+              </div>
+            </div>
+
+            <div id="fdp-custom-questions-wrap" style="display:none; margin-top:8px; padding:8px 10px; background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px;">
+              <span id="fdp-custom-q-heading" style="font-size:10px; font-weight:700; text-transform:uppercase; color:#1e40af; display:block; margin-bottom:6px;">Additional Fields</span>
+              <div id="fdp-custom-questions-list" style="display:grid; grid-template-columns:1fr 1fr; gap:6px;"></div>
             </div>
           </div>
 
           <!-- COMMON NOTES & REMINDER -->
           <div class="fdp-field" style="margin-top:6px;">
-            <label class="fdp-label">Staff Notes / Action Taken</label>
+            <label class="fdp-label" id="fdp-notes-label">Staff Notes / Action Taken</label>
             <textarea class="fdp-textarea" id="fdp-notes" placeholder="Detailed handover notes, guest feedback, or follow-up needed..."></textarea>
           </div>
 
@@ -363,20 +411,29 @@
   const formContainer = document.getElementById('fdp-form-container');
   const openAppBtn = document.getElementById('fdp-open-app-btn');
   const form = document.getElementById('fdp-form');
-  const tabs = root.querySelectorAll('.fdp-tab');
 
   const salesFields = document.getElementById('fdp-sales-fields');
   const compFields = document.getElementById('fdp-complaint-fields');
   const miscFields = document.getElementById('fdp-misc-fields');
 
+  // Default categories in case storage is not populated yet
+  const DEFAULT_CATEGORIES = [
+    { id: 'cat_sales', name: 'Sales', icon: 'Building2', subcategories: ['Group', 'Wedding', 'Sports team', 'Company', 'Bus Tour', 'Family Reunion'] },
+    { id: 'cat_complaint', name: 'Complaint', icon: 'AlertTriangle', subcategories: ['Room Maintenance', 'Noise / Disturbance', 'Billing & Folio', 'Housekeeping / Cleanliness', 'Staff / Service', 'Other'] },
+    { id: 'cat_misc', name: 'Miscellaneous', icon: 'Tag', subcategories: ['Shift Handover', 'Package Delivery', 'Lost & Found', 'Maintenance Request', 'Manager Note'] }
+  ];
+
+  let currentCategories = [...DEFAULT_CATEGORIES];
   let activeCat = 'Sales';
 
   // Render Login State inside Bubble
   function renderStaffState() {
     if (currentStaff && currentStaff.fullName) {
       // User IS logged in
-      badge.style.background = '#10b981';
-      badge.title = `Logged in as ${currentStaff.fullName}`;
+      if (badge) {
+        badge.style.background = '#10b981';
+        badge.title = `Logged in as ${currentStaff.fullName}`;
+      }
       staffContainer.innerHTML = `
         <div class="fdp-staff-bar">
           <div>
@@ -390,8 +447,10 @@
       formContainer.style.display = 'block';
     } else {
       // User is NOT logged in
-      badge.style.background = '#f59e0b';
-      badge.title = 'Not Signed In — Click to Sign In';
+      if (badge) {
+        badge.style.background = '#f59e0b';
+        badge.title = 'Not Signed In — Click to Sign In';
+      }
       staffContainer.innerHTML = `
         <div class="fdp-staff-bar" style="background:#fef3c7; border-bottom:1px solid #fde68a; color:#92400e; display:flex; align-items:center; justify-content:space-between;">
           <div style="display:flex; align-items:center; gap:6px;">
@@ -417,20 +476,217 @@
     }
   }
 
-  // Initial staff load from chrome storage
+  function getCategoryEmoji(iconName, catName) {
+    const norm = (iconName || catName || '').toLowerCase();
+    if (norm.includes('wait') || norm.includes('trophy')) return '🏆';
+    if (norm.includes('sale') || norm.includes('build') || norm.includes('lead')) return '🏢';
+    if (norm.includes('complaint') || norm.includes('alert') || norm.includes('warn')) return '🏷️';
+    if (norm.includes('star')) return '⭐';
+    if (norm.includes('bell')) return '🔔';
+    if (norm.includes('key')) return '🔑';
+    if (norm.includes('dollar') || norm.includes('cash')) return '💵';
+    return '🏷️';
+  }
+
+  function getCategoryLabel(catName) {
+    if (catName === 'Sales') return 'Sales';
+    if (catName === 'Complaint') return 'Complaint';
+    if (catName === 'Miscellaneous') return 'Shift Note';
+    return catName;
+  }
+
+  function renderCategoryTabs() {
+    const tabsBar = document.getElementById('fdp-tabs-bar');
+    if (!tabsBar) return;
+    tabsBar.innerHTML = '';
+
+    const list = (currentCategories && currentCategories.length > 0) ? currentCategories : DEFAULT_CATEGORIES;
+
+    // Ensure activeCat exists in list, else default to first
+    const hasActive = list.some((c) => c.name.toLowerCase() === activeCat.toLowerCase());
+    if (!hasActive && list.length > 0) {
+      activeCat = list[0].name;
+    }
+
+    list.forEach((cat) => {
+      const isSelected = activeCat.toLowerCase() === cat.name.toLowerCase();
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `fdp-tab ${isSelected ? 'active' : ''}`;
+      btn.setAttribute('data-cat', cat.name);
+
+      const emojiSpan = document.createElement('span');
+      emojiSpan.style.cssText = 'display:inline-block; font-size:12px; margin-right:3px;';
+      emojiSpan.textContent = getCategoryEmoji(cat.icon, cat.name);
+
+      const textSpan = document.createElement('span');
+      textSpan.textContent = getCategoryLabel(cat.name);
+
+      btn.appendChild(emojiSpan);
+      btn.appendChild(textSpan);
+
+      btn.addEventListener('click', () => {
+        selectCategory(cat.name);
+      });
+
+      tabsBar.appendChild(btn);
+    });
+
+    updateFormFieldsForActiveCategory();
+  }
+
+  function selectCategory(categoryName) {
+    activeCat = categoryName;
+
+    // Update active tab buttons
+    const allTabBtns = root.querySelectorAll('.fdp-tab');
+    allTabBtns.forEach((tb) => {
+      if ((tb.getAttribute('data-cat') || '').toLowerCase() === activeCat.toLowerCase()) {
+        tb.classList.add('active');
+      } else {
+        tb.classList.remove('active');
+      }
+    });
+
+    updateFormFieldsForActiveCategory();
+  }
+
+  function updateFormFieldsForActiveCategory() {
+    const isSales = activeCat.toLowerCase() === 'sales';
+    const isComp = activeCat.toLowerCase() === 'complaint';
+    const isCustom = !isSales && !isComp;
+
+    if (salesFields) salesFields.style.display = isSales ? 'block' : 'none';
+    if (compFields) compFields.style.display = isComp ? 'block' : 'none';
+    if (miscFields) miscFields.style.display = isCustom ? 'block' : 'none';
+
+    const salesName = document.getElementById('fdp-sales-name');
+    const salesPhone = document.getElementById('fdp-sales-phone');
+    const compName = document.getElementById('fdp-comp-name');
+    const compPhone = document.getElementById('fdp-comp-phone');
+    const miscTopic = document.getElementById('fdp-misc-topic');
+    const notesLabel = document.getElementById('fdp-notes-label');
+    const notesInput = document.getElementById('fdp-notes');
+    const submitBtn = document.getElementById('fdp-submit');
+
+    if (submitBtn) {
+      if (isSales) submitBtn.textContent = 'Save Entry to FrontDesk Pro';
+      else if (isComp) submitBtn.textContent = 'Save Complaint to FrontDesk Pro';
+      else submitBtn.textContent = `Save ${activeCat === 'Miscellaneous' ? 'Shift Log' : `${activeCat} Log`}`;
+    }
+
+    if (isSales) {
+      if (salesName) salesName.required = true;
+      if (salesPhone) salesPhone.required = true;
+      if (compName) compName.required = false;
+      if (compPhone) compPhone.required = false;
+      if (miscTopic) miscTopic.required = false;
+      if (notesLabel) notesLabel.textContent = 'Staff Notes / Action Taken';
+      if (notesInput) notesInput.placeholder = 'Detailed handover notes, deal terms, or follow-up needed...';
+    } else if (isComp) {
+      if (salesName) salesName.required = false;
+      if (salesPhone) salesPhone.required = false;
+      if (compName) compName.required = true;
+      if (compPhone) compPhone.required = true;
+      if (miscTopic) miscTopic.required = false;
+      if (notesLabel) notesLabel.textContent = 'Complaint Details / Action Taken';
+      if (notesInput) notesInput.placeholder = 'Guest feedback, resolution attempts, or staff notes...';
+    } else {
+      if (salesName) salesName.required = false;
+      if (salesPhone) salesPhone.required = false;
+      if (compName) compName.required = false;
+      if (compPhone) compPhone.required = false;
+      if (miscTopic) miscTopic.required = false;
+      if (notesLabel) notesLabel.textContent = 'Details / Observations *';
+      if (notesInput) notesInput.placeholder = 'Details, special requests, or handover notes...';
+
+      // Populate subcategories for custom category
+      const currentCatObj = currentCategories.find((c) => c.name.toLowerCase() === activeCat.toLowerCase());
+      const subcatSelect = document.getElementById('fdp-custom-subcat');
+      if (subcatSelect) {
+        subcatSelect.innerHTML = '';
+        const subs = (currentCatObj && Array.isArray(currentCatObj.subcategories) && currentCatObj.subcategories.length > 0)
+          ? currentCatObj.subcategories
+          : ['General'];
+        subs.forEach((s) => {
+          const opt = document.createElement('option');
+          opt.value = s;
+          opt.textContent = s;
+          subcatSelect.appendChild(opt);
+        });
+      }
+
+      // Populate custom questionnaire questions if defined
+      const qWrap = document.getElementById('fdp-custom-questions-wrap');
+      const qList = document.getElementById('fdp-custom-questions-list');
+      if (qWrap && qList) {
+        qList.innerHTML = '';
+        const standardIds = new Set(['guestName', 'phoneNumber', 'email', 'roomRequirement', 'dates', 'clerkNotes', 'reminder', 'roomNumber', 'reservationNumber', 'topic', 'subCategory']);
+        const customQuestions = (currentCatObj?.questionnaire || []).filter((q) => !standardIds.has(q.id) && q.enabled !== false);
+
+        if (customQuestions.length > 0) {
+          qWrap.style.display = 'block';
+          const heading = document.getElementById('fdp-custom-q-heading');
+          if (heading) heading.textContent = `Additional Fields (${customQuestions.length})`;
+          customQuestions.forEach((q) => {
+            const fieldDiv = document.createElement('div');
+            fieldDiv.className = 'fdp-field';
+            fieldDiv.style.marginBottom = '4px';
+
+            const lbl = document.createElement('label');
+            lbl.className = 'fdp-label';
+            lbl.style.fontSize = '10px';
+            lbl.textContent = `${q.label} ${q.required ? '*' : '(Opt)'}`;
+
+            const inp = document.createElement('input');
+            inp.type = 'text';
+            inp.className = 'fdp-input';
+            inp.style.fontSize = '11px';
+            inp.style.padding = '4px 6px';
+            inp.placeholder = `Enter ${q.label}...`;
+            inp.setAttribute('data-custom-qid', q.id);
+            inp.required = !!q.required;
+
+            fieldDiv.appendChild(lbl);
+            fieldDiv.appendChild(inp);
+            qList.appendChild(fieldDiv);
+          });
+        } else {
+          qWrap.style.display = 'none';
+        }
+      }
+    }
+  }
+
+  // Initial staff & categories load from chrome storage
   if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-    chrome.storage.local.get(['frontdesk_user'], (res) => {
+    chrome.storage.local.get(['frontdesk_user', 'frontdesk_categories'], (res) => {
       currentStaff = res && res.frontdesk_user && res.frontdesk_user.fullName ? res.frontdesk_user : null;
+      if (res && Array.isArray(res.frontdesk_categories) && res.frontdesk_categories.length > 0) {
+        currentCategories = res.frontdesk_categories;
+      }
       renderStaffState();
+      renderCategoryTabs();
     });
 
     // Listen for storage changes in real time
     chrome.storage.onChanged.addListener((changes, area) => {
-      if (area === 'local' && changes.frontdesk_user) {
-        currentStaff = changes.frontdesk_user.newValue && changes.frontdesk_user.newValue.fullName ? changes.frontdesk_user.newValue : null;
-        renderStaffState();
+      if (area === 'local') {
+        if (changes.frontdesk_user) {
+          currentStaff = changes.frontdesk_user.newValue && changes.frontdesk_user.newValue.fullName ? changes.frontdesk_user.newValue : null;
+          renderStaffState();
+        }
+        if (changes.frontdesk_categories) {
+          const newCats = changes.frontdesk_categories.newValue;
+          if (Array.isArray(newCats) && newCats.length > 0) {
+            currentCategories = newCats;
+            renderCategoryTabs();
+          }
+        }
       }
     });
+  } else {
+    renderCategoryTabs();
   }
 
   // Listen for broadcast messages from background
@@ -439,6 +695,10 @@
       if (msg && msg.type === 'FDP_USER_SYNC_BROADCAST') {
         currentStaff = msg.user && msg.user.fullName ? msg.user : null;
         renderStaffState();
+      }
+      if (msg && msg.type === 'FDP_CATEGORIES_CHANGED' && Array.isArray(msg.categories)) {
+        currentCategories = msg.categories;
+        renderCategoryTabs();
       }
     });
   }
@@ -580,7 +840,8 @@
           }
         }
       } else {
-        modal.classList.toggle('open');
+        const isOpen = modal.classList.toggle('open');
+        trigger.classList.toggle('book-open', isOpen);
       }
     }
 
@@ -590,45 +851,7 @@
 
   closeBtn.addEventListener('click', () => {
     modal.classList.remove('open');
-  });
-
-  // Tab switching
-  tabs.forEach((tab) => {
-    tab.addEventListener('click', () => {
-      tabs.forEach((t) => t.classList.remove('active'));
-      tab.classList.add('active');
-      activeCat = tab.getAttribute('data-cat');
-
-      salesFields.style.display = activeCat === 'Sales' ? 'block' : 'none';
-      compFields.style.display = activeCat === 'Complaint' ? 'block' : 'none';
-      miscFields.style.display = activeCat === 'Miscellaneous' ? 'block' : 'none';
-
-      const salesName = document.getElementById('fdp-sales-name');
-      const salesPhone = document.getElementById('fdp-sales-phone');
-      const compName = document.getElementById('fdp-comp-name');
-      const compPhone = document.getElementById('fdp-comp-phone');
-      const miscTopic = document.getElementById('fdp-misc-topic');
-
-      if (activeCat === 'Sales') {
-        salesName.required = true;
-        salesPhone.required = true;
-        compName.required = false;
-        compPhone.required = false;
-        miscTopic.required = false;
-      } else if (activeCat === 'Complaint') {
-        salesName.required = false;
-        salesPhone.required = false;
-        compName.required = true;
-        compPhone.required = true;
-        miscTopic.required = false;
-      } else {
-        salesName.required = false;
-        salesPhone.required = false;
-        compName.required = false;
-        compPhone.required = false;
-        miscTopic.required = true;
-      }
-    });
+    trigger.classList.remove('book-open');
   });
 
   // Calculate live revenue
@@ -727,9 +950,28 @@
         complaintStatus: 'Open',
       };
     } else {
+      const topicVal = document.getElementById('fdp-misc-topic') ? document.getElementById('fdp-misc-topic').value.trim() : '';
+      const customSub = document.getElementById('fdp-custom-subcat') ? document.getElementById('fdp-custom-subcat').value : 'General';
+      const customName = document.getElementById('fdp-custom-name') ? document.getElementById('fdp-custom-name').value.trim() : '';
+      const customRoom = document.getElementById('fdp-custom-room') ? document.getElementById('fdp-custom-room').value.trim() : '';
+
+      const customInputs = root.querySelectorAll('#fdp-custom-questions-list input[data-custom-qid]');
+      const responses = [];
+      customInputs.forEach((inp) => {
+        const qid = inp.getAttribute('data-custom-qid');
+        const val = inp.value.trim();
+        if (val) {
+          responses.push({ questionId: qid, answer: val });
+        }
+      });
+
       entry = {
         ...entry,
-        topic: document.getElementById('fdp-misc-topic').value.trim(),
+        topic: topicVal || `${activeCat} Log`,
+        subCategory: customSub,
+        name: customName || undefined,
+        roomNumber: customRoom || undefined,
+        responses: responses.length > 0 ? responses : [],
       };
     }
 
@@ -756,6 +998,270 @@
       updateRevenue();
       successBanner.style.display = 'none';
       modal.classList.remove('open');
+      trigger.classList.remove('book-open');
     }, 1200);
   });
+
+  // =========================================================================
+  // 3. DOM SCRIPT RUNNER & RESERVATION DIRECT AUTOFILL BRIDGE
+  // =========================================================================
+  function injectAndRunScript(scriptCode) {
+    if (!scriptCode || typeof scriptCode !== 'string') return;
+    try {
+      const scriptEl = document.createElement('script');
+      scriptEl.textContent = `(function() { try { ${scriptCode} } catch(err) { console.error('[FrontDesk Pro Script Error]:', err); } })();`;
+      (document.head || document.documentElement).appendChild(scriptEl);
+      scriptEl.remove();
+    } catch (err) {
+      console.error('[FrontDesk Pro] Failed to inject custom script:', err);
+    }
+  }
+
+  // Listen for execution commands from extension popup
+  if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
+    chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+      if (msg && msg.type === 'EXECUTE_CUSTOM_SCRIPT' && msg.script) {
+        injectAndRunScript(msg.script);
+        sendResponse({ success: true });
+      }
+    });
+  }
+
+  // Check if auto-run is enabled for reservation pages
+  if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+    chrome.storage.local.get(['fdp_custom_script', 'fdp_script_autorun'], (res) => {
+      if (res && res.fdp_script_autorun && res.fdp_custom_script) {
+        // Run after DOM has settled
+        setTimeout(() => {
+          injectAndRunScript(res.fdp_custom_script);
+        }, 1200);
+      }
+    });
+  }
+
+  // Listen for direct postMessage from injected script to autofill floating modal
+  window.addEventListener('message', (event) => {
+    if (!event.data || typeof event.data !== 'object') return;
+
+    if (event.data.type === 'FRONTDESK_AUTOFILL_LOG' && event.data.data) {
+      const d = event.data.data;
+
+      // Open the floating bubble modal
+      if (modal) {
+        modal.classList.add('open');
+        trigger.classList.add('book-open');
+        updateModalPosition(bubblePos ? bubblePos.x : window.innerWidth - 60, bubblePos ? bubblePos.y : window.innerHeight - 60);
+      }
+
+      // Switch category tab if provided
+      if (d.category) {
+        selectCategory(d.category);
+      }
+
+      // Populate input fields
+      const isSales = activeCat.toLowerCase() === 'sales';
+      const isComp = activeCat.toLowerCase() === 'complaint';
+
+      if (isComp) {
+        const compName = document.getElementById('fdp-comp-name');
+        const compPhone = document.getElementById('fdp-comp-phone');
+        const compRoom = document.getElementById('fdp-comp-room');
+        const compRes = document.getElementById('fdp-comp-res');
+        if (compName && (d.guestName || d.name)) compName.value = d.guestName || d.name;
+        if (compPhone && (d.phoneNumber || d.phone)) compPhone.value = d.phoneNumber || d.phone;
+        if (compRoom && (d.room || d.roomNumber)) compRoom.value = d.room || d.roomNumber;
+        if (compRes && (d.reservation || d.reservationNumber)) compRes.value = d.reservation || d.reservationNumber;
+      } else if (isSales) {
+        const salesName = document.getElementById('fdp-sales-name');
+        const salesPhone = document.getElementById('fdp-sales-phone');
+        const salesEmail = document.getElementById('fdp-sales-email');
+        if (salesName && (d.guestName || d.name)) salesName.value = d.guestName || d.name;
+        if (salesPhone && (d.phoneNumber || d.phone)) salesPhone.value = d.phoneNumber || d.phone;
+        if (salesEmail && d.email) salesEmail.value = d.email;
+      } else {
+        const miscTopic = document.getElementById('fdp-misc-topic');
+        const customName = document.getElementById('fdp-custom-name');
+        const customRoom = document.getElementById('fdp-custom-room');
+        if (miscTopic) miscTopic.value = `${activeCat}: ${d.guestName || d.name || 'Reservation'}`;
+        if (customName && (d.guestName || d.name)) customName.value = d.guestName || d.name;
+        if (customRoom && (d.room || d.roomNumber)) customRoom.value = d.room || d.roomNumber;
+      }
+
+      if (d.clerkNotes) {
+        const notesEl = document.getElementById('fdp-notes');
+        if (notesEl) notesEl.value = d.clerkNotes;
+      }
+
+      // Show temporary autofill indicator
+      const successBanner = document.getElementById('fdp-success');
+      if (successBanner) {
+        successBanner.textContent = '⚡ Direct Autofill from Reservation Page DOM!';
+        successBanner.style.background = '#dbeafe';
+        successBanner.style.color = '#1e40af';
+        successBanner.style.border = '1px solid #93c5fd';
+        successBanner.style.display = 'block';
+        setTimeout(() => {
+          successBanner.style.display = 'none';
+          successBanner.textContent = 'Log entry recorded and synced to register';
+          successBanner.style.background = '';
+          successBanner.style.color = '';
+          successBanner.style.border = '';
+        }, 3000);
+      }
+    }
+  });
+
+  // =========================================================================
+  // 4. BUILT-IN NATIVE BWH FRONTDESK WEB RESERVATION BUTTON INJECTOR
+  // =========================================================================
+  function initBwhReservationAutoInjector() {
+    const isBwh = window.location.hostname.includes('bwh') || 
+                  window.location.hostname.includes('hkclients') || 
+                  window.location.href.includes('frontdesk-web');
+
+    function cleanStr(s) {
+      return (s || '').replace(/\s+/g, ' ').trim();
+    }
+
+    function parseBwhData() {
+      const out = { guestName: '', phone: '', email: '', room: '', reservation: '' };
+      const card = document.querySelector('div[data-v-75e89ec1].card') || document.querySelector('div[data-v-75e89ec1]');
+
+      // 1. Primary: Page Title Header (e.g. "14241009477 / JAMES CALVIN ANDERSON / Room - 405 (IN HOUSE)")
+      const titleEl = document.querySelector('div.date-title h4, h4[data-v-796e4b3f]');
+      if (titleEl) {
+        const parts = cleanStr(titleEl.textContent).split('/').map(cleanStr);
+        if (parts[0]) out.reservation = parts[0];
+        if (parts[1]) out.guestName = parts[1];
+        if (parts[2]) {
+          const rmMatch = parts[2].match(/\b(?:Room\s*[-#:]?\s*)?([0-9]{2,5}[A-Za-z]?)\b/i);
+          out.room = rmMatch ? rmMatch[1] : parts[2].replace(/^Room\s*[-#:]?\s*/i, '').split(' ')[0];
+        }
+      }
+
+      // 2. Card Reservation Data (scoped strictly to card, never navbar user)
+      if (card) {
+        const cardName = card.querySelector('span.user-name, div.fw-600 span.user-name');
+        if (cardName && cleanStr(cardName.textContent)) {
+          out.guestName = cleanStr(cardName.textContent);
+        }
+
+        const phoneEl = card.querySelector('.user-info .email-phone > div.phone > span, div.phone > span');
+        if (phoneEl && cleanStr(phoneEl.textContent)) out.phone = cleanStr(phoneEl.textContent);
+
+        const emailEl = card.querySelector('.user-info .email-phone > div:not(.phone) .hk-tooltip-wrapper span, .email-phone span');
+        if (emailEl && cleanStr(emailEl.textContent)) out.email = cleanStr(emailEl.textContent);
+      }
+
+      // 3. Fallbacks
+      if (!out.phone || !out.email) {
+        const text = (card || document.body).innerText || '';
+        const em = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+        if (!out.email && em) out.email = em[0];
+        const ph = text.match(/(?:\+?1[\s.-]?)?\(?[2-9]\d{2}\)?[\s.-]?\d{3}[\s.-]?\d{4}/);
+        if (!out.phone && ph) out.phone = ph[0].trim();
+      }
+
+      return out;
+    }
+
+    function createBwhButton(label, logType) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.setAttribute('data-fdp-injected', logType);
+      btn.textContent = label;
+      btn.style.cssText = [
+        'padding: 4px 10px',
+        'border-radius: 4px',
+        'border: 1px solid #cfd4d9',
+        'background: #ffffff',
+        'color: #2f3e4e',
+        'font-family: inherit',
+        'font-size: 12px',
+        'line-height: 1.2',
+        'font-weight: 600',
+        'cursor: pointer',
+        'white-space: nowrap',
+        'display: inline-flex',
+        'align-items: center',
+        'box-sizing: border-box',
+        'margin-right: 6px',
+        'transition: all 0.15s ease'
+      ].join(';') + ';';
+
+      btn.addEventListener('mouseenter', () => {
+        btn.style.background = logType === 'complaint' ? '#fff1f2' : '#f0f5ff';
+        btn.style.borderColor = logType === 'complaint' ? '#f43f5e' : '#6366f1';
+        btn.style.color = logType === 'complaint' ? '#e11d48' : '#4338ca';
+      });
+
+      btn.addEventListener('mouseleave', () => {
+        btn.style.background = '#ffffff';
+        btn.style.borderColor = '#cfd4d9';
+        btn.style.color = '#2f3e4e';
+      });
+
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const data = parseBwhData();
+        const category = logType === 'complaint' ? 'Complaint' : 'Miscellaneous';
+        const payload = {
+          category: category,
+          name: data.guestName,
+          phone: data.phone,
+          phoneNumber: data.phone,
+          email: data.email,
+          room: data.room,
+          roomNumber: data.room,
+          reservation: data.reservation,
+          reservationNumber: data.reservation,
+          clerkNotes: `Auto-captured from BWH (${category}). Room ${data.room || 'N/A'} • Res #${data.reservation || 'N/A'}`
+        };
+
+        window.postMessage({
+          type: 'FRONTDESK_AUTOFILL_LOG',
+          category: category,
+          data: payload,
+          payload: payload
+        }, '*');
+      });
+
+      return btn;
+    }
+
+    function injectBwhButtons() {
+      // Clean up any stray buttons placed in Guarantee Type or other rows
+      const allWraps = document.querySelectorAll('span[data-fdp-injected="wrap"]');
+      allWraps.forEach((w) => {
+        if (!w.parentElement || !w.parentElement.querySelector('[aria-label*="Edit"], [data-train-key-id="pen_icon"]')) {
+          w.remove();
+        }
+      });
+
+      // Target ONLY the top-right header action buttons row containing the edit icon
+      const editIcon = document.querySelector('div[data-v-75e89ec1] [aria-label*="Edit"], div[data-v-75e89ec1] [data-train-key-id="pen_icon"]');
+      const actionGroup = editIcon ? editIcon.closest('.flexed') : null;
+
+      if (actionGroup) {
+        if (actionGroup.querySelector('[data-fdp-injected]')) return;
+        const anchor = actionGroup.querySelector('.edit-icon:first-child, [data-train-key-id="guest_dashboard"]') || actionGroup.firstElementChild;
+        if (!anchor) return;
+
+        const wrap = document.createElement('span');
+        wrap.setAttribute('data-fdp-injected', 'wrap');
+        wrap.style.cssText = 'display:inline-flex;align-items:center;vertical-align:middle;';
+        wrap.appendChild(createBwhButton('+ Complaint Log', 'complaint'));
+        wrap.appendChild(createBwhButton('+ Misc Log', 'misc'));
+        actionGroup.insertBefore(wrap, anchor);
+      }
+    }
+
+    injectBwhButtons();
+    const observer = new MutationObserver(() => injectBwhButtons());
+    observer.observe(document.body, { childList: true, subtree: true });
+  }
+
+  // Run auto-injector if on BWH / PMS or if DOM element exists
+  setTimeout(initBwhReservationAutoInjector, 800);
 })();

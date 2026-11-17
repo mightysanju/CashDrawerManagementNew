@@ -104,17 +104,20 @@ async function seedDatabaseDefaults(db: IDBPDatabase) {
         {
           id: 'cat_sales',
           name: 'Sales',
+          icon: 'Building2',
           subcategories: ['Group', 'Wedding', 'Sports team', 'Company', 'Bus Tour', 'Family Reunion'],
           rateMultiplier: 120,
         },
         {
           id: 'cat_complaint',
           name: 'Complaint',
+          icon: 'AlertTriangle',
           subcategories: ['Room Maintenance', 'Noise / Disturbance', 'Billing & Folio', 'Housekeeping / Cleanliness', 'Staff / Service', 'Other'],
         },
         {
           id: 'cat_misc',
           name: 'Miscellaneous',
+          icon: 'Tag',
           subcategories: ['Shift Handover', 'Package Delivery', 'Lost & Found', 'Maintenance Request', 'Manager Note'],
         },
       ];
@@ -122,6 +125,7 @@ async function seedDatabaseDefaults(db: IDBPDatabase) {
         await tx.store.put(cat);
       }
       await tx.done;
+      syncCategoriesToExtensionStorage(defaultCategories);
     }
 
     // 2. Seed Settings if empty
@@ -135,6 +139,23 @@ async function seedDatabaseDefaults(db: IDBPDatabase) {
     }
   } catch (err) {
     console.warn('Seeding defaults notice:', err);
+  }
+}
+
+export function syncCategoriesToExtensionStorage(cats: LogCategoryConfig[]): void {
+  try {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('frontdesk_categories_cache', JSON.stringify(cats));
+      window.postMessage({ type: 'FDP_CATEGORIES_SYNC', categories: cats }, '*');
+    }
+    // Also direct chrome storage if accessible in this context
+    // @ts-ignore
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+      // @ts-ignore
+      chrome.storage.local.set({ frontdesk_categories: cats });
+    }
+  } catch {
+    // ignore
   }
 }
 
@@ -417,17 +438,25 @@ export class DatabaseManager {
    * ------------------------------------------------------------- */
   async getCategories(): Promise<LogCategoryConfig[]> {
     const db = await this.dbPromise;
-    return db.getAll(STORES.CATEGORIES);
+    const cats = await db.getAll(STORES.CATEGORIES);
+    if (cats && cats.length > 0) {
+      syncCategoriesToExtensionStorage(cats);
+    }
+    return cats;
   }
 
   async saveCategory(cat: LogCategoryConfig): Promise<void> {
     const db = await this.dbPromise;
     await db.put(STORES.CATEGORIES, cat);
+    const all = await db.getAll(STORES.CATEGORIES);
+    syncCategoriesToExtensionStorage(all);
   }
 
   async deleteCategory(catId: string): Promise<void> {
     const db = await this.dbPromise;
     await db.delete(STORES.CATEGORIES, catId);
+    const all = await db.getAll(STORES.CATEGORIES);
+    syncCategoriesToExtensionStorage(all);
   }
 
   async bulkSaveCategories(cats: LogCategoryConfig[]): Promise<void> {
@@ -438,6 +467,8 @@ export class DatabaseManager {
       await tx.store.put(c);
     }
     await tx.done;
+    const all = await db.getAll(STORES.CATEGORIES);
+    syncCategoriesToExtensionStorage(all);
   }
 
   /* -------------------------------------------------------------
@@ -553,17 +584,20 @@ export class DatabaseManager {
       {
         id: 'cat_sales',
         name: 'Sales',
+        icon: 'Building2',
         subcategories: ['Group', 'Wedding', 'Sports team', 'Company', 'Bus Tour', 'Family Reunion'],
         rateMultiplier: 120,
       },
       {
         id: 'cat_complaint',
         name: 'Complaint',
+        icon: 'AlertTriangle',
         subcategories: ['Room Maintenance', 'Noise / Disturbance', 'Billing & Folio', 'Housekeeping / Cleanliness', 'Staff / Service', 'Other'],
       },
       {
         id: 'cat_misc',
         name: 'Miscellaneous',
+        icon: 'Tag',
         subcategories: ['Shift Handover', 'Package Delivery', 'Lost & Found', 'Maintenance Request', 'Manager Note'],
       },
     ];

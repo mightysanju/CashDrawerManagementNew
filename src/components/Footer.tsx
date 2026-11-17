@@ -11,9 +11,9 @@ export function Footer() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-10">
           {/* Brand & Security */}
           <div className="md:col-span-1">
-            <Link to="/" className="flex items-center text-slate-900 dark:text-white font-bold text-xl mb-3">
-              <img src="/favicon.png" alt="FrontDesk Pro" className="w-7 h-7 rounded mr-2" />
-              FrontDesk <span className="text-blue-600 dark:text-blue-400">Pro</span>
+            <Link to="/" className="flex items-center text-slate-900 dark:text-white font-black text-2xl mb-3 tracking-tight">
+              <img src="/favicon.png" alt="FrontDesk Pro" className="w-8 h-8 rounded-lg mr-2.5 object-cover shadow-xs" />
+              FrontDesk&nbsp;<span className="text-blue-600 dark:text-blue-500 font-black">Pro</span>
             </Link>
             <p className="text-sm text-slate-600 dark:text-gray-400 mb-4">
               The all-in-one hospitality front desk platform — register management, sales lead tracking, complaint logs, and shift handoffs. Built for hotel front desks.

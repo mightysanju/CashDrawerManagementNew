@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   X, 
   Tag, 
@@ -12,7 +12,8 @@ import {
   AlertTriangle, 
   CheckCircle, 
   Bell, 
-  HelpCircle 
+  HelpCircle,
+  ListChecks 
 } from 'lucide-react';
 import { 
   ShiftLogEntry, 
@@ -20,11 +21,16 @@ import {
   SalesLeadStatus, 
   ComplaintStatus, 
   LogCategoryConfig,
-  AppSettings,
-  UserAccount 
+  CategoryQuestionItem,
+  getDefaultQuestionnaireForCategory,
+  AppSettings, 
+  UserAccount,
+  FormFieldKey,
+  DEFAULT_FORM_FIELD_SETTINGS
 } from '../types';
 import { DatabaseManager } from '../utils/database';
 import { p2pSyncManager } from '../utils/p2pSyncManager';
+import { getCategoryIconComponent } from '../utils/categoryIcons';
 
 interface ShiftLogModalProps {
   isOpen: boolean;
@@ -85,6 +91,9 @@ export const ShiftLogModal: React.FC<ShiftLogModalProps> = ({
   const [reminderDate, setReminderDate] = useState('');
   const [reminderNote, setReminderNote] = useState('');
 
+  // Dynamic Custom Fields State
+  const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>({});
+
   const [error, setError] = useState<string | null>(null);
 
   // Load categories and settings
@@ -140,6 +149,9 @@ export const ShiftLogModal: React.FC<ShiftLogModalProps> = ({
       setHasReminder(!!editEntry.hasReminder);
       setReminderDate(editEntry.reminderDate || '');
       setReminderNote(editEntry.reminderNote || '');
+
+      // Custom fields
+      setCustomFieldValues(editEntry.customFields || {});
     } else {
       // New Entry Defaults
       setCategory(defaultCategory);
@@ -164,6 +176,7 @@ export const ShiftLogModal: React.FC<ShiftLogModalProps> = ({
       setHasReminder(false);
       setReminderDate('');
       setReminderNote('');
+      setCustomFieldValues({});
     }
     setError(null);
   }, [isOpen, editEntry, defaultCategory]);
@@ -172,12 +185,51 @@ export const ShiftLogModal: React.FC<ShiftLogModalProps> = ({
 
   // Selected category config
   const currentCatConfig = categories.find((c) => c.name.toLowerCase() === category.toLowerCase());
-  const subcategories = currentCatConfig?.subcategories || [
-    'Group',
-    'Wedding',
-    'Sports team',
-    'Company',
-  ];
+  const subcategories = (currentCatConfig?.subcategories && currentCatConfig.subcategories.length > 0)
+    ? currentCatConfig.subcategories
+    : category === 'Sales'
+    ? ['Group', 'Wedding', 'Sports team', 'Company', 'Other']
+    : category === 'Complaint'
+    ? ['Room Maintenance', 'Noise / Disturbance', 'Billing & Folio', 'Housekeeping / Cleanliness', 'Staff / Service', 'Other']
+    : ['General', 'Maintenance', 'Shift Handover', 'Front Desk', 'Other'];
+
+  // Category Questionnaire (Per-Category Questionnaire Configuration)
+  const categoryQuestionnaire = useMemo(() => {
+    if (currentCatConfig?.questionnaire && currentCatConfig.questionnaire.length > 0) {
+      return currentCatConfig.questionnaire;
+    }
+    return getDefaultQuestionnaireForCategory(category);
+  }, [currentCatConfig, category]);
+
+  const isFieldRequired = (key: string, defaultRequired: boolean = false): boolean => {
+    const item = categoryQuestionnaire.find((q) => q.id === key);
+    if (item) {
+      return item.enabled !== false && item.required;
+    }
+    return defaultRequired;
+  };
+
+  const isFieldEnabled = (key: string, defaultEnabled: boolean = true): boolean => {
+    const item = categoryQuestionnaire.find((q) => q.id === key);
+    if (item) {
+      return item.enabled !== false;
+    }
+    return defaultEnabled;
+  };
+
+  const getFieldLabel = (key: string, defaultLabel: string): string => {
+    const item = categoryQuestionnaire.find((q) => q.id === key);
+    return item?.label || defaultLabel;
+  };
+
+  const standardQuestionIds = useMemo(() => new Set([
+    'guestName', 'phoneNumber', 'email', 'roomRequirement', 'dates',
+    'clerkNotes', 'reminder', 'roomNumber', 'reservationNumber', 'topic', 'subCategory'
+  ]), []);
+
+  const customQuestions = useMemo(() => {
+    return categoryQuestionnaire.filter((q) => !standardQuestionIds.has(q.id) && q.enabled !== false);
+  }, [categoryQuestionnaire, standardQuestionIds]);
 
   // Dynamic calculations for Sales
   const calculateSalesStats = () => {
@@ -203,48 +255,72 @@ export const ShiftLogModal: React.FC<ShiftLogModalProps> = ({
 
     const nowIso = new Date().toISOString();
 
-    // Validation
+    // Validation using dynamic Questionnaire configuration
     if (category === 'Sales') {
-      if (!guestName.trim()) {
-        setError('Sales lead requires Organizer / Group Name.');
+      if (isFieldRequired('guestName', true) && !guestName.trim()) {
+        setError(`${getFieldLabel('guestName', 'Organizer / Group Name')} is required.`);
         return;
       }
-      if (!phoneNumber.trim()) {
-        setError('Sales lead requires a Phone Number.');
+      if (isFieldRequired('phoneNumber', true) && !phoneNumber.trim()) {
+        setError(`${getFieldLabel('phoneNumber', 'Phone Number')} is required.`);
         return;
       }
-      if (!email.trim()) {
-        setError('Sales lead requires an Email address.');
+      if (isFieldRequired('email', false) && !email.trim()) {
+        setError(`${getFieldLabel('email', 'Email Address')} is required.`);
         return;
       }
-      if (!roomRequirement || roomRequirement <= 0) {
+      if (isFieldRequired('roomRequirement', true) && (!roomRequirement || roomRequirement <= 0)) {
         setError('Please provide a valid Room Requirement count.');
         return;
       }
-      if (!checkInDate || !checkOutDate) {
+      if (isFieldRequired('dates', true) && (!checkInDate || !checkOutDate)) {
         setError('Please provide valid Check-in and Check-out dates.');
         return;
       }
-      if (new Date(checkOutDate) <= new Date(checkInDate)) {
+      if (checkInDate && checkOutDate && new Date(checkOutDate) <= new Date(checkInDate)) {
         setError('Check-out date must be after check-in date.');
         return;
       }
-      if (!clerkNotes.trim()) {
-        setError('Manager mandatory field: Clerk Notes are required for Sales Leads.');
+      if (isFieldRequired('clerkNotes', true) && !clerkNotes.trim()) {
+        setError(`${getFieldLabel('clerkNotes', 'Clerk Notes')} are required.`);
         return;
       }
     } else if (category === 'Complaint') {
-      if (!complaintGuestName.trim()) {
-        setError('Complaint requires Guest Name.');
+      if (isFieldRequired('guestName', true) && !complaintGuestName.trim()) {
+        setError(`${getFieldLabel('guestName', 'Guest Name')} is required.`);
         return;
       }
-      if (!complaintPhone.trim()) {
-        setError('Complaint requires Guest Phone Number.');
+      if (isFieldRequired('phoneNumber', true) && !complaintPhone.trim()) {
+        setError(`${getFieldLabel('phoneNumber', 'Guest Phone Number')} is required.`);
         return;
       }
-    } else if (category === 'Miscellaneous') {
-      if (!topic.trim()) {
-        setError('Miscellaneous log requires a Topic.');
+      if (isFieldRequired('roomNumber', false) && !roomNumber.trim()) {
+        setError(`${getFieldLabel('roomNumber', 'Room Number')} is required.`);
+        return;
+      }
+      if (isFieldRequired('reservationNumber', false) && !reservationNumber.trim()) {
+        setError(`${getFieldLabel('reservationNumber', 'Reservation Number')} is required.`);
+        return;
+      }
+      if (isFieldRequired('clerkNotes', false) && !clerkNotes.trim()) {
+        setError(`${getFieldLabel('clerkNotes', 'Complaint Details / Notes')} are required.`);
+        return;
+      }
+    } else {
+      if (isFieldRequired('topic', false) && !topic.trim()) {
+        setError(`${getFieldLabel('topic', 'Topic / Headline')} is required.`);
+        return;
+      }
+      if (isFieldRequired('clerkNotes', true) && !clerkNotes.trim()) {
+        setError(`${getFieldLabel('clerkNotes', 'Notes')} are required.`);
+        return;
+      }
+    }
+
+    // Validation for any dynamic custom questions configured on this category
+    for (const q of customQuestions) {
+      if (q.required && (!customFieldValues[q.id] || !customFieldValues[q.id].trim())) {
+        setError(`${q.label} is required.`);
         return;
       }
     }
@@ -266,6 +342,7 @@ export const ShiftLogModal: React.FC<ShiftLogModalProps> = ({
       reminderNote: hasReminder ? reminderNote.trim() : undefined,
       isReminderCompleted: editEntry?.isReminderCompleted || false,
       responses: editEntry?.responses || [],
+      customFields: Object.keys(customFieldValues).length > 0 ? customFieldValues : undefined,
     };
 
     if (category === 'Sales') {
@@ -288,7 +365,10 @@ export const ShiftLogModal: React.FC<ShiftLogModalProps> = ({
       newLog.subCategory = subCategory;
     } else {
       // Miscellaneous / Custom
-      newLog.topic = topic.trim();
+      newLog.topic = topic.trim() || undefined;
+      newLog.name = guestName.trim() || undefined;
+      newLog.phoneNumber = phoneNumber.trim() || undefined;
+      newLog.roomNumber = roomNumber.trim() || undefined;
       newLog.subCategory = subCategory;
     }
 
@@ -343,31 +423,43 @@ export const ShiftLogModal: React.FC<ShiftLogModalProps> = ({
             <label className="block text-xs font-semibold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-2">
               Log Category
             </label>
-            <div className="grid grid-cols-3 gap-2">
-              {(['Sales', 'Complaint', 'Miscellaneous'] as PrimaryCategory[]).map((cat) => {
-                const isSelected = category === cat;
+            <div className={`grid gap-2 ${
+              categories.length <= 3 
+                ? 'grid-cols-3' 
+                : categories.length === 4 
+                ? 'grid-cols-2 sm:grid-cols-4' 
+                : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4'
+            }`}>
+              {(categories.length > 0 ? categories : [
+                { id: 'cat_sales', name: 'Sales', icon: 'Building2', subcategories: [] },
+                { id: 'cat_complaint', name: 'Complaint', icon: 'AlertTriangle', subcategories: [] },
+                { id: 'cat_misc', name: 'Miscellaneous', icon: 'Tag', subcategories: [] }
+              ]).map((cat) => {
+                const isSelected = category.toLowerCase() === cat.name.toLowerCase();
+                const IconComponent = getCategoryIconComponent(cat.icon);
                 return (
                   <button
-                    key={cat}
+                    key={cat.id || cat.name}
                     type="button"
                     onClick={() => {
-                      setCategory(cat);
+                      setCategory(cat.name);
+                      if (cat.subcategories && cat.subcategories.length > 0) {
+                        setSubCategory(cat.subcategories[0]);
+                      }
                       setError(null);
                     }}
-                    className={`py-2.5 px-3 rounded-xl border text-sm font-semibold flex items-center justify-center space-x-2 transition ${
+                    className={`py-2 px-3 rounded-xl border text-xs sm:text-sm font-semibold flex items-center justify-center space-x-2 transition cursor-pointer ${
                       isSelected
-                        ? cat === 'Sales'
+                        ? cat.name === 'Sales'
                           ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
-                          : cat === 'Complaint'
+                          : cat.name === 'Complaint'
                           ? 'bg-rose-600 text-white border-rose-600 shadow-xs'
                           : 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
                         : 'bg-gray-50 dark:bg-gray-700/50 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'
                     }`}
                   >
-                    {cat === 'Sales' && <DollarSign className="w-4 h-4" />}
-                    {cat === 'Complaint' && <AlertTriangle className="w-4 h-4" />}
-                    {cat === 'Miscellaneous' && <Tag className="w-4 h-4" />}
-                    <span>{cat}</span>
+                    <IconComponent className="w-4 h-4 shrink-0" />
+                    <span className="truncate">{cat.name}</span>
                   </button>
                 );
               })}
@@ -381,7 +473,7 @@ export const ShiftLogModal: React.FC<ShiftLogModalProps> = ({
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center space-x-2 text-emerald-800 dark:text-emerald-300 font-semibold text-sm">
                     <Building2 className="w-4 h-4" />
-                    <span>Sales Lead Details (Mandatory Requirements)</span>
+                    <span>Sales Lead Questionnaire</span>
                   </div>
                   <span className="text-xs bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 px-2.5 py-0.5 rounded-full font-medium">
                     Rate: ${settings.salesRateMultiplier || 120}/room-night
@@ -392,7 +484,7 @@ export const ShiftLogModal: React.FC<ShiftLogModalProps> = ({
                   {/* Subcategory */}
                   <div>
                     <label className="block text-xs font-medium text-emerald-900 dark:text-emerald-200 mb-1">
-                      Lead Type / Subcategory *
+                      {getFieldLabel('subCategory', 'Lead Type / Subcategory')} {isFieldRequired('subCategory', true) ? '*' : '(Optional)'}
                     </label>
                     <select
                       value={subCategory}
@@ -430,11 +522,11 @@ export const ShiftLogModal: React.FC<ShiftLogModalProps> = ({
                   {/* Organizer / Guest Name */}
                   <div className="md:col-span-1">
                     <label className="block text-xs font-medium text-emerald-900 dark:text-emerald-200 mb-1">
-                      Name (Organizer/Guest) *
+                      {getFieldLabel('guestName', 'Name (Organizer/Guest)')} {isFieldRequired('guestName', true) ? '*' : '(Optional)'}
                     </label>
                     <input
                       type="text"
-                      required
+                      required={isFieldRequired('guestName', true)}
                       placeholder="e.g. John Miller"
                       value={guestName}
                       onChange={(e) => setGuestName(e.target.value)}
@@ -445,7 +537,7 @@ export const ShiftLogModal: React.FC<ShiftLogModalProps> = ({
                   {/* Phone */}
                   <div>
                     <label className="block text-xs font-medium text-emerald-900 dark:text-emerald-200 mb-1">
-                      Phone Number *
+                      {getFieldLabel('phoneNumber', 'Phone Number')} {isFieldRequired('phoneNumber', true) ? '*' : '(Optional)'}
                     </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-gray-400">
@@ -453,7 +545,7 @@ export const ShiftLogModal: React.FC<ShiftLogModalProps> = ({
                       </div>
                       <input
                         type="tel"
-                        required
+                        required={isFieldRequired('phoneNumber', true)}
                         placeholder="(555) 000-0000"
                         value={phoneNumber}
                         onChange={(e) => setPhoneNumber(e.target.value)}
@@ -465,7 +557,7 @@ export const ShiftLogModal: React.FC<ShiftLogModalProps> = ({
                   {/* Email */}
                   <div>
                     <label className="block text-xs font-medium text-emerald-900 dark:text-emerald-200 mb-1">
-                      Email Address *
+                      {getFieldLabel('email', 'Email Address')} {isFieldRequired('email', false) ? '*' : '(Optional)'}
                     </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-gray-400">
@@ -473,7 +565,7 @@ export const ShiftLogModal: React.FC<ShiftLogModalProps> = ({
                       </div>
                       <input
                         type="email"
-                        required
+                        required={isFieldRequired('email', false)}
                         placeholder="client@company.com"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
@@ -487,12 +579,12 @@ export const ShiftLogModal: React.FC<ShiftLogModalProps> = ({
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <div>
                     <label className="block text-xs font-medium text-emerald-900 dark:text-emerald-200 mb-1">
-                      Room Requirement *
+                      {getFieldLabel('roomRequirement', 'Room Requirement')} {isFieldRequired('roomRequirement', true) ? '*' : '(Optional)'}
                     </label>
                     <input
                       type="number"
                       min={1}
-                      required
+                      required={isFieldRequired('roomRequirement', true)}
                       value={roomRequirement}
                       onChange={(e) => setRoomRequirement(parseInt(e.target.value) || 1)}
                       className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-emerald-300 dark:border-emerald-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
@@ -501,11 +593,11 @@ export const ShiftLogModal: React.FC<ShiftLogModalProps> = ({
 
                   <div>
                     <label className="block text-xs font-medium text-emerald-900 dark:text-emerald-200 mb-1">
-                      Check-in Date *
+                      Check-in Date {isFieldRequired('dates', true) ? '*' : '(Optional)'}
                     </label>
                     <input
                       type="date"
-                      required
+                      required={isFieldRequired('dates', true)}
                       value={checkInDate}
                       onChange={(e) => setCheckInDate(e.target.value)}
                       className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-emerald-300 dark:border-emerald-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
@@ -514,11 +606,11 @@ export const ShiftLogModal: React.FC<ShiftLogModalProps> = ({
 
                   <div>
                     <label className="block text-xs font-medium text-emerald-900 dark:text-emerald-200 mb-1">
-                      Check-out Date *
+                      Check-out Date {isFieldRequired('dates', true) ? '*' : '(Optional)'}
                     </label>
                     <input
                       type="date"
-                      required
+                      required={isFieldRequired('dates', true)}
                       value={checkOutDate}
                       onChange={(e) => setCheckOutDate(e.target.value)}
                       className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-emerald-300 dark:border-emerald-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
@@ -551,17 +643,17 @@ export const ShiftLogModal: React.FC<ShiftLogModalProps> = ({
               <div className="bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800/50 rounded-xl p-4">
                 <div className="flex items-center space-x-2 text-rose-800 dark:text-rose-300 font-semibold text-sm mb-3">
                   <AlertTriangle className="w-4 h-4" />
-                  <span>Guest Complaint Details</span>
+                  <span>Guest Complaint Questionnaire</span>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
                   <div>
                     <label className="block text-xs font-medium text-rose-900 dark:text-rose-200 mb-1">
-                      Guest Name *
+                      {getFieldLabel('guestName', 'Guest Name')} {isFieldRequired('guestName', true) ? '*' : '(Optional)'}
                     </label>
                     <input
                       type="text"
-                      required
+                      required={isFieldRequired('guestName', true)}
                       placeholder="e.g. Sarah Connor"
                       value={complaintGuestName}
                       onChange={(e) => setComplaintGuestName(e.target.value)}
@@ -571,7 +663,7 @@ export const ShiftLogModal: React.FC<ShiftLogModalProps> = ({
 
                   <div>
                     <label className="block text-xs font-medium text-rose-900 dark:text-rose-200 mb-1">
-                      Phone Number *
+                      {getFieldLabel('phoneNumber', 'Phone Number')} {isFieldRequired('phoneNumber', true) ? '*' : '(Optional)'}
                     </label>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-gray-400">
@@ -579,7 +671,7 @@ export const ShiftLogModal: React.FC<ShiftLogModalProps> = ({
                       </div>
                       <input
                         type="tel"
-                        required
+                        required={isFieldRequired('phoneNumber', true)}
                         placeholder="(555) 000-0000"
                         value={complaintPhone}
                         onChange={(e) => setComplaintPhone(e.target.value)}
@@ -592,7 +684,7 @@ export const ShiftLogModal: React.FC<ShiftLogModalProps> = ({
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                   <div>
                     <label className="block text-xs font-medium text-rose-900 dark:text-rose-200 mb-1">
-                      Subcategory *
+                      {getFieldLabel('subCategory', 'Subcategory')} {isFieldRequired('subCategory', true) ? '*' : '(Optional)'}
                     </label>
                     <select
                       value={subCategory}
@@ -607,10 +699,11 @@ export const ShiftLogModal: React.FC<ShiftLogModalProps> = ({
 
                   <div>
                     <label className="block text-xs font-medium text-rose-900 dark:text-rose-200 mb-1">
-                      Reservation # (Optional)
+                      {getFieldLabel('reservationNumber', 'Reservation #')} {isFieldRequired('reservationNumber', false) ? '*' : '(Optional)'}
                     </label>
                     <input
                       type="text"
+                      required={isFieldRequired('reservationNumber', false)}
                       placeholder="e.g. RES-98210"
                       value={reservationNumber}
                       onChange={(e) => setReservationNumber(e.target.value)}
@@ -620,10 +713,11 @@ export const ShiftLogModal: React.FC<ShiftLogModalProps> = ({
 
                   <div>
                     <label className="block text-xs font-medium text-rose-900 dark:text-rose-200 mb-1">
-                      Room # (Optional)
+                      {getFieldLabel('roomNumber', 'Room #')} {isFieldRequired('roomNumber', false) ? '*' : '(Optional)'}
                     </label>
                     <input
                       type="text"
+                      required={isFieldRequired('roomNumber', false)}
                       placeholder="e.g. 304"
                       value={roomNumber}
                       onChange={(e) => setRoomNumber(e.target.value)}
@@ -659,15 +753,15 @@ export const ShiftLogModal: React.FC<ShiftLogModalProps> = ({
                   <span>Miscellaneous Shift Note</span>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
                   <div>
                     <label className="block text-xs font-medium text-indigo-900 dark:text-indigo-200 mb-1">
-                      Topic / Subject *
+                      {getFieldLabel('topic', 'Topic / Subject')} {isFieldRequired('topic', false) ? '*' : '(Optional)'}
                     </label>
                     <input
                       type="text"
-                      required
-                      placeholder="e.g. Keycard encoder firmware updated, Lost & Found item handed to housekeeping"
+                      required={isFieldRequired('topic', false)}
+                      placeholder="e.g. Keycard encoder firmware updated, Lost & Found item handed over"
                       value={topic}
                       onChange={(e) => setTopic(e.target.value)}
                       className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-indigo-300 dark:border-indigo-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -676,7 +770,7 @@ export const ShiftLogModal: React.FC<ShiftLogModalProps> = ({
 
                   <div>
                     <label className="block text-xs font-medium text-indigo-900 dark:text-indigo-200 mb-1">
-                      Subcategory *
+                      {getFieldLabel('subCategory', 'Subcategory')} {isFieldRequired('subCategory', true) ? '*' : '(Optional)'}
                     </label>
                     <select
                       value={subCategory}
@@ -687,6 +781,48 @@ export const ShiftLogModal: React.FC<ShiftLogModalProps> = ({
                         <option key={sub} value={sub}>{sub}</option>
                       ))}
                     </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-indigo-900 dark:text-indigo-200 mb-1">
+                      {getFieldLabel('guestName', 'Name / Caller')} {isFieldRequired('guestName', false) ? '*' : '(Optional)'}
+                    </label>
+                    <input
+                      type="text"
+                      required={isFieldRequired('guestName', false)}
+                      placeholder="e.g. Caller or staff name"
+                      value={guestName}
+                      onChange={(e) => setGuestName(e.target.value)}
+                      className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-indigo-300 dark:border-indigo-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-indigo-900 dark:text-indigo-200 mb-1">
+                      {getFieldLabel('phoneNumber', 'Phone Number')} {isFieldRequired('phoneNumber', false) ? '*' : '(Optional)'}
+                    </label>
+                    <input
+                      type="tel"
+                      required={isFieldRequired('phoneNumber', false)}
+                      placeholder="(555) 000-0000"
+                      value={phoneNumber}
+                      onChange={(e) => setPhoneNumber(e.target.value)}
+                      className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-indigo-300 dark:border-indigo-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-indigo-900 dark:text-indigo-200 mb-1">
+                      {getFieldLabel('roomNumber', 'Room #')} {isFieldRequired('roomNumber', false) ? '*' : '(Optional)'}
+                    </label>
+                    <input
+                      type="text"
+                      required={isFieldRequired('roomNumber', false)}
+                      placeholder="e.g. 102"
+                      value={roomNumber}
+                      onChange={(e) => setRoomNumber(e.target.value)}
+                      className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-indigo-300 dark:border-indigo-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
                   </div>
                 </div>
               </div>
@@ -699,17 +835,17 @@ export const ShiftLogModal: React.FC<ShiftLogModalProps> = ({
               <div className="bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800/50 rounded-xl p-4">
                 <div className="flex items-center space-x-2 text-purple-800 dark:text-purple-300 font-semibold text-sm mb-3">
                   <Tag className="w-4 h-4" />
-                  <span>{category} Note</span>
+                  <span>{category} Questionnaire</span>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
                   <div>
                     <label className="block text-xs font-medium text-purple-900 dark:text-purple-200 mb-1">
-                      Title / Reference *
+                      {getFieldLabel('topic', 'Title / Reference')} {isFieldRequired('topic', false) ? '*' : '(Optional)'}
                     </label>
                     <input
                       type="text"
-                      required
+                      required={isFieldRequired('topic', false)}
                       placeholder={`e.g. ${category} record / activity`}
                       value={topic}
                       onChange={(e) => setTopic(e.target.value)}
@@ -719,7 +855,7 @@ export const ShiftLogModal: React.FC<ShiftLogModalProps> = ({
 
                   <div>
                     <label className="block text-xs font-medium text-purple-900 dark:text-purple-200 mb-1">
-                      Subcategory *
+                      {getFieldLabel('subCategory', 'Subcategory')} {isFieldRequired('subCategory', true) ? '*' : '(Optional)'}
                     </label>
                     <select
                       value={subCategory}
@@ -732,6 +868,75 @@ export const ShiftLogModal: React.FC<ShiftLogModalProps> = ({
                     </select>
                   </div>
                 </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-purple-900 dark:text-purple-200 mb-1">
+                      {getFieldLabel('guestName', 'Contact / Guest Name')} {isFieldRequired('guestName', false) ? '*' : '(Optional)'}
+                    </label>
+                    <input
+                      type="text"
+                      required={isFieldRequired('guestName', false)}
+                      placeholder="e.g. Staff member or guest name"
+                      value={guestName}
+                      onChange={(e) => setGuestName(e.target.value)}
+                      className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-purple-300 dark:border-purple-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-purple-900 dark:text-purple-200 mb-1">
+                      {getFieldLabel('phoneNumber', 'Phone Number')} {isFieldRequired('phoneNumber', false) ? '*' : '(Optional)'}
+                    </label>
+                    <input
+                      type="tel"
+                      required={isFieldRequired('phoneNumber', false)}
+                      placeholder="(555) 000-0000"
+                      value={phoneNumber}
+                      onChange={(e) => setPhoneNumber(e.target.value)}
+                      className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-purple-300 dark:border-purple-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-purple-900 dark:text-purple-200 mb-1">
+                      {getFieldLabel('roomNumber', 'Room #')} {isFieldRequired('roomNumber', false) ? '*' : '(Optional)'}
+                    </label>
+                    <input
+                      type="text"
+                      required={isFieldRequired('roomNumber', false)}
+                      placeholder="e.g. 214"
+                      value={roomNumber}
+                      onChange={(e) => setRoomNumber(e.target.value)}
+                      className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-purple-300 dark:border-purple-700 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Category Custom Questionnaire Fields */}
+          {customQuestions.length > 0 && (
+            <div className="p-3.5 bg-blue-50/60 dark:bg-blue-950/30 rounded-xl border border-blue-200 dark:border-blue-800/60 space-y-3">
+              <div className="flex items-center space-x-1.5 text-xs font-bold text-blue-950 dark:text-blue-200">
+                <ListChecks className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                <span>Custom Questionnaire Questions ({customQuestions.length})</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {customQuestions.map((q) => (
+                  <div key={q.id}>
+                    <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                      {q.label} {q.required ? <span className="text-rose-500 font-bold">*</span> : <span className="text-gray-400 font-normal text-[11px]">(Optional)</span>}
+                    </label>
+                    <input
+                      type="text"
+                      required={q.required}
+                      placeholder={`Enter ${q.label}...`}
+                      value={customFieldValues[q.id] || ''}
+                      onChange={(e) => setCustomFieldValues({ ...customFieldValues, [q.id]: e.target.value })}
+                      className="w-full px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                ))}
               </div>
             </div>
           )}
@@ -740,15 +945,15 @@ export const ShiftLogModal: React.FC<ShiftLogModalProps> = ({
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="block text-xs font-semibold uppercase tracking-wider text-gray-700 dark:text-gray-300">
-                Clerk Notes {category === 'Sales' ? '(Mandatory by Manager)' : '(Optional)'}
+                {getFieldLabel('clerkNotes', 'Clerk Notes')} {isFieldRequired('clerkNotes', category === 'Sales') ? '(Required)' : '(Optional)'}
               </label>
-              {category === 'Sales' && (
+              {isFieldRequired('clerkNotes', category === 'Sales') && (
                 <span className="text-xs text-rose-600 dark:text-rose-400 font-medium">Required</span>
               )}
             </div>
             <textarea
               rows={3}
-              required={category === 'Sales'}
+              required={isFieldRequired('clerkNotes', category === 'Sales')}
               placeholder={
                 category === 'Sales'
                   ? 'Detail group preferences, tax exempt status, meeting room requirements, deposit requirements...'

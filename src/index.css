@@ -242,3 +242,28 @@ html.dark .shadow-xl {
   transform: perspective(320px) rotateY(-6deg) rotateZ(-2deg) scale(1.08);
 }
 
+/* Open Book State when form is active / opened */
+.book-open .logbook-cover-3d {
+  transform: perspective(400px) rotateY(-82deg) !important;
+}
+
+.book-open .logbook-stack-3d {
+  transform: perspective(400px) rotateY(-12deg) scale(1.12) !important;
+}
+
+/* Text on Book Blink / Shimmer Animation */
+@keyframes book-text-blink {
+  0%, 100% {
+    opacity: 1;
+    filter: drop-shadow(0 0 3px #38bdf8);
+  }
+  50% {
+    opacity: 0.2;
+    filter: drop-shadow(0 0 0px transparent);
+  }
+}
+
+.animate-book-text-blink {
+  animation: book-text-blink 1.6s ease-in-out infinite;
+}
+

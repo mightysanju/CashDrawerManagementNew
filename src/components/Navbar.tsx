@@ -16,9 +16,9 @@ export function Navbar() {
         <div className="flex justify-between h-14">
           <div className="flex items-center">
             <Link to="/" className="flex items-center space-x-2.5">
-              <img src="/favicon.png" alt="FrontDesk Pro" className="h-7 w-7 rounded-md object-cover" />
-              <span className="text-base font-semibold tracking-tight text-slate-900 dark:text-white">
-                FrontDesk <span className="text-blue-600 dark:text-blue-400">Pro</span>
+              <img src="/favicon.png" alt="FrontDesk Pro" className="h-8 w-8 rounded-lg object-cover shadow-xs" />
+              <span className="text-xl font-black tracking-tight text-slate-900 dark:text-white flex items-center">
+                FrontDesk&nbsp;<span className="text-blue-600 dark:text-blue-500 font-black">Pro</span>
               </span>
             </Link>
           </div>

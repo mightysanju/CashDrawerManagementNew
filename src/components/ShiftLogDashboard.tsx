@@ -39,6 +39,7 @@ import {
 import { DatabaseManager } from '../utils/database';
 import { p2pSyncManager } from '../utils/p2pSyncManager';
 import { formatFullTimestamp } from '../utils/dateUtils';
+import { getCategoryIconComponent } from '../utils/categoryIcons';
 import { SalesKanban } from './SalesKanban';
 
 interface ShiftLogDashboardProps {
@@ -669,103 +670,130 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
       </div>
 
       {/* Summary Cards Grid (Sales, Complaints, Shift Notes + Any Custom Categories) */}
-      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
+      <div
+        className={
+          customCategories.length === 0
+            ? 'grid grid-cols-1 md:grid-cols-3 gap-4'
+            : customCategories.length === 1
+            ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4'
+            : 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4'
+        }
+      >
         {/* SALES CARD */}
-        <button
-          onClick={() => setActiveView('sales-kanban')}
-          className="text-left w-full group bg-white border border-gray-200 hover:border-blue-300 rounded-2xl p-5 shadow-sm hover:shadow-md transition-all duration-200 flex flex-col justify-between"
-        >
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center space-x-2">
-                <div className="w-8 h-8 rounded-xl bg-emerald-100 flex items-center justify-center">
-                  <Building2 className="w-4 h-4 text-emerald-700" />
+        {(() => {
+          const salesCat = categories.find((c) => c.name === 'Sales');
+          const SalesIcon = getCategoryIconComponent(salesCat?.icon, 'Building2');
+          return (
+            <button
+              onClick={() => setActiveView('sales-kanban')}
+              className="text-left w-full group bg-white border border-gray-200 hover:border-blue-300 rounded-2xl p-5 shadow-sm hover:shadow-md transition-all duration-200 flex flex-col justify-between"
+            >
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center space-x-2">
+                    <div className="w-8 h-8 rounded-xl bg-emerald-100 flex items-center justify-center">
+                      <SalesIcon className="w-4 h-4 text-emerald-700" />
+                    </div>
+                    <span className="text-xs font-bold uppercase tracking-wider text-emerald-700">Sales Pipeline</span>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-blue-500 group-hover:translate-x-0.5 transition-transform" />
                 </div>
-                <span className="text-xs font-bold uppercase tracking-wider text-emerald-700">Sales Pipeline</span>
+                <p className="text-3xl font-extrabold text-gray-900">{salesMetrics.leadCount}</p>
+                <p className="text-xs text-gray-500 mt-0.5">Total group leads</p>
+                <div className="flex items-center space-x-2 mt-3">
+                  <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full inline-flex items-center space-x-1">
+                    <CheckCircle2 className="w-3 h-3" /><span>Won: {salesMetrics.wonCount}</span>
+                  </span>
+                  <span className="text-xs font-semibold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full inline-flex items-center space-x-1">
+                    <XCircle className="w-3 h-3" /><span>Lost: {salesMetrics.lostCount}</span>
+                  </span>
+                </div>
               </div>
-              <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-blue-500 group-hover:translate-x-0.5 transition-transform" />
-            </div>
-            <p className="text-3xl font-extrabold text-gray-900">{salesMetrics.leadCount}</p>
-            <p className="text-xs text-gray-500 mt-0.5">Total group leads</p>
-            <div className="flex items-center space-x-2 mt-3">
-              <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full inline-flex items-center space-x-1">
-                <CheckCircle2 className="w-3 h-3" /><span>Won: {salesMetrics.wonCount}</span>
-              </span>
-              <span className="text-xs font-semibold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full inline-flex items-center space-x-1">
-                <XCircle className="w-3 h-3" /><span>Lost: {salesMetrics.lostCount}</span>
-              </span>
-            </div>
-          </div>
-          <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between text-xs">
-            <div>
-              <p className="text-gray-400 font-medium">Room Nights</p>
-              <p className="font-extrabold text-gray-800">{salesMetrics.totalRoomNights}</p>
-            </div>
-            <div className="text-right">
-              <p className="text-gray-400 font-medium">Est. Revenue</p>
-              <p className="font-extrabold text-emerald-700 text-sm">${salesMetrics.totalRevenue.toLocaleString()}</p>
-            </div>
-          </div>
-        </button>
+              <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between text-xs">
+                <div>
+                  <p className="text-gray-400 font-medium">Room Nights</p>
+                  <p className="font-extrabold text-gray-800">{salesMetrics.totalRoomNights}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-gray-400 font-medium">Est. Revenue</p>
+                  <p className="font-extrabold text-emerald-700 text-sm">${salesMetrics.totalRevenue.toLocaleString()}</p>
+                </div>
+              </div>
+            </button>
+          );
+        })()}
 
         {/* COMPLAINTS CARD */}
-        <button
-          onClick={() => setActiveView('complaints')}
-          className="text-left w-full group bg-white border border-gray-200 hover:border-rose-300 rounded-2xl p-5 shadow-sm hover:shadow-md transition-all duration-200 flex flex-col justify-between"
-        >
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center space-x-2">
-                <div className="w-8 h-8 rounded-xl bg-rose-100 flex items-center justify-center">
-                  <AlertTriangle className="w-4 h-4 text-rose-700" />
+        {(() => {
+          const complaintCat = categories.find((c) => c.name === 'Complaint');
+          const ComplaintIcon = getCategoryIconComponent(complaintCat?.icon, 'AlertTriangle');
+          return (
+            <button
+              onClick={() => setActiveView('complaints')}
+              className="text-left w-full group bg-white border border-gray-200 hover:border-rose-300 rounded-2xl p-5 shadow-sm hover:shadow-md transition-all duration-200 flex flex-col justify-between"
+            >
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center space-x-2">
+                    <div className="w-8 h-8 rounded-xl bg-rose-100 flex items-center justify-center">
+                      <ComplaintIcon className="w-4 h-4 text-rose-700" />
+                    </div>
+                    <span className="text-xs font-bold uppercase tracking-wider text-rose-700">Complaints</span>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-rose-500 group-hover:translate-x-0.5 transition-transform" />
                 </div>
-                <span className="text-xs font-bold uppercase tracking-wider text-rose-700">Complaints</span>
+                <p className="text-3xl font-extrabold text-gray-900">{complaintMetrics.total}</p>
+                <p className="text-xs text-gray-500 mt-0.5">Guest complaints reported</p>
+                <div className="flex flex-wrap items-center gap-1.5 mt-3">
+                  <span className="text-[11px] font-semibold bg-amber-50 border border-amber-200 text-amber-700 px-2 py-0.5 rounded-full">Open: {complaintMetrics.open}</span>
+                  <span className="text-[11px] font-semibold bg-blue-50 border border-blue-200 text-blue-700 px-2 py-0.5 rounded-full">Progress: {complaintMetrics.inProgress}</span>
+                  <span className="text-[11px] font-semibold bg-emerald-50 border border-emerald-200 text-emerald-700 px-2 py-0.5 rounded-full">Resolved: {complaintMetrics.resolved}</span>
+                </div>
               </div>
-              <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-rose-500 group-hover:translate-x-0.5 transition-transform" />
-            </div>
-            <p className="text-3xl font-extrabold text-gray-900">{complaintMetrics.total}</p>
-            <p className="text-xs text-gray-500 mt-0.5">Guest complaints reported</p>
-            <div className="flex flex-wrap items-center gap-1.5 mt-3">
-              <span className="text-[11px] font-semibold bg-amber-50 border border-amber-200 text-amber-700 px-2 py-0.5 rounded-full">Open: {complaintMetrics.open}</span>
-              <span className="text-[11px] font-semibold bg-blue-50 border border-blue-200 text-blue-700 px-2 py-0.5 rounded-full">Progress: {complaintMetrics.inProgress}</span>
-              <span className="text-[11px] font-semibold bg-emerald-50 border border-emerald-200 text-emerald-700 px-2 py-0.5 rounded-full">Resolved: {complaintMetrics.resolved}</span>
-            </div>
-          </div>
-          <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between text-xs">
-            <span className="text-gray-400 font-medium">Service recovery rate</span>
-            <span className="font-extrabold text-gray-900">
-              {complaintMetrics.total > 0 ? `${Math.round((complaintMetrics.resolved / complaintMetrics.total) * 100)}%` : '100%'}
-            </span>
-          </div>
-        </button>
+              <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between text-xs">
+                <span className="text-gray-400 font-medium">Service recovery rate</span>
+                <span className="font-extrabold text-gray-900">
+                  {complaintMetrics.total > 0 ? `${Math.round((complaintMetrics.resolved / complaintMetrics.total) * 100)}%` : '100%'}
+                </span>
+              </div>
+            </button>
+          );
+        })()}
 
         {/* MISC CARD */}
-        <button
-          onClick={() => setActiveView('misc')}
-          className="text-left w-full group bg-white border border-gray-200 hover:border-indigo-300 rounded-2xl p-5 shadow-sm hover:shadow-md transition-all duration-200 flex flex-col justify-between"
-        >
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center space-x-2">
-                <div className="w-8 h-8 rounded-xl bg-indigo-100 flex items-center justify-center">
-                  <Tag className="w-4 h-4 text-indigo-700" />
+        {(() => {
+          const miscCat = categories.find((c) => c.name === 'Miscellaneous');
+          const MiscIcon = getCategoryIconComponent(miscCat?.icon, 'Tag');
+          return (
+            <button
+              onClick={() => setActiveView('misc')}
+              className="text-left w-full group bg-white border border-gray-200 hover:border-indigo-300 rounded-2xl p-5 shadow-sm hover:shadow-md transition-all duration-200 flex flex-col justify-between"
+            >
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center space-x-2">
+                    <div className="w-8 h-8 rounded-xl bg-indigo-100 flex items-center justify-center">
+                      <MiscIcon className="w-4 h-4 text-indigo-700" />
+                    </div>
+                    <span className="text-xs font-bold uppercase tracking-wider text-indigo-700">Shift Notes</span>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-indigo-500 group-hover:translate-x-0.5 transition-transform" />
                 </div>
-                <span className="text-xs font-bold uppercase tracking-wider text-indigo-700">Shift Notes</span>
+                <p className="text-3xl font-extrabold text-gray-900">{miscMetrics.total}</p>
+                <p className="text-xs text-gray-500 mt-0.5">Logged handover notes</p>
               </div>
-              <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-indigo-500 group-hover:translate-x-0.5 transition-transform" />
-            </div>
-            <p className="text-3xl font-extrabold text-gray-900">{miscMetrics.total}</p>
-            <p className="text-xs text-gray-500 mt-0.5">Logged handover notes</p>
-          </div>
-          <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between text-xs">
-            <span className="text-gray-400 font-medium">Handover status</span>
-            <span className="font-extrabold text-emerald-700">Active</span>
-          </div>
-        </button>
+              <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between text-xs">
+                <span className="text-gray-400 font-medium">Handover status</span>
+                <span className="font-extrabold text-emerald-700">Active</span>
+              </div>
+            </button>
+          );
+        })()}
 
         {/* DYNAMIC CUSTOM CATEGORIES BOXES */}
         {customCategories.map((cat) => {
           const catLogs = logs.filter((l) => l.category === cat.name);
+          const CustomIcon = getCategoryIconComponent(cat.icon, 'Tag');
           return (
             <button
               key={cat.id}
@@ -779,7 +807,7 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center space-x-2">
                     <div className="w-8 h-8 rounded-xl bg-purple-100 flex items-center justify-center">
-                      <Tag className="w-4 h-4 text-purple-700" />
+                      <CustomIcon className="w-4 h-4 text-purple-700" />
                     </div>
                     <span className="text-xs font-bold uppercase tracking-wider text-purple-700">{cat.name}</span>
                   </div>
@@ -1100,6 +1128,12 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
                             <span className="font-semibold text-gray-800">{entry.reservationNumber}</span>
                           </div>
                         )}
+                        {entry.customFields && Object.entries(entry.customFields).map(([k, v]) => (
+                          <div key={k} className="bg-white p-2 rounded-lg border border-blue-200">
+                            <span className="text-blue-600 block text-[10px] font-bold">Custom Field</span>
+                            <span className="font-semibold text-gray-800 block truncate">{v}</span>
+                          </div>
+                        ))}
                       </div>
 
                       {/* Clerk Notes Callout */}

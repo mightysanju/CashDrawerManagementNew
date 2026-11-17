@@ -234,6 +234,38 @@
       </div>
     </div>
 
+    <!-- DOM Script Runner Card -->
+    <div class="url-card">
+      <div class="url-header">
+        <span class="url-title">DOM Script Runner & Autofill:</span>
+        <span class="badge" id="script-status-badge">Ready</span>
+      </div>
+      <p style="font-size:11px; color:#64748b; margin:4px 0 8px 0; line-height:1.4;">
+        Upload custom script to extract reservation DOM data (name, room, phone, res #) directly into Complaints & Shift Logs.
+      </p>
+
+      <div style="display:flex; gap:6px; margin-bottom:8px;">
+        <input type="file" id="script-upload-input" accept=".js,.txt" style="display:none;" />
+        <button id="upload-script-btn" class="btn-sm btn-secondary-sm" type="button" style="flex:1;">
+          📁 Upload Script (.js)
+        </button>
+        <button id="run-script-btn" class="btn-sm btn-primary-sm" type="button" style="flex:1;">
+          ⚡ Run on Active Tab
+        </button>
+      </div>
+
+      <div id="script-info" style="font-size:10px; color:#475569; background:#f1f5f9; padding:6px 8px; border-radius:6px; font-family:monospace; margin-bottom:6px; display:none;">
+        <span id="script-filename">No script loaded</span>
+      </div>
+
+      <label style="display:flex; align-items:center; gap:6px; font-size:11px; color:#334155; cursor:pointer;">
+        <input type="checkbox" id="auto-run-script-checkbox" />
+        <span>Auto-run on PMS / Reservation Tabs</span>
+      </label>
+
+      <div id="script-banner" class="save-banner" style="display:none; margin-top:6px;"></div>
+    </div>
+
     <!-- Action Button -->
     <button id="open-app-btn" class="btn" type="button">
       Open FrontDesk Pro Register &rarr;
