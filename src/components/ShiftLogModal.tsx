@@ -443,6 +443,7 @@ export const ShiftLogModal: React.FC<ShiftLogModalProps> = ({
 
       await db.saveShiftLog(newLog);
       p2pSyncManager.broadcastShiftLog(newLog);
+      window.postMessage({ type: 'FDP_UPDATE_LOG', log: newLog }, '*');
       onSaved(newLog);
       onClose();
     } catch (err) {

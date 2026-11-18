@@ -351,8 +351,9 @@ export class DatabaseManager {
   /**
    * Intelligently merges an incoming shift log with any existing shift log in the store.
    * - Preserves and unions all threaded replies/responses by ID so no reply is ever lost.
-   * - Adopts incoming fields if newer (including cleared/completed reminders).
-   * - Keeps responses even if local record has newer timestamp.
+   * - Preserves and unions all status history transitions for a robust audit trail.
+   * - Resolves complaintStatus and salesStatus using the latest transition in statusHistory as the authoritative source of truth.
+   * - Adopts incoming fields if newer, but preserves newer local updates if incoming is stale.
    */
   private mergeShiftLogRecords(existing: ShiftLogEntry, incoming: ShiftLogEntry): ShiftLogEntry {
     const respMap = new Map<string, ShiftLogResponse>();
@@ -382,23 +383,41 @@ export class DatabaseManager {
       (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
     );
 
-    if (incomingTime >= existingTime) {
-      return {
-        ...existing,
-        ...incoming,
-        responses: mergedResponses,
-        statusHistory: mergedStatusHistory,
-        updatedAt: incoming.updatedAt || new Date().toISOString(),
-      };
-    } else {
-      return {
-        ...incoming,
-        ...existing,
-        responses: mergedResponses,
-        statusHistory: mergedStatusHistory,
-        updatedAt: existing.updatedAt || new Date().toISOString(),
-      };
+    // Pick base object based on timestamp (LWW)
+    const base = incomingTime >= existingTime ? { ...existing, ...incoming } : { ...incoming, ...existing };
+
+    // Resolve authoritative complaintStatus:
+    // If statusHistory has transitions, the latest transition in history is ALWAYS the true state!
+    let authoritativeComplaintStatus = base.complaintStatus;
+    if (mergedStatusHistory.length > 0) {
+      const latestChange = mergedStatusHistory[mergedStatusHistory.length - 1];
+      if (latestChange && latestChange.toStatus) {
+        authoritativeComplaintStatus = latestChange.toStatus as ComplaintStatus;
+      }
+    } else if (existing.complaintStatus && (!incoming.complaintStatus || incoming.complaintStatus === 'Open')) {
+      // Preserve existing non-Open status over a stale default Open from incoming
+      authoritativeComplaintStatus = existing.complaintStatus;
     }
+
+    // Resolve authoritative salesStatus:
+    let authoritativeSalesStatus = base.salesStatus;
+    if (mergedStatusHistory.length > 0 && (base.category === 'Sales' || existing.category === 'Sales')) {
+      const latestChange = mergedStatusHistory[mergedStatusHistory.length - 1];
+      if (latestChange && latestChange.toStatus) {
+        authoritativeSalesStatus = latestChange.toStatus as SalesLeadStatus;
+      }
+    } else if (existing.salesStatus && (!incoming.salesStatus || incoming.salesStatus === 'New Lead')) {
+      authoritativeSalesStatus = existing.salesStatus;
+    }
+
+    return {
+      ...base,
+      complaintStatus: authoritativeComplaintStatus,
+      salesStatus: authoritativeSalesStatus,
+      responses: mergedResponses,
+      statusHistory: mergedStatusHistory,
+      updatedAt: new Date(Math.max(existingTime, incomingTime)).toISOString(),
+    };
   }
 
   /* -------------------------------------------------------------
@@ -434,43 +453,7 @@ export class DatabaseManager {
 
     const db = await this.dbPromise;
     const existing = await db.get(STORES.SHIFT_LOGS, log.id);
-    if (!existing) {
-      await db.put(STORES.SHIFT_LOGS, log);
-      return;
-    }
-
-    // Union threaded responses so local edits/replies preserve concurrent replies
-    const respMap = new Map<string, ShiftLogResponse>();
-    (existing.responses || []).forEach((r) => {
-      if (r && r.id) respMap.set(r.id, r);
-    });
-    (log.responses || []).forEach((r) => {
-      if (r && r.id) respMap.set(r.id, r);
-    });
-
-    const mergedResponses = Array.from(respMap.values()).sort(
-      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-    );
-
-    // Union status history
-    const statusMap = new Map<string, ShiftLogStatusChange>();
-    (existing.statusHistory || []).forEach((s) => {
-      if (s && s.id) statusMap.set(s.id, s);
-    });
-    (log.statusHistory || []).forEach((s) => {
-      if (s && s.id) statusMap.set(s.id, s);
-    });
-    const mergedStatusHistory = Array.from(statusMap.values()).sort(
-      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-    );
-
-    const finalLog: ShiftLogEntry = {
-      ...existing,
-      ...log,
-      responses: mergedResponses,
-      statusHistory: mergedStatusHistory,
-      updatedAt: log.updatedAt || new Date().toISOString(),
-    };
+    const finalLog = existing ? this.mergeShiftLogRecords(existing, log) : log;
     await db.put(STORES.SHIFT_LOGS, finalLog);
   }
 

@@ -77,6 +77,10 @@ export function CashDrawer() {
 
   // Shift Logs & Reminders State
   const [shiftLogs, setShiftLogs] = useState<ShiftLogEntry[]>([]);
+  const shiftLogsRef = useRef<ShiftLogEntry[]>([]);
+  useEffect(() => {
+    shiftLogsRef.current = shiftLogs;
+  }, [shiftLogs]);
   const [isLogModalOpen, setIsLogModalOpen] = useState(false);
   const [editingLogEntry, setEditingLogEntry] = useState<ShiftLogEntry | null>(null);
   const [defaultLogCat, setDefaultLogCat] = useState<PrimaryCategory>('Sales');
@@ -376,8 +380,18 @@ export function CashDrawer() {
             if (lastPurged > 0 && logTime > 0 && logTime <= lastPurged) {
               continue;
             }
-            await db.saveShiftLog(l);
-            added = true;
+            const existingLocal = shiftLogsRef.current.find((x) => x.id === l.id);
+            if (!existingLocal) {
+              await db.saveShiftLog(l);
+              added = true;
+            } else {
+              const localTime = new Date(existingLocal.updatedAt || existingLocal.createdAt || 0).getTime();
+              const incomingTime = new Date(l.updatedAt || l.createdAt || 0).getTime();
+              if (incomingTime > localTime || (l.responses && l.responses.length > (existingLocal.responses?.length || 0))) {
+                await db.saveShiftLog(l);
+                added = true;
+              }
+            }
           }
         }
         if (added) {
@@ -413,8 +427,18 @@ export function CashDrawer() {
             if (lastPurged > 0 && logTime > 0 && logTime <= lastPurged) {
               continue;
             }
-            await db.saveShiftLog(l);
-            added = true;
+            const existingLocal = shiftLogsRef.current.find((x) => x.id === l.id);
+            if (!existingLocal) {
+              await db.saveShiftLog(l);
+              added = true;
+            } else {
+              const localTime = new Date(existingLocal.updatedAt || existingLocal.createdAt || 0).getTime();
+              const incomingTime = new Date(l.updatedAt || l.createdAt || 0).getTime();
+              if (incomingTime > localTime || (l.responses && l.responses.length > (existingLocal.responses?.length || 0))) {
+                await db.saveShiftLog(l);
+                added = true;
+              }
+            }
           }
         }
         if (added) {

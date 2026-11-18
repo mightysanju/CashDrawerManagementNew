@@ -74,6 +74,23 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [replyText, setReplyText] = useState('');
 
+  // Optimistic UI state to prevent reversion flicker in real browser
+  const [optimisticOverrides, setOptimisticOverrides] = useState<{
+    [id: string]: { complaintStatus?: ComplaintStatus; salesStatus?: SalesLeadStatus }
+  }>({});
+
+  const effectiveLogs = useMemo(() => {
+    return logs.map((log) => {
+      const override = optimisticOverrides[log.id];
+      if (!override) return log;
+      return {
+        ...log,
+        complaintStatus: override.complaintStatus !== undefined ? override.complaintStatus : log.complaintStatus,
+        salesStatus: override.salesStatus !== undefined ? override.salesStatus : log.salesStatus,
+      };
+    });
+  }, [logs, optimisticOverrides]);
+
   const [expandedActivityId, setExpandedActivityId] = useState<string | null>(null);
   const [activityReplyText, setActivityReplyText] = useState<{ [id: string]: string }>({});
 
@@ -153,7 +170,7 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
 
   /* ----- Metrics ----- */
   const salesMetrics = useMemo(() => {
-    const sl = logs.filter((l) => l.category === 'Sales');
+    const sl = effectiveLogs.filter((l) => l.category === 'Sales');
     let totalRoomNights = 0, totalRevenue = 0, wonCount = 0, lostCount = 0;
     sl.forEach((l) => {
       totalRoomNights += l.totalRoomNights || 0;
@@ -162,33 +179,33 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
       else if (l.salesStatus === 'Lost') lostCount++;
     });
     return { leadCount: sl.length, totalRoomNights, totalRevenue, wonCount, lostCount };
-  }, [logs]);
+  }, [effectiveLogs]);
 
   const complaintMetrics = useMemo(() => {
-    const cl = logs.filter((l) => l.category === 'Complaint');
+    const cl = effectiveLogs.filter((l) => l.category === 'Complaint');
     return {
       total: cl.length,
       open: cl.filter((l) => l.complaintStatus === 'Open').length,
       inProgress: cl.filter((l) => l.complaintStatus === 'In Progress').length,
       resolved: cl.filter((l) => l.complaintStatus === 'Resolved').length,
     };
-  }, [logs]);
+  }, [effectiveLogs]);
 
   const miscMetrics = useMemo(() => ({
-    total: logs.filter((l) => l.category === 'Miscellaneous').length,
-  }), [logs]);
+    total: effectiveLogs.filter((l) => l.category === 'Miscellaneous').length,
+  }), [effectiveLogs]);
 
   /* ----- Filtered lists ----- */
   const salesLeads = useMemo(() => {
-    return logs.filter((l) => {
+    return effectiveLogs.filter((l) => {
       if (l.category !== 'Sales') return false;
       if (subCategoryFilter !== 'All' && l.subCategory !== subCategoryFilter) return false;
       return true;
     });
-  }, [logs, subCategoryFilter]);
+  }, [effectiveLogs, subCategoryFilter]);
 
   const filteredComplaints = useMemo(() => {
-    return logs.filter((l) => {
+    return effectiveLogs.filter((l) => {
       if (l.category !== 'Complaint') return false;
       if (statusFilter !== 'All' && l.complaintStatus !== statusFilter) return false;
       if (subCategoryFilter !== 'All' && l.subCategory !== subCategoryFilter) return false;
@@ -206,10 +223,10 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
       }
       return true;
     });
-  }, [logs, statusFilter, subCategoryFilter, searchQuery]);
+  }, [effectiveLogs, statusFilter, subCategoryFilter, searchQuery]);
 
   const filteredMisc = useMemo(() => {
-    return logs.filter((l) => {
+    return effectiveLogs.filter((l) => {
       if (l.category !== 'Miscellaneous') return false;
       if (subCategoryFilter !== 'All' && l.subCategory !== subCategoryFilter) return false;
       if (searchQuery.trim()) {
@@ -222,11 +239,11 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
       }
       return true;
     });
-  }, [logs, subCategoryFilter, searchQuery]);
+  }, [effectiveLogs, subCategoryFilter, searchQuery]);
 
   const filteredCustomCategoryLogs = useMemo(() => {
     if (!activeCustomCategory) return [];
-    return logs.filter((l) => {
+    return effectiveLogs.filter((l) => {
       if (l.category !== activeCustomCategory.name) return false;
       if (subCategoryFilter !== 'All' && l.subCategory !== subCategoryFilter) return false;
       if (searchQuery.trim()) {
@@ -239,12 +256,21 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
       }
       return true;
     });
-  }, [logs, activeCustomCategory, subCategoryFilter, searchQuery]);
+  }, [effectiveLogs, activeCustomCategory, subCategoryFilter, searchQuery]);
 
   /* ----- Actions ----- */
   const handleUpdateComplaintStatus = async (entry: ShiftLogEntry, status: ComplaintStatus) => {
     const prevStatus = entry.complaintStatus || 'Open';
     if (prevStatus === status) return;
+
+    // Immediately apply optimistic UI override so dropdown and badges update instantly with zero revert
+    setOptimisticOverrides((prev) => ({
+      ...prev,
+      [entry.id]: {
+        ...prev[entry.id],
+        complaintStatus: status,
+      },
+    }));
 
     const transitionId = `status_${entry.id}_${Date.now()}`;
     const timestamp = new Date().toISOString();
@@ -264,6 +290,12 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
       statusHistory: [...(entry.statusHistory || []), newStatusChange],
       updatedAt: timestamp,
     };
+
+    // Broadcast to Chrome extension storage so extension background poll never overwrites this status
+    if (typeof window !== 'undefined') {
+      window.postMessage({ type: 'FDP_UPDATE_LOG', log: updated }, '*');
+      window.dispatchEvent(new CustomEvent('FDP_UPDATE_LOG', { detail: updated }));
+    }
 
     await db.saveShiftLog(updated);
     p2pSyncManager.broadcastShiftLog(updated);
@@ -357,6 +389,15 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
     const prevStatus = entry.salesStatus || 'New Lead';
     if (prevStatus === status) return;
 
+    // Immediately apply optimistic UI override
+    setOptimisticOverrides((prev) => ({
+      ...prev,
+      [entry.id]: {
+        ...prev[entry.id],
+        salesStatus: status,
+      },
+    }));
+
     const transitionId = `sales_status_${entry.id}_${Date.now()}`;
     const timestamp = new Date().toISOString();
 
@@ -375,6 +416,12 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
       statusHistory: [...(entry.statusHistory || []), newStatusChange],
       updatedAt: timestamp,
     };
+
+    // Broadcast to Chrome extension storage
+    if (typeof window !== 'undefined') {
+      window.postMessage({ type: 'FDP_UPDATE_LOG', log: updated }, '*');
+      window.dispatchEvent(new CustomEvent('FDP_UPDATE_LOG', { detail: updated }));
+    }
 
     await db.saveShiftLog(updated);
     p2pSyncManager.broadcastShiftLog(updated);
@@ -552,7 +599,7 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
     });
 
     // 2. Synthesize events from active logs
-    logs.forEach((log) => {
+    effectiveLogs.forEach((log) => {
       const title = log.topic || log.name || `${log.category} Log`;
 
       // 1. Creation event
@@ -744,9 +791,9 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
   };
 
   const filteredRecentLogs = useMemo(() => {
-    if (!searchQuery.trim()) return logs;
+    if (!searchQuery.trim()) return effectiveLogs;
     const q = searchQuery.toLowerCase();
-    return logs.filter((l) => {
+    return effectiveLogs.filter((l) => {
       return (
         (l.name && l.name.toLowerCase().includes(q)) ||
         (l.topic && l.topic.toLowerCase().includes(q)) ||
@@ -757,7 +804,7 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
         (l.roomNumber && l.roomNumber.toLowerCase().includes(q))
       );
     });
-  }, [logs, searchQuery]);
+  }, [effectiveLogs, searchQuery]);
 
   /* ================================================================
      RECENT ACTIVITY & UPDATES CARD (Stream of changes, replies & status)
@@ -1015,7 +1062,7 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
 
         {/* DYNAMIC CUSTOM CATEGORIES BOXES */}
         {customCategories.map((cat) => {
-          const catLogs = logs.filter((l) => l.category === cat.name);
+          const catLogs = effectiveLogs.filter((l) => l.category === cat.name);
           const CustomIcon = getCategoryIconComponent(cat.icon, 'Tag');
           return (
             <button

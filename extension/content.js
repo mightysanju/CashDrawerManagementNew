@@ -138,6 +138,28 @@
         } catch (e) {}
       }
 
+      if (event.data.type === 'FDP_UPDATE_LOG' && event.data.log) {
+        const updatedLog = event.data.log;
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+          chrome.storage.local.get(['frontdesk_logs'], (res) => {
+            const logs = res.frontdesk_logs || [];
+            const idx = logs.findIndex((l) => l && l.id === updatedLog.id);
+            if (idx >= 0) {
+              logs[idx] = { ...logs[idx], ...updatedLog };
+              chrome.storage.local.set({ frontdesk_logs: logs });
+            }
+          });
+        }
+        try {
+          const existing = JSON.parse(localStorage.getItem('frontdesk_external_logs') || '[]');
+          const idx = existing.findIndex((l) => l && l.id === updatedLog.id);
+          if (idx >= 0) {
+            existing[idx] = { ...existing[idx], ...updatedLog };
+            localStorage.setItem('frontdesk_external_logs', JSON.stringify(existing));
+          }
+        } catch (e) {}
+      }
+
       if (event.data.type === 'FDP_REQUEST_PENDING_LOGS') {
         if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
           chrome.storage.local.get(['frontdesk_logs'], (res) => {

@@ -279,7 +279,7 @@ export function CashHandlingGuide() {
             <div className="grid md:grid-cols-2 gap-6 items-center mb-6">
               <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden shadow-xs bg-slate-100 dark:bg-slate-800 p-2">
                 <img 
-                  src="/guide-assets/category-management.png?v=2" 
+                  src="/guide-assets/category-management.png?v=3" 
                   alt="FrontDesk Pro Shift Log Categories & Questionnaire Management" 
                   className="w-full h-auto rounded-lg object-cover"
                 />
@@ -598,7 +598,7 @@ export function CashHandlingGuide() {
 
                 <div className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden bg-slate-50 dark:bg-slate-800 p-2">
                   <img 
-                    src="/guide-assets/hotelkey-autofill-popup.png?v=2" 
+                    src="/guide-assets/hotelkey-autofill-popup.png?v=3" 
                     alt="Auto-captured reservation details inside quick log popup form" 
                     className="w-full h-auto rounded"
                   />
