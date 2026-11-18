@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { Mail, Clock, MapPin, UserCircle, Send, CheckCircle2 } from 'lucide-react';
 import { Navbar } from './Navbar';
 import { Footer } from './Footer';
-import { AdUnit } from './AdUnit';
 
 export const ContactPage: React.FC = () => {
   const [formSubmitted, setFormSubmitted] = useState(false);
@@ -192,8 +191,6 @@ export const ContactPage: React.FC = () => {
             )}
           </div>
         </div>
-
-        <AdUnit slot="4433221100" format="auto" />
       </main>
 
       <Footer />

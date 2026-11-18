@@ -13,7 +13,6 @@ import {
 import { Link } from 'react-router-dom';
 import { Navbar } from './Navbar';
 import { Footer } from './Footer';
-import { AdUnit } from './AdUnit';
 
 export function LandingPage() {
   return (
@@ -64,11 +63,6 @@ export function LandingPage() {
               <CheckCircle2 size={15} className="text-green-500 mr-1.5" /> Offline Capable (IndexedDB)
             </span>
           </div>
-        </div>
-
-        {/* Top AdSense Placement */}
-        <div className="max-w-5xl mx-auto px-4">
-          <AdUnit slot="1234567890" format="auto" />
         </div>
 
         {/* Features Grid */}
@@ -131,11 +125,6 @@ export function LandingPage() {
               </Link>
             </div>
           </div>
-        </div>
-
-        {/* In-content Bottom Ad */}
-        <div className="max-w-5xl mx-auto px-4 py-8">
-          <AdUnit slot="9876543210" format="auto" />
         </div>
       </main>
 

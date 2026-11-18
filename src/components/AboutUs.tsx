@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Navbar } from './Navbar';
 import { Footer } from './Footer';
-import { AdUnit } from './AdUnit';
 import { 
   Lock, 
   Cpu, 
@@ -42,9 +41,6 @@ export function AboutUs() {
             Empowering independent hotels, motels, resorts, and retail operations with zero-subscription till reconciliation, shift logs, group sales pipelines, and offline-capable LAN sync.
           </p>
         </div>
-
-        {/* AdSense Placement Top */}
-        <AdUnit slot="1122334455" format="auto" />
 
         {/* Lead Architect & Developer Card — Balanced Editorial with Left Identity Backdrop */}
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 sm:p-7 mb-10 shadow-xs transition-colors overflow-hidden">
@@ -205,9 +201,6 @@ export function AboutUs() {
             Have feedback, an integration idea, or need custom technical assistance? Contact our engineering team directly through our <Link to="/contacts" className="text-blue-600 dark:text-blue-400 hover:underline font-semibold">Contact Page</Link>.
           </p>
         </div>
-
-        {/* AdSense Placement Bottom */}
-        <AdUnit slot="5544332211" format="auto" />
       </main>
 
       <Footer />

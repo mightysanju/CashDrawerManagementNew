@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Navbar } from './Navbar';
 import { Footer } from './Footer';
-import { AdUnit } from './AdUnit';
 import { 
   BookOpen, 
   HelpCircle, 
@@ -128,9 +127,6 @@ export function CashHandlingGuide() {
             Standard operating procedures (SOP), user administration, drawer reconciliation, sales pipeline tracking, P2P network synchronization, and automated Hotel Key PMS extension integration.
           </p>
         </div>
-
-        {/* AdSense Placement Top */}
-        <AdUnit slot="1234567890" format="auto" />
 
         {/* Quick Jump Navigation Bar */}
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 shadow-xs mb-10 overflow-x-auto">
@@ -658,9 +654,6 @@ export function CashHandlingGuide() {
           </section>
 
         </div>
-
-        {/* AdSense Placement Middle */}
-        <AdUnit slot="0987654321" format="auto" className="my-10" />
 
         {/* Section 10: Frequently Asked Questions (FAQ) */}
         <div id="faq" className="mt-14 mb-8">
