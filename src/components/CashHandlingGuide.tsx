@@ -618,9 +618,9 @@ export function CashHandlingGuide() {
                   <li>Click either <strong>+ Complaint Log</strong> or <strong>+ Misc Log</strong> in the top header.</li>
                   <li>The extension automatically extracts:
                     <ul className="pl-6 list-disc list-inside text-xs mt-1 text-indigo-800 dark:text-indigo-300">
-                      <li><strong>Guest Full Name</strong> (e.g. <em>DAVID KEVIN CHAPMAN</em>, <em>JAMES CALVIN ANDERSON</em>)</li>
-                      <li><strong>Room Number</strong> (e.g. <em>Room 208</em>)</li>
-                      <li><strong>Reservation Folio Number</strong> (e.g. <em>Res #14241009514</em>)</li>
+                      <li><strong>Guest Full Name</strong></li>
+                      <li><strong>Room Number</strong></li>
+                      <li><strong>Reservation Folio Number</strong></li>
                     </ul>
                   </li>
                   <li>The quick-log form opens pre-filled. Enter your observations and click <strong>Save Shift Log</strong>. No window switching or copy-pasting required!</li>
