@@ -335,9 +335,11 @@ export const SalesKanban: React.FC<SalesKanbanProps> = ({
                             >
                               <Edit3 className="w-3.5 h-3.5" />
                             </button>
-                            {(currentUser.role === 'manager' || currentUser.id === lead.clerkId) && (
+                            {currentUser.role === 'manager' && (
                               <button
-                                onClick={() => {
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  e.preventDefault();
                                   if (window.confirm('Delete this lead?')) onDeleteLead(lead.id);
                                 }}
                                 className="p-1 text-gray-400 hover:text-rose-600 rounded-md hover:bg-rose-50 transition"

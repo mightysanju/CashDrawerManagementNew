@@ -18,7 +18,8 @@ import {
   getDefaultQuestionnaireForCategory,
   AppSettings,
   FormFieldKey,
-  DEFAULT_FORM_FIELD_SETTINGS
+  DEFAULT_FORM_FIELD_SETTINGS,
+  ActivityLogEvent
 } from '../types';
 import { DatabaseManager, syncCategoriesToExtensionStorage } from '../utils/database';
 import { p2pSyncManager } from '../utils/p2pSyncManager';
@@ -166,6 +167,15 @@ export const FloatingExtensionBubble: React.FC<FloatingExtensionBubbleProps> = (
     if (activeCategory === 'Complaint') return ['Room Maintenance', 'Noise / Disturbance', 'Billing & Folio', 'Housekeeping / Cleanliness', 'Staff / Service', 'Other'];
     return ['General', 'Maintenance', 'Shift Handover', 'Front Desk', 'Other'];
   }, [currentCategoryConfig, activeCategory]);
+
+  // Keep subCategory selection valid and in-sync whenever category changes
+  useEffect(() => {
+    if (activeSubcategories && activeSubcategories.length > 0) {
+      if (!activeSubcategories.includes(subCategory)) {
+        setSubCategory(activeSubcategories[0]);
+      }
+    }
+  }, [activeCategory, activeSubcategories, subCategory]);
 
   // Movable Bubble State
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
@@ -376,6 +386,27 @@ export const FloatingExtensionBubble: React.FC<FloatingExtensionBubbleProps> = (
       entry.customFields = customFieldValues;
     }
 
+    const title = entry.topic || entry.name || `${entry.category} Log`;
+    const createEvent: ActivityLogEvent = {
+      id: `created_${entry.id}`,
+      type: 'created',
+      logId: entry.id,
+      category: entry.category,
+      subCategory: entry.subCategory,
+      logTitle: title,
+      actor: currentUser.fullName,
+      actorRole: currentUser.role,
+      summary: `Created ${entry.category.toLowerCase()} log: "${title}"`,
+      detail: entry.clerkNotes || entry.topic,
+      timestamp: entry.createdAt,
+      badgeText: 'New Log',
+      badgeColor: 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700',
+    };
+    try {
+      await db.saveActivityEvent(createEvent);
+      p2pSyncManager.broadcastActivityEvent(createEvent);
+    } catch (e) {}
+
     await db.saveShiftLog(entry);
     p2pSyncManager.broadcastShiftLog(entry);
     onLogSaved();
@@ -445,7 +476,7 @@ export const FloatingExtensionBubble: React.FC<FloatingExtensionBubbleProps> = (
             <rect x="5" y="4" width="32" height="39" rx="3.5" fill="url(#inapp-logbook-leather)" stroke="#334155" strokeWidth="0.8" />
 
             {/* Bound Leather Spine */}
-            <path d="M5 4 H10.5 V43 H5 A2.5 2.5 0 0 1 5 4 Z" fill="#090d16" />
+            <rect x="4.5" y="4" width="6" height="39" rx="2" fill="#090d16" />
 
             {/* Gold Spine Ribs / Stitching Bands */}
             <line x1="6.5" y1="11" x2="9.5" y2="11" stroke="#f59e0b" strokeWidth="1.2" strokeLinecap="round" />

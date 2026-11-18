@@ -4,6 +4,8 @@ import {
   UserAccount, 
   ShiftLogEntry, 
   ShiftLogResponse,
+  ShiftLogStatusChange,
+  ActivityLogEvent,
   LogCategoryConfig, 
   AppSettings,
   DatabaseArchive
@@ -368,11 +370,24 @@ export class DatabaseManager {
     const existingTime = new Date(existing.updatedAt || existing.createdAt || 0).getTime();
     const incomingTime = new Date(incoming.updatedAt || incoming.createdAt || 0).getTime();
 
+    // Union status history transitions
+    const statusMap = new Map<string, ShiftLogStatusChange>();
+    (existing.statusHistory || []).forEach((s) => {
+      if (s && s.id) statusMap.set(s.id, s);
+    });
+    (incoming.statusHistory || []).forEach((s) => {
+      if (s && s.id) statusMap.set(s.id, s);
+    });
+    const mergedStatusHistory = Array.from(statusMap.values()).sort(
+      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    );
+
     if (incomingTime >= existingTime) {
       return {
         ...existing,
         ...incoming,
         responses: mergedResponses,
+        statusHistory: mergedStatusHistory,
         updatedAt: incoming.updatedAt || new Date().toISOString(),
       };
     } else {
@@ -380,12 +395,43 @@ export class DatabaseManager {
         ...incoming,
         ...existing,
         responses: mergedResponses,
+        statusHistory: mergedStatusHistory,
         updatedAt: existing.updatedAt || new Date().toISOString(),
       };
     }
   }
 
+  /* -------------------------------------------------------------
+   *  Tombstone Protection (Prevents Resurrection of Deleted Logs)
+   * ------------------------------------------------------------- */
+  getDeletedLogIds(): Set<string> {
+    try {
+      const stored = localStorage.getItem('cdm_deleted_log_ids');
+      return new Set(stored ? JSON.parse(stored) : []);
+    } catch {
+      return new Set();
+    }
+  }
+
+  addDeletedLogId(logId: string): void {
+    try {
+      const ids = this.getDeletedLogIds();
+      ids.add(logId);
+      const arr = Array.from(ids).slice(-1000);
+      localStorage.setItem('cdm_deleted_log_ids', JSON.stringify(arr));
+    } catch {}
+  }
+
+  isLogDeleted(logId: string): boolean {
+    return this.getDeletedLogIds().has(logId);
+  }
+
   async saveShiftLog(log: ShiftLogEntry): Promise<void> {
+    if (!log || !log.id) return;
+    if (this.isLogDeleted(log.id)) {
+      return; // Do not resurrect deleted logs!
+    }
+
     const db = await this.dbPromise;
     const existing = await db.get(STORES.SHIFT_LOGS, log.id);
     if (!existing) {
@@ -406,31 +452,96 @@ export class DatabaseManager {
       (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
     );
 
+    // Union status history
+    const statusMap = new Map<string, ShiftLogStatusChange>();
+    (existing.statusHistory || []).forEach((s) => {
+      if (s && s.id) statusMap.set(s.id, s);
+    });
+    (log.statusHistory || []).forEach((s) => {
+      if (s && s.id) statusMap.set(s.id, s);
+    });
+    const mergedStatusHistory = Array.from(statusMap.values()).sort(
+      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    );
+
     const finalLog: ShiftLogEntry = {
       ...existing,
       ...log,
       responses: mergedResponses,
+      statusHistory: mergedStatusHistory,
       updatedAt: log.updatedAt || new Date().toISOString(),
     };
     await db.put(STORES.SHIFT_LOGS, finalLog);
   }
 
   async deleteShiftLog(logId: string): Promise<void> {
+    this.addDeletedLogId(logId);
     const db = await this.dbPromise;
     await db.delete(STORES.SHIFT_LOGS, logId);
   }
 
   async bulkSaveShiftLogs(logs: ShiftLogEntry[]): Promise<void> {
     if (!logs || logs.length === 0) return;
+    const deletedIds = this.getDeletedLogIds();
     const db = await this.dbPromise;
     const tx = db.transaction(STORES.SHIFT_LOGS, 'readwrite');
     for (const log of logs) {
-      if (!log || !log.id) continue;
+      if (!log || !log.id || deletedIds.has(log.id)) continue;
       const existing = await tx.store.get(log.id);
       const finalLog = existing ? this.mergeShiftLogRecords(existing, log) : log;
       await tx.store.put(finalLog);
     }
     await tx.done;
+  }
+
+  /* -------------------------------------------------------------
+   *  Activity Tracker Operations (Full Lifecycle Audit Trail)
+   * ------------------------------------------------------------- */
+  async getActivityEvents(): Promise<ActivityLogEvent[]> {
+    try {
+      const stored = localStorage.getItem('cdm_activity_events');
+      if (!stored) return [];
+      const parsed: ActivityLogEvent[] = JSON.parse(stored);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      console.error('Error reading activity events:', e);
+      return [];
+    }
+  }
+
+  async saveActivityEvent(event: ActivityLogEvent): Promise<void> {
+    if (!event || !event.id) return;
+    try {
+      const events = await this.getActivityEvents();
+      const existingIdx = events.findIndex(e => e.id === event.id);
+      if (existingIdx >= 0) {
+        events[existingIdx] = event;
+      } else {
+        events.unshift(event);
+      }
+      const trimmed = events.slice(0, 500);
+      localStorage.setItem('cdm_activity_events', JSON.stringify(trimmed));
+    } catch (e) {
+      console.error('Error saving activity event:', e);
+    }
+  }
+
+  async bulkSaveActivityEvents(newEvents: ActivityLogEvent[]): Promise<void> {
+    if (!newEvents || newEvents.length === 0) return;
+    try {
+      const events = await this.getActivityEvents();
+      const map = new Map<string, ActivityLogEvent>();
+      events.forEach(e => map.set(e.id, e));
+      newEvents.forEach(e => {
+        if (e && e.id) map.set(e.id, e);
+      });
+      const merged = Array.from(map.values()).sort(
+        (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      ).slice(0, 500);
+      localStorage.setItem('cdm_activity_events', JSON.stringify(merged));
+    } catch (e) {
+      console.error('Error bulk saving activity events:', e);
+    }
   }
 
   /* -------------------------------------------------------------

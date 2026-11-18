@@ -27,12 +27,21 @@ export const LoginModal: React.FC<LoginModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
+      setUsername('');
+      setPassword('');
       setLoading(false);
       setError(null);
     }
   }, [isOpen]);
 
   if (!isOpen) return null;
+
+  const handleCancel = () => {
+    setUsername('');
+    setPassword('');
+    setError(null);
+    if (onClose) onClose();
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,6 +51,9 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     try {
       const result = await authManager.login(username, password);
       if (result.success && result.user) {
+        setUsername('');
+        setPassword('');
+        setError(null);
         if (onSuccess) onSuccess(result.user);
         if (onLoginSuccess) onLoginSuccess(result.user);
         if (onClose) onClose();
@@ -75,7 +87,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
           {!required && onClose && (
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleCancel}
               className="p-1 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition cursor-pointer"
             >
               <X className="w-5 h-5" />
@@ -100,7 +112,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4" autoComplete="off">
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-1.5">
                 Username
@@ -113,6 +125,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                   type="text"
                   required
                   autoFocus
+                  autoComplete="off"
                   placeholder="e.g. manager or clerk1"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
@@ -132,6 +145,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                 <input
                   type="password"
                   required
+                  autoComplete="new-password"
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -144,8 +158,8 @@ export const LoginModal: React.FC<LoginModalProps> = ({
               {!required && onClose && (
                 <button
                   type="button"
-                  onClick={onClose}
-                  className="w-1/3 py-2.5 px-4 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition"
+                  onClick={handleCancel}
+                  className="w-1/3 py-2.5 px-4 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition cursor-pointer"
                 >
                   Cancel
                 </button>

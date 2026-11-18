@@ -2,6 +2,7 @@ import Peer, { DataConnection } from 'peerjs';
 import { 
   ShiftRecord, 
   ShiftLogEntry, 
+  ActivityLogEvent,
   LogCategoryConfig, 
   UserAccount, 
   AppSettings,
@@ -106,6 +107,7 @@ export type SyncMessage =
   | { type: 'SHIFT_UPSERT'; shift: ShiftRecord; senderId?: string }
   | { type: 'SHIFT_LOG_UPSERT'; log: ShiftLogEntry; senderId?: string }
   | { type: 'SHIFT_LOG_DELETE'; logId: string; senderId?: string }
+  | { type: 'ACTIVITY_EVENT'; event: ActivityLogEvent; senderId?: string }
   | { type: 'CATEGORY_UPSERT'; category: LogCategoryConfig; senderId?: string }
   | { type: 'CATEGORY_DELETE'; categoryId: string; senderId?: string }
   | { type: 'USER_UPSERT'; user: UserAccount; senderId?: string }
@@ -1761,6 +1763,10 @@ class P2PSyncManager {
       await db.deleteShiftLog(msg.logId);
       this.notifyData('SHIFT_LOG_DELETED', msg.logId);
       this.relayIfHub(msg, relayFromPeerId);
+    } else if (msg.type === 'ACTIVITY_EVENT' && msg.event) {
+      await db.saveActivityEvent(msg.event);
+      this.notifyData('ACTIVITY_EVENT_RECORDED', msg.event);
+      this.relayIfHub(msg, relayFromPeerId);
     } else if (msg.type === 'CATEGORY_UPSERT' && msg.category) {
       await db.saveCategory(msg.category);
       this.notifyData('CATEGORY_UPDATED', msg.category);
@@ -2149,6 +2155,14 @@ class P2PSyncManager {
     this.sendToAll({
       type: 'SHIFT_LOG_DELETE',
       logId,
+      senderId: this.myClientId,
+    });
+  }
+
+  public broadcastActivityEvent(event: ActivityLogEvent) {
+    this.sendToAll({
+      type: 'ACTIVITY_EVENT',
+      event,
       senderId: this.myClientId,
     });
   }

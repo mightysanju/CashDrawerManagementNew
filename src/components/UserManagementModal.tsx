@@ -1842,7 +1842,7 @@ export const UserManagementModal: React.FC<UserManagementModalProps> = ({
                               <div>
                                 <div className="flex items-center space-x-2">
                                   <span className="text-xs font-bold text-gray-900 dark:text-white">
-                                    {log.name || log.topic}
+                                    {log.topic || log.name}
                                   </span>
                                   {log.subCategory && (
                                     <span className="text-[10px] text-gray-500 bg-gray-100 dark:bg-gray-700 px-1.5 py-0.2 rounded">

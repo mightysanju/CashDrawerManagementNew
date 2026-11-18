@@ -17,9 +17,9 @@ import {
   Key,
   CheckCircle2
 } from 'lucide-react';
-import { CashEntry, ShiftRecord, ShiftLogEntry, UserAccount, PrimaryCategory } from '../types';
+import { CashEntry, ShiftRecord, ShiftLogEntry, UserAccount, PrimaryCategory, ActivityLogEvent } from '../types';
 import { ShiftHistory } from './ShiftHistory';
-import { DatabaseManager } from '../utils/database';
+import { DatabaseManager, syncCategoriesToExtensionStorage } from '../utils/database';
 import { CashSection } from './cash-sections/CashSection';
 import { ReceiptsSection } from './cash-sections/ReceiptsSection';
 import { Navbar } from './Navbar';
@@ -220,15 +220,24 @@ export function CashDrawer() {
     setSelectedShift(shift);
     setEntries(shift.entries);
     setShiftDrop(shift.shiftDrop || 0);
-    setOrganizationName(shift.organizationName || '');
+    const validShiftOrg = shift.organizationName && !['front desk', 'frontdesk', 'frontdesk pro'].includes(shift.organizationName.toLowerCase()) ? shift.organizationName : '';
+    const resolvedOrg = validShiftOrg || organizationName || localStorage.getItem('cdm_store_name') || localStorage.getItem('cdm_synced_register') || 'Grand Hotel & Suites';
+    setOrganizationName(resolvedOrg);
     setDrawerNumber(shift.drawerNumber);
     localStorage.setItem('cdm_local_active_shift_id', shift.id);
-  }, []);
+  }, [organizationName]);
 
   const loadSettingsData = useCallback(async () => {
     try {
-      const s = await db.getSettings();
+      const [s, org] = await Promise.all([
+        db.getSettings(),
+        db.getOrganization()
+      ]);
       setAppSettings(s);
+      const hotel = org || s?.organizationName || localStorage.getItem('cdm_store_name') || localStorage.getItem('cdm_synced_register');
+      if (hotel && !['front desk', 'frontdesk', 'frontdesk pro'].includes(hotel.toLowerCase())) {
+        setOrganizationName(hotel);
+      }
     } catch (e) {
       console.error('Error loading settings:', e);
     }
@@ -295,6 +304,17 @@ export function CashDrawer() {
     loadLogsData();
     loadSettingsData();
 
+    // Ensure categories and active auth session are pushed to extension storage
+    db.getCategories().then((cats) => {
+      if (cats && cats.length > 0) {
+        syncCategoriesToExtensionStorage(cats);
+      }
+    });
+    const activeAuthUser = authManager.getCurrentUser();
+    if (activeAuthUser) {
+      window.postMessage({ type: 'FDP_APP_USER_SYNC', user: activeAuthUser }, '*');
+    }
+
     // When app is loaded and cannot find a local database, launch Setup modal with 2 options:
     // Option 1: Sync from local network (lists available databases)
     // Option 2: Create account if no sync database is available
@@ -332,6 +352,7 @@ export function CashDrawer() {
       const entry = customEvent.detail;
       const lastPurged = parseInt(localStorage.getItem('cdm_last_purged_epoch') || '0', 10);
       if (entry && entry.id) {
+        if (db.isLogDeleted(entry.id)) return;
         const logTime = new Date(entry.createdAt || 0).getTime();
         if (lastPurged > 0 && logTime > 0 && logTime <= lastPurged) {
           return;
@@ -350,6 +371,7 @@ export function CashDrawer() {
         let added = false;
         for (const l of logs) {
           if (l && l.id) {
+            if (db.isLogDeleted(l.id)) continue;
             const logTime = new Date(l.createdAt || 0).getTime();
             if (lastPurged > 0 && logTime > 0 && logTime <= lastPurged) {
               continue;
@@ -373,6 +395,7 @@ export function CashDrawer() {
       if (event.data.type === 'FDP_EXTENSION_LOG_RECEIVED' && event.data.log) {
         const entry = event.data.log;
         if (entry && entry.id) {
+          if (db.isLogDeleted(entry.id)) return;
           const logTime = new Date(entry.createdAt || 0).getTime();
           if (lastPurged > 0 && logTime > 0 && logTime <= lastPurged) {
             return;
@@ -385,6 +408,7 @@ export function CashDrawer() {
         let added = false;
         for (const l of event.data.logs) {
           if (l && l.id) {
+            if (db.isLogDeleted(l.id)) continue;
             const logTime = new Date(l.createdAt || 0).getTime();
             if (lastPurged > 0 && logTime > 0 && logTime <= lastPurged) {
               continue;
@@ -537,7 +561,7 @@ export function CashDrawer() {
     try {
       const newShift: ShiftRecord = {
         id: Date.now().toString(),
-        organizationName: organizationName || 'Front Desk',
+        organizationName: organizationName || appSettings?.organizationName || localStorage.getItem('cdm_store_name') || 'Grand Hotel & Suites',
         drawerNumber: drawerNum,
         cashierName: currentUser.fullName,
         cashierId: currentUser.id,
@@ -598,6 +622,7 @@ export function CashDrawer() {
 
     const closedShift: ShiftRecord = {
       ...selectedShift,
+      organizationName: selectedShift.organizationName || organizationName,
       closeTime: new Date().toISOString(),
       closingBalance: currentBalance,
       shiftDrop: totalDrop,
@@ -785,9 +810,49 @@ export function CashDrawer() {
   };
 
   const handleDeleteLog = async (id: string) => {
+    if (currentUser?.role !== 'manager') {
+      alert('Permission Denied: Only Managers have permission to delete entries.');
+      return;
+    }
+
+    const logToDelete = shiftLogs.find((l) => l.id === id);
+    const category = logToDelete?.category || 'Shift Note';
+    const title = logToDelete?.topic || logToDelete?.name || `${category} Log`;
+
+    // Record activity audit event before deleting
+    const deleteEvent: ActivityLogEvent = {
+      id: `deleted_${id}_${Date.now()}`,
+      type: 'deleted',
+      logId: id,
+      category: (logToDelete?.category as any) || 'Shift Note',
+      subCategory: logToDelete?.subCategory,
+      logTitle: title,
+      actor: currentUser.fullName,
+      actorRole: currentUser.role,
+      summary: `Deleted ${category.toLowerCase()} log: "${title}"`,
+      detail: `Deleted by Manager ${currentUser.fullName}`,
+      timestamp: new Date().toISOString(),
+      badgeText: 'Deleted',
+      badgeColor: 'bg-rose-50 text-rose-800 border-rose-200 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800',
+    };
+
+    try {
+      await db.saveActivityEvent(deleteEvent);
+      p2pSyncManager.broadcastActivityEvent(deleteEvent);
+    } catch (e) {
+      console.error('Failed to save delete activity event:', e);
+    }
+
+    // Mark as deleted tombstone and remove from DB
     await db.deleteShiftLog(id);
     p2pSyncManager.broadcastShiftLogDelete(id);
-    loadLogsData();
+
+    // Notify chrome extension & local window storage so it never resurrects
+    window.postMessage({ type: 'FDP_DELETE_LOG', logId: id }, '*');
+
+    // Optimistically update local state immediately
+    setShiftLogs((prev) => prev.filter((l) => l.id !== id));
+    await loadLogsData();
   };
 
   return (
@@ -799,7 +864,6 @@ export function CashDrawer() {
         <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-5">
           <div>
             <div className="flex items-center space-x-2.5">
-              <img src="/favicon.png" alt="FrontDesk Pro" className="h-7 w-7 sm:h-8 sm:w-8 rounded-lg object-cover shadow-xs" />
               <h1 className="text-xl sm:text-2xl font-black text-gray-900 dark:text-white tracking-tight flex items-center">
                 FrontDesk&nbsp;<span className="text-blue-600 dark:text-blue-500 font-black">Pro</span>
                 <span className="text-gray-600 dark:text-gray-300 font-bold ml-1.5 text-base sm:text-xl">Operations Platform</span>
@@ -1097,6 +1161,9 @@ export function CashDrawer() {
                   type="button"
                   onClick={() => generatePDF({
                     ...selectedShift,
+                    organizationName: (!selectedShift.organizationName || ['front desk', 'frontdesk', 'frontdesk pro', 'cash drawer management', 'main store'].includes(selectedShift.organizationName.toLowerCase()))
+                      ? (organizationName || localStorage.getItem('cdm_store_name') || localStorage.getItem('cdm_synced_register') || 'Grand Hotel & Suites')
+                      : selectedShift.organizationName,
                     closingBalance: currentTotal,
                     shiftDrop,
                     entries,
@@ -1337,18 +1404,20 @@ export function CashDrawer() {
       </main>
 
       {/* Staff Login Modal */}
-      <LoginModal
-        isOpen={isLoginModalOpen}
-        onClose={() => {
-          setIsLoginModalOpen(false);
-          setLoginRequiredAction(null);
-        }}
-        requiredAction={loginRequiredAction}
-        onLoginSuccess={() => {
-          loadShiftsData();
-          loadLogsData();
-        }}
-      />
+      {isLoginModalOpen && (
+        <LoginModal
+          isOpen={isLoginModalOpen}
+          onClose={() => {
+            setIsLoginModalOpen(false);
+            setLoginRequiredAction(null);
+          }}
+          requiredAction={loginRequiredAction}
+          onLoginSuccess={() => {
+            loadShiftsData();
+            loadLogsData();
+          }}
+        />
+      )}
 
       {/* Shift Log Create/Edit Modal */}
       {isLogModalOpen && (

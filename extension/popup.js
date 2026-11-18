@@ -107,6 +107,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 4. DOM Script Runner & Reservation Autofill Handler
   // =========================================================================
   const uploadScriptBtn = document.getElementById('upload-script-btn');
+  const resetScriptBtn = document.getElementById('reset-script-btn');
   const scriptUploadInput = document.getElementById('script-upload-input');
   const runScriptBtn = document.getElementById('run-script-btn');
   const scriptStatusBadge = document.getElementById('script-status-badge');
@@ -128,19 +129,23 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
     chrome.storage.local.get(['fdp_custom_script', 'fdp_custom_script_filename', 'fdp_script_autorun'], (res) => {
       if (res && res.fdp_custom_script) {
-        scriptStatusBadge.textContent = 'Active';
+        scriptStatusBadge.textContent = 'Custom';
         scriptStatusBadge.style.background = '#dbeafe';
         scriptStatusBadge.style.color = '#1d4ed8';
         scriptInfo.style.display = 'block';
-        scriptFilename.textContent = `Script: ${res.fdp_custom_script_filename || 'custom-pms-script.js'} (${res.fdp_custom_script.length} chars)`;
+        scriptFilename.textContent = `Custom: ${res.fdp_custom_script_filename || 'uploaded-script.js'} (${res.fdp_custom_script.length} chars)`;
       } else {
-        scriptStatusBadge.textContent = 'None Loaded';
-        scriptStatusBadge.style.background = '#f1f5f9';
-        scriptStatusBadge.style.color = '#64748b';
+        scriptStatusBadge.textContent = 'Default (BWH)';
+        scriptStatusBadge.style.background = '#ecfdf5';
+        scriptStatusBadge.style.color = '#047857';
+        scriptInfo.style.display = 'block';
+        scriptFilename.textContent = 'Active: bwh-reservation-injector.js (Built-in Default)';
       }
 
-      if (res && res.fdp_script_autorun) {
-        autoRunCheckbox.checked = true;
+      if (res && res.fdp_script_autorun === false) {
+        autoRunCheckbox.checked = false;
+      } else {
+        autoRunCheckbox.checked = true; // Auto-run enabled by default
       }
     });
   }
@@ -165,16 +170,31 @@ document.addEventListener('DOMContentLoaded', async () => {
             fdp_custom_script_filename: file.name,
           });
         }
-        scriptStatusBadge.textContent = 'Active';
+        scriptStatusBadge.textContent = 'Custom';
         scriptStatusBadge.style.background = '#dbeafe';
         scriptStatusBadge.style.color = '#1d4ed8';
         scriptInfo.style.display = 'block';
-        scriptFilename.textContent = `Script: ${file.name} (${code.length} chars)`;
-        showScriptBanner(`Loaded ${file.name} successfully!`);
+        scriptFilename.textContent = `Custom: ${file.name} (${code.length} chars)`;
+        showScriptBanner(`Loaded ${file.name} as active driver!`);
       }
     };
     reader.readAsText(file);
   });
+
+  // Reset to default built-in script
+  if (resetScriptBtn) {
+    resetScriptBtn.addEventListener('click', async () => {
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+        await chrome.storage.local.remove(['fdp_custom_script', 'fdp_custom_script_filename']);
+      }
+      scriptStatusBadge.textContent = 'Default (BWH)';
+      scriptStatusBadge.style.background = '#ecfdf5';
+      scriptStatusBadge.style.color = '#047857';
+      scriptInfo.style.display = 'block';
+      scriptFilename.textContent = 'Active: bwh-reservation-injector.js (Built-in Default)';
+      showScriptBanner('Reset to default BWH injection script!');
+    });
+  }
 
   // Handle autorun checkbox
   autoRunCheckbox.addEventListener('change', async () => {
@@ -189,9 +209,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (typeof chrome === 'undefined' || !chrome.tabs) return;
 
     chrome.storage.local.get(['fdp_custom_script'], async (res) => {
-      const scriptCode = res && res.fdp_custom_script;
+      let scriptCode = res && res.fdp_custom_script;
       if (!scriptCode) {
-        showScriptBanner('Please upload a script first');
+        try {
+          const resp = await fetch(chrome.runtime.getURL('default-injector.js'));
+          scriptCode = await resp.text();
+        } catch (err) {
+          console.error('Failed to load default injector:', err);
+        }
+      }
+
+      if (!scriptCode) {
+        showScriptBanner('No script available to execute');
         return;
       }
 

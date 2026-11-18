@@ -19,6 +19,7 @@ class AuthManager {
       const stored = localStorage.getItem(SESSION_KEY);
       if (stored) {
         this.currentUser = JSON.parse(stored);
+        this.notify();
       }
     } catch (e) {
       console.warn('Failed to parse auth session:', e);

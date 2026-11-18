@@ -176,8 +176,36 @@ export interface ShiftLogEntry {
   // Threaded Responses / Replies
   responses?: ShiftLogResponse[];
 
+  // Status Change History Audit Trail
+  statusHistory?: ShiftLogStatusChange[];
+
   // Dynamic Custom Questionnaire Fields
   customFields?: Record<string, string>;
+}
+
+export interface ShiftLogStatusChange {
+  id: string;
+  fromStatus: string;
+  toStatus: string;
+  changedBy: string;
+  changedByRole: string;
+  timestamp: string;
+}
+
+export interface ActivityLogEvent {
+  id: string;
+  type: 'created' | 'status' | 'deleted' | 'reply' | 'reminder';
+  logId: string;
+  category: PrimaryCategory;
+  subCategory?: string;
+  logTitle: string;
+  actor: string;
+  actorRole?: string;
+  summary: string;
+  detail?: string;
+  timestamp: string;
+  badgeText: string;
+  badgeColor: string;
 }
 
 export interface ShiftLogResponse {

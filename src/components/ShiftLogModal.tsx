@@ -26,7 +26,9 @@ import {
   AppSettings, 
   UserAccount,
   FormFieldKey,
-  DEFAULT_FORM_FIELD_SETTINGS
+  DEFAULT_FORM_FIELD_SETTINGS,
+  ActivityLogEvent,
+  ShiftLogStatusChange
 } from '../types';
 import { DatabaseManager } from '../utils/database';
 import { p2pSyncManager } from '../utils/p2pSyncManager';
@@ -373,6 +375,72 @@ export const ShiftLogModal: React.FC<ShiftLogModalProps> = ({
     }
 
     try {
+      const title = newLog.topic || newLog.name || `${newLog.category} Log`;
+
+      // Check for status changes when editing
+      if (editEntry) {
+        if (newLog.category === 'Complaint' && editEntry.complaintStatus !== newLog.complaintStatus) {
+          const statusEvent: ActivityLogEvent = {
+            id: `status_${newLog.id}_${Date.now()}`,
+            type: 'status',
+            logId: newLog.id,
+            category: 'Complaint',
+            subCategory: newLog.subCategory,
+            logTitle: title,
+            actor: currentUser.fullName,
+            actorRole: currentUser.role,
+            summary: `Complaint marked as ${newLog.complaintStatus} (from ${editEntry.complaintStatus || 'Open'})`,
+            detail: newLog.clerkNotes,
+            timestamp: newLog.updatedAt || new Date().toISOString(),
+            badgeText: newLog.complaintStatus || 'Open',
+            badgeColor: newLog.complaintStatus === 'Resolved'
+              ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800'
+              : 'bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800',
+          };
+          await db.saveActivityEvent(statusEvent);
+          p2pSyncManager.broadcastActivityEvent(statusEvent);
+        } else if (newLog.category === 'Sales' && editEntry.salesStatus !== newLog.salesStatus) {
+          const statusEvent: ActivityLogEvent = {
+            id: `sales_status_${newLog.id}_${Date.now()}`,
+            type: 'status',
+            logId: newLog.id,
+            category: 'Sales',
+            subCategory: newLog.subCategory,
+            logTitle: title,
+            actor: currentUser.fullName,
+            actorRole: currentUser.role,
+            summary: `Sales lead status updated to ${newLog.salesStatus} (from ${editEntry.salesStatus || 'New Lead'})`,
+            detail: newLog.clerkNotes,
+            timestamp: newLog.updatedAt || new Date().toISOString(),
+            badgeText: newLog.salesStatus || 'New Lead',
+            badgeColor: newLog.salesStatus === 'Closed Definite'
+              ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800'
+              : 'bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800',
+          };
+          await db.saveActivityEvent(statusEvent);
+          p2pSyncManager.broadcastActivityEvent(statusEvent);
+        }
+      } else {
+        // New log creation event
+        const createEvent: ActivityLogEvent = {
+          id: `created_${newLog.id}`,
+          type: 'created',
+          logId: newLog.id,
+          category: newLog.category,
+          subCategory: newLog.subCategory,
+          logTitle: title,
+          actor: currentUser.fullName,
+          actorRole: currentUser.role,
+          summary: `Created ${newLog.category.toLowerCase()} log: "${title}"`,
+          detail: newLog.clerkNotes || newLog.topic,
+          timestamp: newLog.createdAt,
+          badgeText: 'New Log',
+          badgeColor: 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700',
+        };
+        await db.saveActivityEvent(createEvent);
+        p2pSyncManager.broadcastActivityEvent(createEvent);
+      }
+
       await db.saveShiftLog(newLog);
       p2pSyncManager.broadcastShiftLog(newLog);
       onSaved(newLog);

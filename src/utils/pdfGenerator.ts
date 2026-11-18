@@ -8,48 +8,77 @@ import { format } from 'date-fns';
  */
 export const generatePDF = (shift: ShiftRecord) => {
   const doc = new jsPDF();
-  const orgName = shift.organizationName || 'Cash Drawer Management';
+  
+  // Hotel / Organization Name on Top (Strictly Hotel / Property Name)
+  let orgName = (shift.organizationName || '').trim();
+  const isGeneric = !orgName || [
+    'front desk',
+    'frontdesk',
+    'frontdesk pro',
+    'cash drawer management',
+    'main store',
+    'default',
+  ].includes(orgName.toLowerCase());
+
+  if (isGeneric) {
+    try {
+      const stored = localStorage.getItem('cdm_store_name') || 
+                     localStorage.getItem('cdm_synced_register') || 
+                     localStorage.getItem('cdm_hotel_name') || 
+                     localStorage.getItem('cdm_organization_name');
+      if (stored && !['front desk', 'frontdesk', 'frontdesk pro', 'main store'].includes(stored.trim().toLowerCase())) {
+        orgName = stored.trim();
+      }
+    } catch {}
+  }
+  if (!orgName || ['front desk', 'frontdesk', 'frontdesk pro', 'cash drawer management', 'main store'].includes(orgName.toLowerCase())) {
+    orgName = 'Grand Hotel & Suites';
+  }
+
   const pageWidth = doc.internal.pageSize.width;
   const pageHeight = doc.internal.pageSize.height;
 
-  // Header Banner Box
+  // Header Banner Box (Executive Deep Slate Navy)
   doc.setFillColor(15, 23, 42); // slate-900
   doc.rect(0, 0, pageWidth, 28, 'F');
 
-  // Title with Organization Name
+  // Title on Top: Hotel / Organization Name
   doc.setTextColor(255, 255, 255);
-  doc.setFontSize(14);
+  doc.setFontSize(15);
   doc.setFont('helvetica', 'bold');
   doc.text(orgName.toUpperCase(), pageWidth / 2, 11, { align: 'center' });
 
   // Subtitle
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setFont('helvetica', 'bold');
   doc.setTextColor(203, 213, 225); // slate-300
-  doc.text('EXECUTIVE CASH DRAWER AUDIT & RECONCILIATION REPORT', pageWidth / 2, 18, { align: 'center' });
+  doc.text('SHIFT RECONCILIATION & TILL AUDIT REPORT', pageWidth / 2, 17.5, { align: 'center' });
 
-  doc.setFontSize(7.5);
+  // Timestamp & System Line
+  doc.setFontSize(7);
+  doc.setFont('helvetica', 'normal');
   doc.setTextColor(148, 163, 184); // slate-400
-  doc.text(`Official Audit Generated: ${format(new Date(), 'PPpp')}`, pageWidth / 2, 24, { align: 'center' });
+  doc.text(`Official Audit Generated: ${format(new Date(), 'PPpp')} • FrontDesk Pro Operations Platform`, pageWidth / 2, 23.5, { align: 'center' });
 
   // Reset text color
   doc.setTextColor(15, 23, 42);
 
   // Shift Metadata Card
+  const usableWidth = pageWidth - 24; // 186mm between left 12mm and right 12mm
   doc.setFillColor(248, 250, 252); // slate-50
   doc.setDrawColor(226, 232, 240); // slate-200
-  doc.roundedRect(14, 32, pageWidth - 28, 22, 2, 2, 'FD');
+  doc.roundedRect(12, 32, usableWidth, 22, 2, 2, 'FD');
 
   doc.setFontSize(8.5);
   doc.setFont('helvetica', 'bold');
-  doc.text('Shift ID:', 18, 38);
-  doc.text('Drawer / Till #:', 18, 44);
-  doc.text('Cashier on Duty:', 18, 50);
+  doc.text('Shift ID:', 16, 38);
+  doc.text('Drawer / Till #:', 16, 44);
+  doc.text('Cashier on Duty:', 16, 50);
 
   doc.setFont('helvetica', 'normal');
-  doc.text(shift.id, 45, 38);
-  doc.text(`Drawer ${shift.drawerNumber}`, 45, 44);
-  doc.text(`${shift.cashierName} ${shift.cashierId ? `(ID: ${shift.cashierId})` : ''}`, 45, 50);
+  doc.text(shift.id, 43, 38);
+  doc.text(`Drawer ${shift.drawerNumber}`, 43, 44);
+  doc.text(`${shift.cashierName} ${shift.cashierId ? `(ID: ${shift.cashierId})` : ''}`, 43, 50);
 
   doc.setFont('helvetica', 'bold');
   doc.text('Open Time:', pageWidth / 2 + 5, 38);
@@ -71,164 +100,379 @@ export const generatePDF = (shift: ShiftRecord) => {
   }
   doc.setTextColor(15, 23, 42);
 
-  // Financial Reconciliation Summary
-  const yFin = 58;
-  const colWidth = (pageWidth - 28 - 9) / 4;
+  // Four Compact KPI Summary Boxes Side by Side
+  const yFin = 57;
+  const boxHeight = 16.5;
+  const kpiGap = 3.2;
+  const colWidth = (usableWidth - kpiGap * 3) / 4;
 
   const openingFloat = shift.openingBalance;
   const shiftDrop = shift.shiftDrop || 0;
   const closingBalance = shift.closingBalance !== undefined ? shift.closingBalance : shift.openingBalance;
   const variance = closingBalance - openingFloat;
 
-  // Box 1: Opening Float
-  doc.setFillColor(241, 245, 249);
-  doc.roundedRect(14, yFin, colWidth, 16, 1.5, 1.5, 'F');
-  doc.setFontSize(7);
+  // Box 1: Opening Float (Starting Base Till)
+  doc.setFillColor(248, 250, 252);
+  doc.setDrawColor(226, 232, 240);
+  doc.roundedRect(12, yFin, colWidth, boxHeight, 1.5, 1.5, 'FD');
+  doc.setFontSize(6.8);
+  doc.setFont('helvetica', 'bold');
   doc.setTextColor(100, 116, 139);
-  doc.text('OPENING FLOAT', 14 + colWidth / 2, yFin + 5, { align: 'center' });
+  doc.text('OPENING FLOAT', 12 + colWidth / 2, yFin + 4.2, { align: 'center' });
   doc.setFontSize(10);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
-  doc.text(`$${openingFloat.toFixed(2)}`, 14 + colWidth / 2, yFin + 12, { align: 'center' });
+  doc.text(`$${openingFloat.toFixed(2)}`, 12 + colWidth / 2, yFin + 9.8, { align: 'center' });
+  doc.setFontSize(5.8);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(148, 163, 184);
+  doc.text('Starting Base Till', 12 + colWidth / 2, yFin + 13.8, { align: 'center' });
 
-  // Box 2: Total Drops
-  const xBox2 = 14 + colWidth + 3;
-  doc.setFillColor(254, 242, 242);
-  doc.roundedRect(xBox2, yFin, colWidth, 16, 1.5, 1.5, 'F');
-  doc.setFontSize(7);
-  doc.setTextColor(185, 28, 28);
-  doc.text('SAFE DEPOSIT DROPS', xBox2 + colWidth / 2, yFin + 5, { align: 'center' });
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(185, 28, 28);
-  doc.text(`$${shiftDrop.toFixed(2)}`, xBox2 + colWidth / 2, yFin + 12, { align: 'center' });
-
-  // Box 3: Counted Till Balance
-  const xBox3 = xBox2 + colWidth + 3;
+  // Box 2: Counted Till Cash (Actual Cash Count)
+  const xBox2 = 12 + colWidth + kpiGap;
   doc.setFillColor(239, 246, 255);
-  doc.roundedRect(xBox3, yFin, colWidth, 16, 1.5, 1.5, 'F');
-  doc.setFontSize(7);
-  doc.setTextColor(29, 78, 216);
-  doc.text('COUNTED TILL CASH', xBox3 + colWidth / 2, yFin + 5, { align: 'center' });
-  doc.setFontSize(10);
+  doc.setDrawColor(191, 219, 254);
+  doc.roundedRect(xBox2, yFin, colWidth, boxHeight, 1.5, 1.5, 'FD');
+  doc.setFontSize(6.8);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(29, 78, 216);
-  doc.text(`$${closingBalance.toFixed(2)}`, xBox3 + colWidth / 2, yFin + 12, { align: 'center' });
+  doc.text('COUNTED TILL CASH', xBox2 + colWidth / 2, yFin + 4.2, { align: 'center' });
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(30, 58, 138);
+  doc.text(`$${closingBalance.toFixed(2)}`, xBox2 + colWidth / 2, yFin + 9.8, { align: 'center' });
+  doc.setFontSize(5.8);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(59, 130, 246);
+  doc.text('Physical Cash in Drawer', xBox2 + colWidth / 2, yFin + 13.8, { align: 'center' });
+
+  // Box 3: Safe Shift Drop (Deposited to Safe)
+  const xBox3 = xBox2 + colWidth + kpiGap;
+  doc.setFillColor(254, 242, 242);
+  doc.setDrawColor(254, 202, 202);
+  doc.roundedRect(xBox3, yFin, colWidth, boxHeight, 1.5, 1.5, 'FD');
+  doc.setFontSize(6.8);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(185, 28, 28);
+  doc.text('SAFE DEPOSIT DROPS', xBox3 + colWidth / 2, yFin + 4.2, { align: 'center' });
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(153, 27, 27);
+  doc.text(`$${shiftDrop.toFixed(2)}`, xBox3 + colWidth / 2, yFin + 9.8, { align: 'center' });
+  doc.setFontSize(5.8);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(239, 68, 68);
+  doc.text('Cash Envelope Drops', xBox3 + colWidth / 2, yFin + 13.8, { align: 'center' });
 
   // Box 4: Shift Variance (Over / Short / Balanced)
-  const xBox4 = xBox3 + colWidth + 3;
+  const xBox4 = xBox3 + colWidth + kpiGap;
   const isBalanced = Math.abs(variance) < 0.01;
   const isShort = variance < -0.01;
-  doc.setFillColor(isBalanced ? 236 : isShort ? 254 : 254, isBalanced ? 253 : isShort ? 242 : 243, isBalanced ? 245 : isShort ? 242 : 199);
-  doc.roundedRect(xBox4, yFin, colWidth, 16, 1.5, 1.5, 'F');
-  doc.setFontSize(7);
-  doc.setTextColor(isBalanced ? 4 : isShort ? 185 : 180, isBalanced ? 120 : isShort ? 28 : 83, isBalanced ? 87 : isShort ? 28 : 9);
-  doc.text(isBalanced ? 'BALANCE STATUS' : isShort ? 'VARIANCE (SHORT)' : 'VARIANCE (OVER)', xBox4 + colWidth / 2, yFin + 5, { align: 'center' });
-  doc.setFontSize(10);
+  
+  if (isBalanced) {
+    doc.setFillColor(236, 253, 245);
+    doc.setDrawColor(167, 243, 208);
+    doc.roundedRect(xBox4, yFin, colWidth, boxHeight, 1.5, 1.5, 'FD');
+    doc.setFontSize(6.8);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(4, 120, 87);
+    doc.text('BALANCE STATUS', xBox4 + colWidth / 2, yFin + 4.2, { align: 'center' });
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(6, 95, 70);
+    doc.text('$0.00', xBox4 + colWidth / 2, yFin + 9.8, { align: 'center' });
+    doc.setFontSize(5.8);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(5, 150, 105);
+    doc.text('Balanced Exactly', xBox4 + colWidth / 2, yFin + 13.8, { align: 'center' });
+  } else if (isShort) {
+    doc.setFillColor(254, 242, 242);
+    doc.setDrawColor(254, 202, 202);
+    doc.roundedRect(xBox4, yFin, colWidth, boxHeight, 1.5, 1.5, 'FD');
+    doc.setFontSize(6.8);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(185, 28, 28);
+    doc.text('VARIANCE (SHORT)', xBox4 + colWidth / 2, yFin + 4.2, { align: 'center' });
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(153, 27, 27);
+    doc.text(`-$${Math.abs(variance).toFixed(2)}`, xBox4 + colWidth / 2, yFin + 9.8, { align: 'center' });
+    doc.setFontSize(5.8);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(220, 38, 38);
+    doc.text('Till Shortage', xBox4 + colWidth / 2, yFin + 13.8, { align: 'center' });
+  } else {
+    doc.setFillColor(254, 243, 199);
+    doc.setDrawColor(253, 230, 138);
+    doc.roundedRect(xBox4, yFin, colWidth, boxHeight, 1.5, 1.5, 'FD');
+    doc.setFontSize(6.8);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(180, 83, 9);
+    doc.text('VARIANCE (OVER)', xBox4 + colWidth / 2, yFin + 4.2, { align: 'center' });
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(146, 64, 14);
+    doc.text(`+$${variance.toFixed(2)}`, xBox4 + colWidth / 2, yFin + 9.8, { align: 'center' });
+    doc.setFontSize(5.8);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(217, 119, 6);
+    doc.text('Till Surplus', xBox4 + colWidth / 2, yFin + 13.8, { align: 'center' });
+  }
+
+  // -------------------------------------------------------------
+  // 4 Compact Denomination Boxes Side by Side: Bills, Coins, Rolls, Receipts
+  // Each box has a 3-column table: Unit | Count | Total
+  // -------------------------------------------------------------
+  const tablesStartY = yFin + boxHeight + 4; // ~77.5mm
+  const tableGap = 3.6;
+  const boxWidth = (usableWidth - tableGap * 3) / 4; // 43.8mm
+
+  // 1. BILLS DATA
+  const standardBills = [100, 50, 20, 10, 5, 2, 1];
+  const shiftBills = shift.entries.filter((e) => e.type === 'bill');
+  const allBillDenoms = Array.from(new Set([...standardBills, ...shiftBills.map((e) => e.denomination)]))
+    .sort((a, b) => b - a);
+
+  let totalBillCount = 0;
+  let totalBillAmount = 0;
+  const billRows: RowInput[] = allBillDenoms.map((denom) => {
+    const entry = shiftBills.find((e) => e.denomination === denom);
+    const count = entry ? entry.quantity : 0;
+    const total = entry ? entry.total : 0;
+    totalBillCount += count;
+    totalBillAmount += total;
+    return [
+      `$${denom}`,
+      count > 0 ? count.toString() : '0',
+      `$${total.toFixed(2)}`,
+    ];
+  });
+
+  // 2. COINS DATA
+  const standardCoins = [1.00, 0.50, 0.25, 0.10, 0.05, 0.01];
+  const shiftCoins = shift.entries.filter((e) => e.type === 'coin');
+  const allCoinDenoms = Array.from(new Set([...standardCoins, ...shiftCoins.map((e) => e.denomination)]))
+    .sort((a, b) => b - a);
+
+  let totalCoinCount = 0;
+  let totalCoinAmount = 0;
+  const coinRows: RowInput[] = allCoinDenoms.map((denom) => {
+    const entry = shiftCoins.find((e) => Math.abs(e.denomination - denom) < 0.001);
+    const count = entry ? entry.quantity : 0;
+    const total = entry ? entry.total : 0;
+    totalCoinCount += count;
+    totalCoinAmount += total;
+    return [
+      `$${denom.toFixed(2)}`,
+      count > 0 ? count.toString() : '0',
+      `$${total.toFixed(2)}`,
+    ];
+  });
+
+  // 3. ROLLS DATA
+  const standardRolls = [10.00, 5.00, 2.00, 1.00, 0.50];
+  const shiftRolls = shift.entries.filter((e) => e.type === 'roll');
+  const allRollDenoms = Array.from(new Set([...standardRolls, ...shiftRolls.map((e) => e.denomination)]))
+    .sort((a, b) => b - a);
+
+  let totalRollCount = 0;
+  let totalRollAmount = 0;
+  const rollRows: RowInput[] = allRollDenoms.map((denom) => {
+    const entry = shiftRolls.find((e) => Math.abs(e.denomination - denom) < 0.001);
+    const count = entry ? entry.quantity : 0;
+    const total = entry ? entry.total : 0;
+    totalRollCount += count;
+    totalRollAmount += total;
+    return [
+      `$${denom.toFixed(2)}`,
+      count > 0 ? count.toString() : '0',
+      `$${total.toFixed(2)}`,
+    ];
+  });
+
+  // 4. RECEIPTS DATA
+  const shiftReceipts = shift.entries.filter((e) => e.type === 'receipt');
+  let totalReceiptCount = 0;
+  let totalReceiptAmount = 0;
+  const receiptRows: RowInput[] = [];
+
+  shiftReceipts.forEach((e) => {
+    totalReceiptCount += e.quantity;
+    totalReceiptAmount += e.total;
+    receiptRows.push([
+      `$${e.denomination.toFixed(2)}`,
+      e.quantity.toString(),
+      `$${e.total.toFixed(2)}`,
+    ]);
+  });
+
+  // Align rows count across boxes so all 4 boxes have identical height
+  const maxRows = Math.max(billRows.length, coinRows.length, rollRows.length, receiptRows.length, 7);
+  while (coinRows.length < maxRows) {
+    coinRows.push(['-', '0', '$0.00']);
+  }
+  while (rollRows.length < maxRows) {
+    rollRows.push(['-', '0', '$0.00']);
+  }
+  if (receiptRows.length === 0) {
+    receiptRows.push(['No Receipts', '0', '$0.00']);
+  }
+  while (receiptRows.length < maxRows) {
+    receiptRows.push(['-', '0', '$0.00']);
+  }
+
+  // Common box styling
+  const renderDenomBox = (
+    title: string,
+    xPos: number,
+    rows: RowInput[],
+    totCount: number,
+    totAmount: number,
+    accentColor: [number, number, number]
+  ): number => {
+    autoTable(doc, {
+      startY: tablesStartY,
+      head: [
+        [
+          {
+            content: title,
+            colSpan: 3,
+            styles: {
+              halign: 'center',
+              fillColor: accentColor,
+              textColor: [255, 255, 255],
+              fontStyle: 'bold',
+              fontSize: 7.8,
+              cellPadding: 1.6,
+            },
+          },
+        ],
+        [
+          { content: 'Unit', styles: { halign: 'left' } },
+          { content: 'Count', styles: { halign: 'center' } },
+          { content: 'Total', styles: { halign: 'right' } },
+        ],
+      ],
+      body: rows,
+      foot: [
+        [
+          { content: 'TOTAL', styles: { halign: 'left', fontStyle: 'bold' } },
+          { content: totCount.toString(), styles: { halign: 'center', fontStyle: 'bold' } },
+          { content: `$${totAmount.toFixed(2)}`, styles: { halign: 'right', fontStyle: 'bold' } },
+        ],
+      ],
+      theme: 'grid',
+      headStyles: {
+        fillColor: [51, 65, 85], // slate-700
+        textColor: 255,
+        fontStyle: 'bold',
+        fontSize: 6.8,
+        cellPadding: 1.2,
+      },
+      footStyles: {
+        fillColor: [241, 245, 249],
+        textColor: [15, 23, 42],
+        fontStyle: 'bold',
+        fontSize: 6.8,
+        cellPadding: 1.3,
+        lineWidth: 0.1,
+        lineColor: [203, 213, 225],
+      },
+      styles: {
+        fontSize: 6.5,
+        cellPadding: 1.1,
+        lineWidth: 0.1,
+        lineColor: [226, 232, 240],
+        textColor: [15, 23, 42],
+      },
+      columnStyles: {
+        0: { cellWidth: 14.5, halign: 'left' },
+        1: { cellWidth: 11.5, halign: 'center' },
+        2: { cellWidth: 17.8, halign: 'right' },
+      },
+      margin: { left: xPos, right: pageWidth - (xPos + boxWidth) },
+      tableWidth: boxWidth,
+    });
+    return (doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY || (tablesStartY + 45);
+  };
+
+  const x1 = 12;
+  const x2 = x1 + boxWidth + tableGap;
+  const x3 = x2 + boxWidth + tableGap;
+  const x4 = x3 + boxWidth + tableGap;
+
+  const finalY1 = renderDenomBox('BILLS', x1, billRows, totalBillCount, totalBillAmount, [30, 58, 138]); // blue-900
+  const finalY2 = renderDenomBox('COINS', x2, coinRows, totalCoinCount, totalCoinAmount, [15, 118, 110]); // teal-700
+  const finalY3 = renderDenomBox('ROLLS', x3, rollRows, totalRollCount, totalRollAmount, [180, 83, 9]); // amber-700
+  const finalY4 = renderDenomBox('RECEIPTS', x4, receiptRows, totalReceiptCount, totalReceiptAmount, [100, 116, 139]); // slate-500
+
+  const tablesMaxY = Math.max(finalY1, finalY2, finalY3, finalY4);
+
+  // Full-width Till Totals Strip
+  const stripY = tablesMaxY + 3;
+  doc.setFillColor(241, 245, 249);
+  doc.setDrawColor(203, 213, 225);
+  doc.roundedRect(12, stripY, usableWidth, 7, 1, 1, 'FD');
+  doc.setFontSize(6.5);
   doc.setFont('helvetica', 'bold');
+  doc.setTextColor(30, 41, 59);
   doc.text(
-    isBalanced ? '$0.00 (Balanced)' : `${variance > 0 ? '+' : ''}$${variance.toFixed(2)}`,
-    xBox4 + colWidth / 2,
-    yFin + 12,
+    `BILLS: $${totalBillAmount.toFixed(2)}   |   COINS: $${totalCoinAmount.toFixed(2)}   |   ROLLS: $${totalRollAmount.toFixed(2)}   |   RECEIPTS: $${totalReceiptAmount.toFixed(2)}   |   TOTAL TILL COUNTED: $${closingBalance.toFixed(2)}`,
+    12 + usableWidth / 2,
+    stripY + 4.5,
     { align: 'center' }
   );
 
-  // Till Breakdown Table
-  const tableData: RowInput[] = [];
-  let calculatedTillTotal = 0;
-
-  shift.entries.forEach((entry) => {
-    tableData.push([
-      entry.type.charAt(0).toUpperCase() + entry.type.slice(1),
-      `$${entry.denomination.toFixed(2)}`,
-      entry.quantity.toString(),
-      `$${entry.total.toFixed(2)}`,
-    ]);
-    calculatedTillTotal += entry.total;
-  });
-
-  tableData.push([
-    {
-      content: 'TOTAL COUNTED TILL CASH',
-      colSpan: 3,
-      styles: { fillColor: [15, 23, 42], textColor: 255, fontStyle: 'bold', halign: 'left' },
-    },
-    {
-      content: `$${calculatedTillTotal.toFixed(2)}`,
-      styles: { fillColor: [15, 23, 42], textColor: 255, fontStyle: 'bold', halign: 'right' },
-    },
-  ]);
-
-  autoTable(doc, {
-    startY: yFin + 20,
-    head: [['Denomination Category', 'Unit Value', 'Count / Quantity', 'Total Amount']],
-    body: tableData,
-    theme: 'grid',
-    headStyles: {
-      fillColor: [30, 41, 59], // slate-800
-      textColor: 255,
-      fontStyle: 'bold',
-      fontSize: 8,
-    },
-    styles: {
-      fontSize: 8,
-      cellPadding: 1.8,
-      lineWidth: 0.1,
-      lineColor: [226, 232, 240],
-    },
-    columnStyles: {
-      0: { cellWidth: 50 },
-      1: { cellWidth: 40, halign: 'right' },
-      2: { cellWidth: 40, halign: 'right' },
-      3: { cellWidth: 'auto', halign: 'right' },
-    },
-    margin: { left: 14, right: 14 },
-  });
-
-  // End of table position
-  const finalY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY || 160;
-
   // Shift Handover Notes & Shift Logs Box
-  const notesY = Math.min(finalY + 6, pageHeight - 65);
+  const notesY = stripY + 10;
   doc.setDrawColor(203, 213, 225);
   doc.setFillColor(248, 250, 252);
-  doc.roundedRect(14, notesY, pageWidth - 28, 22, 1.5, 1.5, 'FD');
+  doc.roundedRect(12, notesY, usableWidth, 19, 1.5, 1.5, 'FD');
 
-  doc.setFontSize(7.5);
+  doc.setFontSize(7.2);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(30, 41, 59);
-  doc.text('SHIFT HANDOVER NOTES & OPERATIONAL LOGS:', 18, notesY + 5);
+  doc.text('SHIFT HANDOVER NOTES & OPERATIONAL LOGS:', 16, notesY + 4.5);
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7);
+  doc.setFontSize(6.8);
   doc.setTextColor(71, 85, 105);
   const notesText = shift.closingNotes || shift.handoverNotes || 'No specific handover notes recorded for this shift.';
-  const splitNotes = doc.splitTextToSize(notesText, pageWidth - 36);
-  doc.text(splitNotes.slice(0, 3), 18, notesY + 10);
+  const splitNotes = doc.splitTextToSize(notesText, usableWidth - 8);
+  doc.text(splitNotes.slice(0, 3), 16, notesY + 9.5);
 
-  // Dual Formal Verification & Signatures Section
-  const sigY = notesY + 28;
+  // Dual Formal Verification & Handover Signatures Section
+  const sigY = notesY + 23;
   doc.setDrawColor(148, 163, 184); // slate-400
   doc.setLineWidth(0.4);
 
-  // Cashier Signature Line
-  doc.line(18, sigY + 12, 90, sigY + 12);
-  doc.setFontSize(7.5);
+  // 1. Outgoing Cashier Signature Line
+  doc.line(16, sigY + 11, 95, sigY + 11);
+  doc.setFontSize(7.2);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
-  doc.text('CASHIER SIGNATURE', 18, sigY + 16);
+  doc.text('OUTGOING CASHIER SIGNATURE', 16, sigY + 15);
   doc.setFont('helvetica', 'normal');
-  doc.text(`Printed: ${shift.cashierName}`, 18, sigY + 20);
-  doc.text(`Date: ${shift.closeTime ? format(new Date(shift.closeTime), 'PP') : format(new Date(), 'PP')}`, 18, sigY + 24);
+  doc.setFontSize(6.8);
+  doc.setTextColor(51, 65, 85);
+  doc.text(`Printed: ${shift.cashierName}`, 16, sigY + 19);
+  doc.text(`Date / Time: ${shift.closeTime ? format(new Date(shift.closeTime), 'PPpp') : format(new Date(), 'PPpp')}`, 16, sigY + 23);
 
-  // Manager Signature Line
-  const mgrLineX = pageWidth / 2 + 10;
-  doc.line(mgrLineX, sigY + 12, mgrLineX + 72, sigY + 12);
+  // 2. Next Shift Takeover Signature Line (Replaces Manager / Supervisor)
+  const nextShiftLineX = pageWidth / 2 + 5;
+  doc.line(nextShiftLineX, sigY + 11, nextShiftLineX + 79, sigY + 11);
+  doc.setFontSize(7.2);
   doc.setFont('helvetica', 'bold');
-  doc.text('MANAGER / SUPERVISOR SIGNATURE', mgrLineX, sigY + 16);
+  doc.setTextColor(15, 23, 42);
+  doc.text('NEXT SHIFT TAKEOVER SIGNATURE', nextShiftLineX, sigY + 15);
   doc.setFont('helvetica', 'normal');
-  doc.text('Printed: _________________________________', mgrLineX, sigY + 20);
-  doc.text(`Date: ${shift.closeTime ? format(new Date(shift.closeTime), 'PP') : format(new Date(), 'PP')}`, mgrLineX, sigY + 24);
+  doc.setFontSize(6.8);
+  doc.setTextColor(51, 65, 85);
+  doc.text('Printed: _________________________________', nextShiftLineX, sigY + 19);
+  doc.text('Date / Time: ____________________________', nextShiftLineX, sigY + 23);
+  doc.setFontSize(6);
+  doc.setTextColor(100, 116, 139);
+  doc.text('I verify till count & safe drop are accurate upon takeover', nextShiftLineX, sigY + 27);
 
   // Footer Audit Trail
   doc.setFontSize(7);

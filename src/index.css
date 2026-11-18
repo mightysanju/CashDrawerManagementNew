@@ -234,21 +234,21 @@ html.dark .shadow-xl {
 
 .group:hover .logbook-cover-3d,
 .fdp-floating-trigger:hover .logbook-cover-3d {
-  transform: perspective(320px) rotateY(-28deg);
+  transform: perspective(320px) rotateY(-10deg);
 }
 
 .group:hover .logbook-stack-3d,
 .fdp-floating-trigger:hover .logbook-stack-3d {
-  transform: perspective(320px) rotateY(-6deg) rotateZ(-2deg) scale(1.08);
+  transform: perspective(320px) rotateY(-4deg) scale(1.05);
 }
 
-/* Open Book State when form is active / opened */
+/* Open Book State when form is active / opened (Clean 3D book, no inverted D protrusion) */
 .book-open .logbook-cover-3d {
-  transform: perspective(400px) rotateY(-82deg) !important;
+  transform: perspective(320px) rotateY(-8deg) !important;
 }
 
 .book-open .logbook-stack-3d {
-  transform: perspective(400px) rotateY(-12deg) scale(1.12) !important;
+  transform: scale(1.04) !important;
 }
 
 /* Text on Book Blink / Shimmer Animation */

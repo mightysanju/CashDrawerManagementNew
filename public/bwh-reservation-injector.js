@@ -1,4 +1,4 @@
-// BWH Frontdesk Web -> FrontDesk Pro Reservation Integrator (Production v2.2)
+// BWH Frontdesk Web -> FrontDesk Pro Reservation Integrator (Production v2.4)
 // Target: https://americas.bwh.hkclients.com/frontdesk-web/*
 (function (root) {
   'use strict';
@@ -33,35 +33,87 @@
     return { reservation: resNumber, guestName: guest, room: room };
   }
 
+  function getLoggedInClerkName(doc) {
+    var staffEls = doc.querySelectorAll('header .user-name, header [class*="user"], nav [class*="user"], .hk-user-dropdown, .profile-name, [class*="profile"]');
+    for (var i = 0; i < staffEls.length; i++) {
+      var txt = clean(staffEls[i].textContent);
+      if (txt && txt.length > 2 && txt.length < 40 && !/help|folio|guest|stay/i.test(txt)) {
+        return txt;
+      }
+    }
+    return '';
+  }
+
   function scrapeActiveReservation(doc) {
     doc = doc || root.document;
-    var card = doc.querySelector('div[data-v-75e89ec1].card') || doc.querySelector('div[data-v-75e89ec1]');
     var data = { guestName: '', phone: '', email: '', room: '', reservation: '' };
+    var loggedClerk = getLoggedInClerkName(doc);
 
-    // 1. Primary: Page Title Header (e.g. "14241009477 / JAMES CALVIN ANDERSON / Room - 405 (IN HOUSE)")
-    var titleEl = doc.querySelector('div.date-title h4, h4[data-v-796e4b3f]');
-    if (titleEl) {
-      var parsed = parseTitle(clean(titleEl.textContent));
-      if (parsed.reservation) data.reservation = parsed.reservation;
-      if (parsed.guestName) data.guestName = parsed.guestName;
-      if (parsed.room) data.room = parsed.room;
+    // 1. Primary & Authoritative: Page Title Header (e.g. "14241009477 / JAMES CALVIN ANDERSON / Room - 405 (IN HOUSE)")
+    var titleHeadings = doc.querySelectorAll('div.date-title h4, h4[data-v-796e4b3f], h4, h3, h2');
+    for (var i = 0; i < titleHeadings.length; i++) {
+      var headingText = clean(titleHeadings[i].textContent);
+      if (headingText.includes('/') && /Room/i.test(headingText)) {
+        var parsed = parseTitle(headingText);
+        if (parsed.reservation) data.reservation = parsed.reservation;
+        if (parsed.guestName && parsed.guestName !== loggedClerk) data.guestName = parsed.guestName;
+        if (parsed.room) data.room = parsed.room;
+        if (data.guestName) break;
+      }
     }
 
-    // 2. Card Reservation Data (scoped strictly to card, never navbar user)
+    // 2. Card Reservation Data (scoped strictly to Guest Tab card, never navbar user menu)
+    var guestCards = doc.querySelectorAll('div[data-v-75e89ec1].card, div.card');
+    var card = null;
+    for (var c = 0; c < guestCards.length; c++) {
+      var cText = guestCards[c].textContent || '';
+      if (/Guarantee Type|Rate Plan|Additional Guests|Remarks/i.test(cText)) {
+        card = guestCards[c];
+        break;
+      }
+    }
+    if (!card && guestCards.length > 0) card = guestCards[0];
+
     if (card) {
-      var cardName = card.querySelector('span.user-name, div.fw-600 span.user-name');
-      if (cardName && clean(cardName.textContent)) {
-        data.guestName = clean(cardName.textContent);
+      if (!data.guestName || data.guestName === loggedClerk) {
+        var cardHeadings = card.querySelectorAll('h1, h2, h3, h4, h5, div.fw-600, div[class*="guest"]');
+        for (var h = 0; h < cardHeadings.length; h++) {
+          var hTxt = clean(cardHeadings[h].textContent);
+          if (
+            hTxt &&
+            hTxt.length > 3 &&
+            hTxt.length < 60 &&
+            hTxt !== loggedClerk &&
+            !/Guarantee|Rate Plan|Source|Local|RACK|Folio|Stay|Remarks/i.test(hTxt) &&
+            /^[A-Z\s.'-]+$/i.test(hTxt)
+          ) {
+            data.guestName = hTxt;
+            break;
+          }
+        }
+
+        if (!data.guestName || data.guestName === loggedClerk) {
+          var firstInp = card.querySelector('input[placeholder*="First" i], input[name*="first" i]');
+          var lastInp = card.querySelector('input[placeholder*="Last" i], input[name*="last" i]');
+          if (firstInp && lastInp && clean(firstInp.value) && clean(lastInp.value)) {
+            data.guestName = clean(firstInp.value + ' ' + lastInp.value);
+          }
+        }
       }
 
-      var phoneEl = card.querySelector('.phone span, [class*="phone"] span');
-      if (phoneEl && clean(phoneEl.textContent)) data.phone = clean(phoneEl.textContent);
+      var phoneEl = card.querySelector('.phone span, [class*="phone"] span, [class*="phone"]');
+      if (phoneEl && clean(phoneEl.textContent)) {
+        var pMatch = clean(phoneEl.textContent).match(/(?:\+?1[\s.-]?)?\(?[2-9]\d{2}\)?[\s.-]?\d{3}[\s.-]?\d{4}/);
+        if (pMatch) data.phone = pMatch[0];
+      }
 
-      var emailEl = card.querySelector('.hk-tooltip-wrapper span, [class*="email"] span');
-      if (emailEl && clean(emailEl.textContent)) data.email = clean(emailEl.textContent);
+      var emailEl = card.querySelector('.hk-tooltip-wrapper span, [class*="email"] span, [class*="email"]');
+      if (emailEl && clean(emailEl.textContent)) {
+        var eMatch = clean(emailEl.textContent).match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+        if (eMatch) data.email = eMatch[0];
+      }
     }
 
-    // 3. Fallback regex on card text only
     if (!data.phone || !data.email) {
       var scopeText = (card || doc.body).innerText || (card || doc.body).textContent || '';
       var fallback = parseReservationText(scopeText);
@@ -74,8 +126,13 @@
 
   function buildMessage(logType, data) {
     var category = logType === 'complaint' ? 'Complaint' : 'Miscellaneous';
+    var defaultTopic = logType === 'complaint'
+      ? ('Guest Complaint: ' + (data.guestName || 'Room ' + (data.room || 'N/A')))
+      : ('Shift Note: ' + (data.guestName || 'Room ' + (data.room || 'N/A')));
+
     var d = {
       category: category,
+      topic: defaultTopic,
       name: data.guestName || '',
       guestName: data.guestName || '',
       phone: data.phone || '',
@@ -135,30 +192,38 @@
     }, 2800);
   }
 
-  function makeButton(doc, label, logType) {
+  function makeButton(doc, label, logType, targetHeight, targetRadius) {
     var b = doc.createElement('button');
     b.type = 'button';
     b.setAttribute(MARK, logType);
     b.textContent = label;
     b.setAttribute('aria-label', label);
 
+    var h = targetHeight ? (targetHeight + 'px') : '32px';
+    var r = targetRadius || '4px';
+
     b.style.cssText = [
-      'padding: 4px 10px',
-      'border-radius: 4px',
-      'border: 1px solid #cfd4d9',
-      'background: #ffffff',
-      'color: #2f3e4e',
-      'font-family: inherit',
-      'font-size: 12px',
-      'line-height: 1.2',
-      'font-weight: 600',
-      'cursor: pointer',
-      'white-space: nowrap',
-      'display: inline-flex',
-      'align-items: center',
-      'box-sizing: border-box',
-      'margin-right: 6px',
-      'transition: all 0.15s ease'
+      'height: ' + h + ' !important',
+      'min-height: ' + h + ' !important',
+      'max-height: ' + h + ' !important',
+      'padding: 0 10px !important',
+      'border-radius: ' + r + ' !important',
+      'border: 1px solid #cfd4d9 !important',
+      'background: #ffffff !important',
+      'color: #2f3e4e !important',
+      'font-family: inherit !important',
+      'font-size: 12px !important',
+      'line-height: 1 !important',
+      'font-weight: 600 !important',
+      'cursor: pointer !important',
+      'white-space: nowrap !important',
+      'display: inline-flex !important',
+      'align-items: center !important',
+      'justify-content: center !important',
+      'vertical-align: middle !important',
+      'box-sizing: border-box !important',
+      'margin-right: 6px !important',
+      'transition: all 0.15s ease !important'
     ].join(';') + ';';
 
     b.addEventListener('mouseenter', function () {
@@ -180,18 +245,15 @@
       var msg = buildMessage(logType, scraped);
       console.log('[FrontDesk Pro] Injected Button Clicked -> Sending:', msg);
 
-      // 1. Post to window for extension content script and floating bubble
       try {
         root.postMessage(msg, '*');
       } catch (err) {}
 
-      // 2. Post to opener or parent if opened from FrontDesk Pro tab
       var target = root.opener || root.parent;
       try {
         if (target && target !== root) target.postMessage(msg, '*');
       } catch (err) {}
 
-      // 3. Post to Chrome extension background
       if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
         try {
           chrome.runtime.sendMessage(msg, function () {});
@@ -204,79 +266,82 @@
     return b;
   }
 
-  function findActionGroups(doc) {
-    var groups = [];
-    // Target ONLY the top-right action buttons row containing the Edit Guest icon
-    var editIcon = doc.querySelector('[aria-label*="Edit Guest"], [data-train-key-id="pen_icon"], [aria-label*="Edit"]');
-    if (editIcon) {
-      var flexParent = (editIcon.closest ? editIcon.closest('.flexed') : null) || editIcon.parentElement;
-      if (flexParent) {
-        groups.push(flexParent);
-        return groups;
+  function findActionGroup(doc) {
+    doc = doc || root.document;
+
+    // 1. Look for pencil icon / pen_icon in the guest profile card
+    var editIcons = doc.querySelectorAll('[data-train-key-id="pen_icon"], [aria-label*="Edit Guest"], .edit-icon');
+    for (var i = 0; i < editIcons.length; i++) {
+      var icon = editIcons[i];
+      var parent = (icon.closest ? icon.closest('.flexed') : null) || icon.parentElement;
+      if (!parent) continue;
+
+      var pText = (parent.parentElement ? parent.parentElement.textContent : '') + ' ' + (parent.textContent || '');
+      if (/Guarantee|Rate Plan|Credit Card|Payment|Source|Local|RACK/i.test(pText)) {
+        continue;
       }
+
+      return parent;
     }
 
-    var headerGroup = doc.querySelector('div[data-v-75e89ec1].card > div.fw-600.flexed.justify-between > div.flexed.gap-5');
-    if (headerGroup && headerGroup.querySelector('.edit-icon, [data-train-key-id="guest_dashboard"]')) {
-      groups.push(headerGroup);
-      return groups;
-    }
+    // 2. Direct card header actions container
+    var headerRow = doc.querySelector('div[data-v-75e89ec1].card > div:first-child .flexed, div.card > div:first-child .flexed');
+    if (headerRow) return headerRow;
 
-    return groups;
+    return null;
   }
 
   function inject(doc) {
     doc = doc || root.document;
 
-    // Clean up any stray buttons placed in Guarantee Type or other rows
-    var allWraps = doc.querySelectorAll('span[' + MARK + '="wrap"]');
-    allWraps.forEach(function(w) {
-      if (!w.parentElement || !w.parentElement.querySelector('[aria-label*="Edit"], [data-train-key-id="pen_icon"], [data-train-key-id="guest_dashboard"]')) {
-        w.remove();
+    var existingWraps = doc.querySelectorAll('span[' + MARK + '="wrap"]');
+    if (existingWraps.length > 1) {
+      for (var w = 1; w < existingWraps.length; w++) {
+        existingWraps[w].remove();
       }
-    });
+    }
 
-    var groups = findActionGroups(doc);
-    var count = 0;
+    var group = findActionGroup(doc);
+    if (!group) return 0;
 
-    groups.forEach(function (parent) {
-      if (parent.querySelector('[' + MARK + ']')) return;
+    if (group.querySelector('span[' + MARK + '="wrap"]')) {
+      return 1;
+    }
 
-      // Locate anchor: refresh donut icon (first child or element before edit icon)
-      var anchor = parent.querySelector('.edit-icon:first-child, [data-train-key-id="guest_dashboard"]') || parent.firstElementChild;
-      if (!anchor) return;
+    if (existingWraps.length > 0) {
+      existingWraps[0].remove();
+    }
 
-      var wrap = doc.createElement('span');
-      wrap.setAttribute(MARK, 'wrap');
-      wrap.setAttribute('data-bwh-logs', '');
-      wrap.setAttribute('data-v-75e89ec1', '');
-      wrap.style.cssText = 'display:inline-flex;align-items:center;vertical-align:middle;';
+    var anchor = group.querySelector('.edit-icon:first-child, [data-train-key-id="guest_dashboard"]') || group.firstElementChild;
+    if (!anchor) return 0;
 
-      wrap.appendChild(makeButton(doc, '+ Complaint Log', 'complaint'));
-      wrap.appendChild(makeButton(doc, '+ Misc Log', 'misc'));
+    var computed = root.getComputedStyle ? root.getComputedStyle(anchor) : null;
+    var rect = anchor.getBoundingClientRect ? anchor.getBoundingClientRect() : null;
+    var targetHeight = (rect && rect.height > 18)
+      ? Math.round(rect.height)
+      : ((anchor.offsetHeight && anchor.offsetHeight > 18)
+        ? anchor.offsetHeight
+        : (computed && parseFloat(computed.height) > 18 ? Math.round(parseFloat(computed.height)) : 30));
+    var targetRadius = (computed && computed.borderRadius) || '4px';
 
-      parent.insertBefore(wrap, anchor);
-      count++;
-    });
+    var wrap = doc.createElement('span');
+    wrap.setAttribute(MARK, 'wrap');
+    wrap.setAttribute('data-bwh-logs', '');
+    wrap.style.cssText = 'display:inline-flex;align-items:center;vertical-align:middle;margin-right:6px;';
 
-    return count;
+    wrap.appendChild(makeButton(doc, '+ Complaint Log', 'complaint', targetHeight, targetRadius));
+    wrap.appendChild(makeButton(doc, '+ Misc Log', 'misc', targetHeight, targetRadius));
+
+    group.insertBefore(wrap, anchor);
+    return 1;
   }
 
   function start() {
-    var pending = false;
-    function schedule() {
-      if (pending) return;
-      pending = true;
-      root.requestAnimationFrame(function () {
-        pending = false;
-        inject();
-      });
-    }
-
-    if (root.document && root.document.body) {
-      new MutationObserver(schedule).observe(root.document.body, { childList: true, subtree: true });
-    }
     inject();
+    if (root.document && root.document.body) {
+      new MutationObserver(function () { inject(); }).observe(root.document.body, { childList: true, subtree: true });
+    }
+    setInterval(function () { inject(); }, 1200);
   }
 
   var api = {

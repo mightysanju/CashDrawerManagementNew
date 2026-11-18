@@ -35,6 +35,8 @@ import {
   UserAccount,
   PrimaryCategory,
   LogCategoryConfig,
+  ActivityLogEvent,
+  ShiftLogStatusChange,
 } from '../types';
 import { DatabaseManager } from '../utils/database';
 import { p2pSyncManager } from '../utils/p2pSyncManager';
@@ -81,8 +83,22 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
   const [reminderNoteInput, setReminderNoteInput] = useState<string>('');
 
   // Unified Recent Activity Feed Filter
-  type ActivityFeedFilterType = 'All' | 'Replies' | 'Status' | 'Reminders' | 'Created';
+  type ActivityFeedFilterType = 'All' | 'Replies' | 'Status' | 'Reminders' | 'Created' | 'Deleted';
   const [activityFeedFilter, setActivityFeedFilter] = useState<ActivityFeedFilterType>('All');
+  const [persistedEvents, setPersistedEvents] = useState<ActivityLogEvent[]>([]);
+
+  const loadPersistedActivityEvents = React.useCallback(async () => {
+    try {
+      const events = await db.getActivityEvents();
+      setPersistedEvents(events);
+    } catch (e) {
+      console.error('Error loading persisted activity events:', e);
+    }
+  }, [db]);
+
+  useEffect(() => {
+    loadPersistedActivityEvents();
+  }, [loadPersistedActivityEvents, logs]);
 
   // Load Categories for dynamic subcategory filtering & custom category dashboard boxes
   useEffect(() => {
@@ -227,9 +243,60 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
 
   /* ----- Actions ----- */
   const handleUpdateComplaintStatus = async (entry: ShiftLogEntry, status: ComplaintStatus) => {
-    const updated = { ...entry, complaintStatus: status, updatedAt: new Date().toISOString() };
+    const prevStatus = entry.complaintStatus || 'Open';
+    if (prevStatus === status) return;
+
+    const transitionId = `status_${entry.id}_${Date.now()}`;
+    const timestamp = new Date().toISOString();
+
+    const newStatusChange: ShiftLogStatusChange = {
+      id: transitionId,
+      fromStatus: prevStatus,
+      toStatus: status,
+      changedBy: currentUser.fullName,
+      changedByRole: currentUser.role,
+      timestamp,
+    };
+
+    const updated: ShiftLogEntry = {
+      ...entry,
+      complaintStatus: status,
+      statusHistory: [...(entry.statusHistory || []), newStatusChange],
+      updatedAt: timestamp,
+    };
+
     await db.saveShiftLog(updated);
     p2pSyncManager.broadcastShiftLog(updated);
+
+    const title = entry.topic || entry.name || `Complaint #${entry.id.substring(0, 6)}`;
+    const activityEvent: ActivityLogEvent = {
+      id: transitionId,
+      type: 'status',
+      logId: entry.id,
+      category: 'Complaint',
+      subCategory: entry.subCategory,
+      logTitle: title,
+      actor: currentUser.fullName,
+      actorRole: currentUser.role,
+      summary: `Complaint marked as ${status} (from ${prevStatus})`,
+      detail: entry.clerkNotes,
+      timestamp,
+      badgeText: status,
+      badgeColor: status === 'Resolved'
+        ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800'
+        : status === 'In Progress'
+        ? 'bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800'
+        : 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800',
+    };
+
+    try {
+      await db.saveActivityEvent(activityEvent);
+      p2pSyncManager.broadcastActivityEvent(activityEvent);
+      await loadPersistedActivityEvents();
+    } catch (e) {
+      console.error('Failed to log activity event:', e);
+    }
+
     onRefresh();
   };
 
@@ -250,6 +317,29 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
     };
     await db.saveShiftLog(updated);
     p2pSyncManager.broadcastShiftLog(updated);
+
+    const title = entry.topic || entry.name || `${entry.category} Log`;
+    const replyEvent: ActivityLogEvent = {
+      id: `act_${newResp.id}`,
+      type: 'reply',
+      logId: entry.id,
+      category: entry.category,
+      subCategory: entry.subCategory,
+      logTitle: title,
+      actor: currentUser.fullName,
+      actorRole: currentUser.role,
+      summary: `Replied on "${title}"`,
+      detail: newResp.message,
+      timestamp: newResp.createdAt,
+      badgeText: 'Reply',
+      badgeColor: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800',
+    };
+    try {
+      await db.saveActivityEvent(replyEvent);
+      p2pSyncManager.broadcastActivityEvent(replyEvent);
+      await loadPersistedActivityEvents();
+    } catch (e) {}
+
     setReplyText('');
     setReplyingTo(null);
     onRefresh();
@@ -264,9 +354,58 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
   };
 
   const handleUpdateSalesStatus = async (entry: ShiftLogEntry, status: SalesLeadStatus) => {
-    const updated = { ...entry, salesStatus: status, updatedAt: new Date().toISOString() };
+    const prevStatus = entry.salesStatus || 'New Lead';
+    if (prevStatus === status) return;
+
+    const transitionId = `sales_status_${entry.id}_${Date.now()}`;
+    const timestamp = new Date().toISOString();
+
+    const newStatusChange: ShiftLogStatusChange = {
+      id: transitionId,
+      fromStatus: prevStatus,
+      toStatus: status,
+      changedBy: currentUser.fullName,
+      changedByRole: currentUser.role,
+      timestamp,
+    };
+
+    const updated: ShiftLogEntry = {
+      ...entry,
+      salesStatus: status,
+      statusHistory: [...(entry.statusHistory || []), newStatusChange],
+      updatedAt: timestamp,
+    };
+
     await db.saveShiftLog(updated);
     p2pSyncManager.broadcastShiftLog(updated);
+
+    const title = entry.name || entry.topic || `Sales Lead #${entry.id.substring(0, 6)}`;
+    const activityEvent: ActivityLogEvent = {
+      id: transitionId,
+      type: 'status',
+      logId: entry.id,
+      category: 'Sales',
+      subCategory: entry.subCategory,
+      logTitle: title,
+      actor: currentUser.fullName,
+      actorRole: currentUser.role,
+      summary: `Sales lead status updated to ${status} (from ${prevStatus})`,
+      detail: entry.clerkNotes,
+      timestamp,
+      badgeText: status,
+      badgeColor: status === 'Closed Definite'
+        ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800'
+        : status === 'Lost'
+        ? 'bg-rose-50 text-rose-800 border-rose-200 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800'
+        : 'bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800',
+    };
+
+    try {
+      await db.saveActivityEvent(activityEvent);
+      p2pSyncManager.broadcastActivityEvent(activityEvent);
+      await loadPersistedActivityEvents();
+    } catch (e) {}
+
     onRefresh();
   };
 
@@ -288,6 +427,29 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
     };
     await db.saveShiftLog(updated);
     p2pSyncManager.broadcastShiftLog(updated);
+
+    const title = entry.topic || entry.name || `${entry.category} Log`;
+    const replyEvent: ActivityLogEvent = {
+      id: `act_${newResp.id}`,
+      type: 'reply',
+      logId: entry.id,
+      category: entry.category,
+      subCategory: entry.subCategory,
+      logTitle: title,
+      actor: currentUser.fullName,
+      actorRole: currentUser.role,
+      summary: `Replied on "${title}"`,
+      detail: newResp.message,
+      timestamp: newResp.createdAt,
+      badgeText: 'Reply',
+      badgeColor: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800',
+    };
+    try {
+      await db.saveActivityEvent(replyEvent);
+      p2pSyncManager.broadcastActivityEvent(replyEvent);
+      await loadPersistedActivityEvents();
+    } catch (e) {}
+
     setActivityReplyText((prev) => ({ ...prev, [entry.id]: '' }));
     onRefresh();
   };
@@ -328,6 +490,29 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
     };
     await db.saveShiftLog(updated);
     p2pSyncManager.broadcastShiftLog(updated);
+
+    const title = entry.topic || entry.name || `${entry.category} Log`;
+    const reminderEvent: ActivityLogEvent = {
+      id: `reminder_${entry.id}_${Date.now()}`,
+      type: 'reminder',
+      logId: entry.id,
+      category: entry.category,
+      subCategory: entry.subCategory,
+      logTitle: title,
+      actor: currentUser.fullName,
+      actorRole: currentUser.role,
+      summary: `Follow-up reminder set for ${formatReminderDate(reminderDateInput)}: ${reminderNoteInput.trim() || 'Follow-up scheduled'}`,
+      detail: reminderNoteInput.trim() || undefined,
+      timestamp: new Date().toISOString(),
+      badgeText: 'Reminder',
+      badgeColor: 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800',
+    };
+    try {
+      await db.saveActivityEvent(reminderEvent);
+      p2pSyncManager.broadcastActivityEvent(reminderEvent);
+      await loadPersistedActivityEvents();
+    } catch (e) {}
+
     setReminderTargetLogId(null);
     onRefresh();
   };
@@ -359,127 +544,160 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
 
   /* ----- Unified Recent Activity Feed (Replies, Status Changes, Reminders & Logs) ----- */
   const recentActivityFeed = useMemo(() => {
-    const items: Array<{
-      id: string;
-      type: 'reply' | 'status' | 'reminder' | 'created';
-      logId: string;
-      category: PrimaryCategory;
-      subCategory?: string;
-      logTitle: string;
-      actor: string;
-      actorRole?: string;
-      summary: string;
-      detail?: string;
-      timestamp: string;
-      badgeText: string;
-      badgeColor: string;
-    }> = [];
+    const itemMap = new Map<string, ActivityLogEvent>();
 
+    // 1. Add all persisted audit events (which includes manager deletions, tracked status updates, etc.)
+    persistedEvents.forEach((pe) => {
+      if (pe && pe.id) itemMap.set(pe.id, pe);
+    });
+
+    // 2. Synthesize events from active logs
     logs.forEach((log) => {
-      const title = log.name || log.topic || `${log.category} Log`;
+      const title = log.topic || log.name || `${log.category} Log`;
 
       // 1. Creation event
-      items.push({
-        id: `created_${log.id}`,
-        type: 'created',
-        logId: log.id,
-        category: log.category,
-        subCategory: log.subCategory,
-        logTitle: title,
-        actor: log.clerkName || 'Staff',
-        actorRole: log.clerkRole,
-        summary: `Created ${log.category.toLowerCase()} log`,
-        detail: log.clerkNotes || log.topic,
-        timestamp: log.createdAt,
-        badgeText: 'New Log',
-        badgeColor: 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700',
-      });
-
-      // 2. Replies / Comments events
-      if (log.responses && log.responses.length > 0) {
-        log.responses.forEach((r) => {
-          items.push({
-            id: `reply_${r.id}`,
-            type: 'reply',
-            logId: log.id,
-            category: log.category,
-            subCategory: log.subCategory,
-            logTitle: title,
-            actor: r.authorName,
-            actorRole: r.authorRole,
-            summary: `Replied on "${title}"`,
-            detail: r.message,
-            timestamp: r.createdAt,
-            badgeText: 'Reply',
-            badgeColor: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800',
-          });
-        });
-      }
-
-      // 3. Status updates events
-      if (log.updatedAt && log.updatedAt !== log.createdAt) {
-        if (log.category === 'Complaint' && log.complaintStatus) {
-          items.push({
-            id: `status_${log.id}_${log.updatedAt}`,
-            type: 'status',
-            logId: log.id,
-            category: log.category,
-            subCategory: log.subCategory,
-            logTitle: title,
-            actor: log.clerkName || 'Staff',
-            summary: `Complaint marked as ${log.complaintStatus}`,
-            detail: log.clerkNotes,
-            timestamp: log.updatedAt,
-            badgeText: log.complaintStatus,
-            badgeColor: log.complaintStatus === 'Resolved'
-              ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800'
-              : 'bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800',
-          });
-        } else if (log.category === 'Sales' && log.salesStatus) {
-          items.push({
-            id: `sales_status_${log.id}_${log.updatedAt}`,
-            type: 'status',
-            logId: log.id,
-            category: log.category,
-            subCategory: log.subCategory,
-            logTitle: title,
-            actor: log.clerkName || 'Staff',
-            summary: `Lead progress: ${log.salesStatus}`,
-            timestamp: log.updatedAt,
-            badgeText: log.salesStatus,
-            badgeColor: 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800',
-          });
-        }
-      }
-
-      // 4. Follow-up Reminders
-      if (log.hasReminder && log.reminderDate) {
-        items.push({
-          id: `reminder_${log.id}_${log.reminderDate}`,
-          type: 'reminder',
+      const createdId = `created_${log.id}`;
+      if (!itemMap.has(createdId)) {
+        itemMap.set(createdId, {
+          id: createdId,
+          type: 'created',
           logId: log.id,
           category: log.category,
           subCategory: log.subCategory,
           logTitle: title,
           actor: log.clerkName || 'Staff',
-          summary: `Follow-up reminder: ${log.reminderNote || 'Follow-up scheduled'}`,
-          detail: `Due: ${new Date(log.reminderDate).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`,
-          timestamp: log.updatedAt || log.createdAt,
-          badgeText: 'Reminder',
-          badgeColor: 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800',
+          actorRole: log.clerkRole,
+          summary: `Created ${log.category.toLowerCase()} log: "${title}"`,
+          detail: log.clerkNotes || log.topic,
+          timestamp: log.createdAt,
+          badgeText: 'New Log',
+          badgeColor: 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700',
         });
+      }
+
+      // Status history transitions
+      if (log.statusHistory && log.statusHistory.length > 0) {
+        log.statusHistory.forEach((sh) => {
+          if (!itemMap.has(sh.id)) {
+            const isResolved = sh.toStatus === 'Resolved' || sh.toStatus === 'Closed Definite';
+            itemMap.set(sh.id, {
+              id: sh.id,
+              type: 'status',
+              logId: log.id,
+              category: log.category,
+              subCategory: log.subCategory,
+              logTitle: title,
+              actor: sh.changedBy || 'Staff',
+              actorRole: sh.changedByRole,
+              summary: `${log.category} status marked as ${sh.toStatus} (from ${sh.fromStatus})`,
+              detail: log.clerkNotes,
+              timestamp: sh.timestamp,
+              badgeText: sh.toStatus,
+              badgeColor: isResolved
+                ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800'
+                : 'bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800',
+            });
+          }
+        });
+      } else if (log.updatedAt && log.updatedAt !== log.createdAt) {
+        // Fallback for legacy logs without statusHistory array
+        if (log.category === 'Complaint' && log.complaintStatus) {
+          const fallbackId = `status_${log.id}_${log.updatedAt}`;
+          if (!itemMap.has(fallbackId)) {
+            itemMap.set(fallbackId, {
+              id: fallbackId,
+              type: 'status',
+              logId: log.id,
+              category: log.category,
+              subCategory: log.subCategory,
+              logTitle: title,
+              actor: log.clerkName || 'Staff',
+              summary: `Complaint marked as ${log.complaintStatus}`,
+              detail: log.clerkNotes,
+              timestamp: log.updatedAt,
+              badgeText: log.complaintStatus,
+              badgeColor: log.complaintStatus === 'Resolved'
+                ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800'
+                : 'bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800',
+            });
+          }
+        } else if (log.category === 'Sales' && log.salesStatus) {
+          const fallbackId = `sales_status_${log.id}_${log.updatedAt}`;
+          if (!itemMap.has(fallbackId)) {
+            itemMap.set(fallbackId, {
+              id: fallbackId,
+              type: 'status',
+              logId: log.id,
+              category: log.category,
+              subCategory: log.subCategory,
+              logTitle: title,
+              actor: log.clerkName || 'Staff',
+              summary: `Lead progress: ${log.salesStatus}`,
+              timestamp: log.updatedAt,
+              badgeText: log.salesStatus,
+              badgeColor: 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800',
+            });
+          }
+        }
+      }
+
+      // 2. Replies / Comments events
+      if (log.responses && log.responses.length > 0) {
+        log.responses.forEach((r) => {
+          const replyId = `act_${r.id}`;
+          if (!itemMap.has(replyId)) {
+            itemMap.set(replyId, {
+              id: replyId,
+              type: 'reply',
+              logId: log.id,
+              category: log.category,
+              subCategory: log.subCategory,
+              logTitle: title,
+              actor: r.authorName,
+              actorRole: r.authorRole,
+              summary: `Replied on "${title}"`,
+              detail: r.message,
+              timestamp: r.createdAt,
+              badgeText: 'Reply',
+              badgeColor: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800',
+            });
+          }
+        });
+      }
+
+      // 3. Follow-up Reminders
+      if (log.hasReminder && log.reminderDate) {
+        const reminderId = `reminder_${log.id}_${log.reminderDate}`;
+        if (!itemMap.has(reminderId)) {
+          itemMap.set(reminderId, {
+            id: reminderId,
+            type: 'reminder',
+            logId: log.id,
+            category: log.category,
+            subCategory: log.subCategory,
+            logTitle: title,
+            actor: log.clerkName || 'Staff',
+            summary: `Follow-up reminder: ${log.reminderNote || 'Follow-up scheduled'}`,
+            detail: `Due: ${new Date(log.reminderDate).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`,
+            timestamp: log.updatedAt || log.createdAt,
+            badgeText: 'Reminder',
+            badgeColor: 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800',
+          });
+        }
       }
     });
 
+    const items = Array.from(itemMap.values());
     items.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
     if (activityFeedFilter === 'Replies') return items.filter((i) => i.type === 'reply');
     if (activityFeedFilter === 'Status') return items.filter((i) => i.type === 'status');
     if (activityFeedFilter === 'Reminders') return items.filter((i) => i.type === 'reminder');
     if (activityFeedFilter === 'Created') return items.filter((i) => i.type === 'created');
+    if (activityFeedFilter === 'Deleted') return items.filter((i) => i.type === 'deleted');
 
     return items;
-  }, [logs, activityFeedFilter]);
+  }, [logs, persistedEvents, activityFeedFilter]);
 
   const getActivityIconConfig = (entry: ShiftLogEntry) => {
     if (entry.category === 'Sales') {
@@ -564,7 +782,7 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
 
         {/* Filter Pills */}
         <div className="flex flex-wrap items-center gap-1">
-          {(['All', 'Replies', 'Status', 'Reminders', 'Created'] as const).map((filterType) => (
+          {(['All', 'Replies', 'Status', 'Reminders', 'Created', 'Deleted'] as const).map((filterType) => (
             <button
               key={filterType}
               type="button"
@@ -578,7 +796,8 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
               {filterType === 'All' ? 'All' :
                filterType === 'Replies' ? 'Replies' :
                filterType === 'Status' ? 'Status' :
-               filterType === 'Reminders' ? 'Reminders' : 'New'}
+               filterType === 'Reminders' ? 'Reminders' : 
+               filterType === 'Deleted' ? 'Deleted' : 'New'}
             </button>
           ))}
         </div>
@@ -591,11 +810,13 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
             No recent changes recorded yet. When staff reply, update statuses, or set reminders, they will appear here.
           </div>
         ) : (
-          recentActivityFeed.slice(0, 30).map((act) => (
+          recentActivityFeed.slice(0, 50).map((act) => (
             <div
               key={act.id}
               onClick={() => {
-                setExpandedActivityId(act.logId);
+                if (act.type !== 'deleted') {
+                  setExpandedActivityId(act.logId);
+                }
               }}
               className="p-2 sm:p-2.5 bg-gray-50/80 dark:bg-gray-700/30 hover:bg-blue-50/50 dark:hover:bg-gray-700/70 border border-gray-200/80 dark:border-gray-700 rounded-lg transition-colors cursor-pointer group"
             >
@@ -609,6 +830,8 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
                       <CheckCircle2 className="w-3 h-3 text-emerald-600" />
                     ) : act.type === 'reminder' ? (
                       <Bell className="w-3 h-3 text-amber-600" />
+                    ) : act.type === 'deleted' ? (
+                      <Trash2 className="w-3 h-3 text-rose-600" />
                     ) : (
                       <FileText className="w-3 h-3 text-slate-600" />
                     )}
@@ -881,7 +1104,7 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-1.5 mb-0.5">
                           <p className="text-sm font-bold text-gray-900 truncate">
-                            {entry.name || entry.topic || 'Shift Note'}
+                            {entry.topic || entry.name || `${entry.category} Log`}
                           </p>
 
                           {/* Subcategory Pill */}
@@ -1203,13 +1426,15 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
                           >
                             <Edit3 className="w-3.5 h-3.5" />
                           </button>
-                          {(currentUser.role === 'manager' || currentUser.id === entry.clerkId) && (
+                          {currentUser.role === 'manager' && (
                             <button
-                              onClick={() => {
-                                if (window.confirm('Delete this log entry?')) onDeleteLog(entry.id);
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                if (window.confirm('Delete this log entry? (Manager Action)')) onDeleteLog(entry.id);
                               }}
-                              className="p-1 text-gray-400 hover:text-rose-600 rounded"
-                              title="Delete"
+                              className="p-1 text-gray-400 hover:text-rose-600 rounded cursor-pointer"
+                              title="Delete (Manager Only)"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -1466,8 +1691,14 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
                           <span>{entry.hasReminder && entry.reminderDate ? formatReminderDate(entry.reminderDate) : 'Reminder'}</span>
                         </button>
                       </div>
-                      <h4 className="text-base font-bold text-gray-900">{entry.name}</h4>
+                      <h4 className="text-base font-bold text-gray-900">{entry.topic || entry.name || 'Guest Complaint'}</h4>
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-xs text-gray-500">
+                        {entry.name && entry.topic && (
+                          <span className="flex items-center space-x-1 font-semibold text-gray-700">
+                            <User className="w-3.5 h-3.5 text-gray-400" />
+                            <span>{entry.name}</span>
+                          </span>
+                        )}
                         {entry.phoneNumber && (
                           <span className="flex items-center space-x-1"><Phone className="w-3.5 h-3.5" /><span>{entry.phoneNumber}</span></span>
                         )}
@@ -1509,10 +1740,15 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
                         <button onClick={() => onEditLog(entry)} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition cursor-pointer">
                           <Edit3 className="w-4 h-4" />
                         </button>
-                        {(currentUser.role === 'manager' || currentUser.id === entry.clerkId) && (
+                        {currentUser.role === 'manager' && (
                           <button
-                            onClick={() => { if (window.confirm('Delete this complaint?')) onDeleteLog(entry.id); }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              e.preventDefault();
+                              if (window.confirm('Delete this complaint? (Manager Action)')) onDeleteLog(entry.id);
+                            }}
                             className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                            title="Delete Complaint (Manager Only)"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -1795,10 +2031,15 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
                       <button onClick={() => onEditLog(entry)} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition">
                         <Edit3 className="w-4 h-4" />
                       </button>
-                      {(currentUser.role === 'manager' || currentUser.id === entry.clerkId) && (
+                      {currentUser.role === 'manager' && (
                         <button
-                          onClick={() => { if (window.confirm('Delete this note?')) onDeleteLog(entry.id); }}
-                          className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            if (window.confirm('Delete this note? (Manager Action)')) onDeleteLog(entry.id);
+                          }}
+                          className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                          title="Delete Note (Manager Only)"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -1986,12 +2227,15 @@ export const ShiftLogDashboard: React.FC<ShiftLogDashboardProps> = ({
                         >
                           <Edit3 className="w-3.5 h-3.5" />
                         </button>
-                        {(currentUser.role === 'manager' || currentUser.id === entry.clerkId) && (
+                        {currentUser.role === 'manager' && (
                           <button
-                            onClick={() => {
-                              if (window.confirm('Delete this entry?')) onDeleteLog(entry.id);
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              e.preventDefault();
+                              if (window.confirm('Delete this entry? (Manager Action)')) onDeleteLog(entry.id);
                             }}
-                            className="p-1.5 text-gray-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition"
+                            className="p-1.5 text-gray-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition cursor-pointer"
+                            title="Delete Entry (Manager Only)"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>

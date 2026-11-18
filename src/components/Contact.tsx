@@ -65,9 +65,8 @@ export const ContactPage: React.FC = () => {
                     <Mail size={22} />
                   </div>
                   <div>
-                    <h3 className="font-semibold text-gray-900 text-sm">Direct Support Email</h3>
-                    <p className="text-gray-600 text-sm">technerdelectronics@gmail.com</p>
-                    <span className="text-xs text-green-600 font-medium">Guaranteed response within 24-48 business hours</span>
+                    <h3 className="font-semibold text-gray-900 dark:text-white text-sm">Direct Support Email</h3>
+                    <p className="text-gray-600 dark:text-gray-300 text-sm">technerdelectronics@gmail.com</p>
                   </div>
                 </div>
 
@@ -76,9 +75,9 @@ export const ContactPage: React.FC = () => {
                     <Clock size={22} />
                   </div>
                   <div>
-                    <h3 className="font-semibold text-gray-900 text-sm">Help Desk Hours</h3>
-                    <p className="text-gray-600 text-sm">Monday – Friday: 9:00 AM – 5:00 PM EST</p>
-                    <p className="text-gray-600 text-sm">Saturday: 10:00 AM – 2:00 PM EST</p>
+                    <h3 className="font-semibold text-gray-900 dark:text-white text-sm">Help Desk Hours</h3>
+                    <p className="text-gray-600 dark:text-gray-300 text-sm">Monday – Friday: 9:00 AM – 5:00 PM EST</p>
+                    <p className="text-gray-600 dark:text-gray-300 text-sm">Saturday: 10:00 AM – 2:00 PM EST</p>
                     <p className="text-gray-400 text-xs">Sunday & Federal Holidays: Closed</p>
                   </div>
                 </div>
@@ -88,11 +87,11 @@ export const ContactPage: React.FC = () => {
                     <MapPin size={22} />
                   </div>
                   <div>
-                    <h3 className="font-semibold text-gray-900 text-sm">Mailing Address</h3>
-                    <p className="text-gray-600 text-sm">
-                      1505 Potter Rd,
+                    <h3 className="font-semibold text-gray-900 dark:text-white text-sm">Mailing Address</h3>
+                    <p className="text-gray-600 dark:text-gray-300 text-sm">
+                      1133 N 7th st,
                       <br />
-                      Glenview, IL 60026, United States
+                      Rochelle, IL 61068, United States
                     </p>
                   </div>
                 </div>
